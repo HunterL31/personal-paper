@@ -29,6 +29,12 @@
       {%- if status.scheduler_on %}Next run: {{ status.next_run }}
       {%- else %}Scheduler off{% endif %}
     </dd></div>
+    {%- if status.printer_check %}
+    <div><dt>Printer</dt><dd>
+      <span class="{{ 'good' if status.printer_check.ok else 'bad' }}">{{ status.printer_check.summary }}</span>
+      {%- if status.printer_check.when %} (checked {{ status.printer_check.when }}){% endif %}
+    </dd></div>
+    {%- endif %}
     <div><dt>Log</dt><dd><a href="/log">last 200 lines</a></dd></div>
   </dl>
   {% if status.last_error %}<p class="error">Last error: {{ status.last_error }}</p>{% endif %}

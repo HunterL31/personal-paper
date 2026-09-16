@@ -17,10 +17,15 @@ from ._util import issue_label
 from .email import send_pdf, send_test
 from .notify import notify_failure
 from .printer import (
+    Diagnosis,
     DiscoveredPrinter,
     PrinterInfo,
+    Step,
+    diagnose,
     discover,
     print_pdf,
+    record_print_result,
+    record_printer_check,
     test_printer,
 )
 
@@ -33,13 +38,37 @@ __all__ = [
     "deliver",
     "print_pdf",
     "test_printer",
+    "diagnose",
     "discover",
+    "record_print_result",
+    "record_printer_check",
     "send_pdf",
     "send_test",
     "notify_failure",
+    "Diagnosis",
+    "Step",
     "PrinterInfo",
     "DiscoveredPrinter",
 ]
+
+
+def _explained(host: str, err: Exception) -> Exception:
+    """Say why a print failed in the printer's terms, not `requests`'.
+
+    A failed job is the one moment the reader is owed a plain sentence, so
+    the printer is diagnosed on the spot; the original error is kept in
+    parentheses, and kept whole when the diagnosis finds nothing wrong.
+    """
+    original = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__
+    diagnosis = diagnose(host)
+    step = diagnosis.failed
+    if step is None:
+        record_print_result(host, original)
+        return err
+
+    record_printer_check(diagnosis)
+    said = f"{step.detail} {step.hint}".strip()
+    return RuntimeError(f"{said} ({original})")
 
 
 def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
@@ -48,7 +77,14 @@ def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
         raise RuntimeError("Print route is enabled but no printer is configured")
     # A test print is the same operation on a different PDF (the sample
     # issue), so `test` changes nothing here.
-    print_pdf(pdf, route.printer_host, duplex=route.duplex)
+    try:
+        print_pdf(pdf, route.printer_host, duplex=route.duplex)
+    except Exception as err:
+        explained = _explained(route.printer_host, err)
+        if explained is err:
+            raise
+        raise explained from err
+    record_print_result(route.printer_host)
 
 
 def _email_route(pdf: Path, settings: "Settings", *, test: bool) -> None:

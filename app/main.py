@@ -90,12 +90,28 @@ def _stamp(value: str) -> str:
         return value or ""
 
 
+def _printer_check(st: dict[str, Any]) -> dict[str, Any] | None:
+    """The last printer check, for the strip; None when there is no printer."""
+    check = st.get("printer_check")
+    if not isinstance(check, dict) or not check.get("summary"):
+        return None
+    route = Settings.load().output.print
+    if not (route.enabled or route.printer_host):
+        return None
+    try:
+        stamp = f"{datetime.fromisoformat(str(check.get('when'))):%H:%M}"
+    except (TypeError, ValueError):
+        stamp = ""
+    return {"ok": bool(check.get("ok")), "summary": str(check["summary"]), "when": stamp}
+
+
 def _status() -> dict[str, Any]:
     """The strip at the top of every tab."""
     st = load_state()
     pdf_name = Path(st.get("last_pdf") or "").name
     when = scheduler.next_run_time()
     return {
+        "printer_check": _printer_check(st),
         "last_run": _stamp(st.get("last_run") or ""),
         "last_success": _stamp(st.get("last_success") or ""),
         "last_error": st.get("last_error") or "",
@@ -391,9 +407,14 @@ async def printer_test(request: Request) -> JSONResponse:
 
     import deliver
 
-    # test_printer() calls asyncio.run() internally, so it must not run on
-    # the event loop's thread.
-    return await check_json(lambda: deliver.test_printer(host))
+    # diagnose() calls asyncio.run() internally, so it must not run on the
+    # event loop's thread. It never raises: a failure is a failed step.
+    def work() -> Any:
+        diagnosis = deliver.diagnose(host)
+        deliver.record_printer_check(diagnosis)
+        return diagnosis
+
+    return await check_json(work)
 
 
 @app.post("/output/printer/test-page")
@@ -409,12 +430,25 @@ async def printer_test_page(request: Request) -> JSONResponse:
         import deliver
         from render.render import render
 
+        # Check the printer before rendering: a test page is not worth a
+        # wait on a job that can never be picked up.
+        diagnosis = deliver.diagnose(host)
+        deliver.record_printer_check(diagnosis)
+        step = diagnosis.failed
+        if step is not None:
+            raise RuntimeError(f"{step.detail} {step.hint}".strip())
+
         out = data_dir() / "preview" / "test-page"
         out.mkdir(parents=True, exist_ok=True)
         data = json.loads(SAMPLE_DATA.read_text())
         with jobs.RUN_LOCK:
             result = render(data, settings.look, out)
-            deliver.print_pdf(result.pdf, host, duplex=duplex)
+            try:
+                deliver.print_pdf(result.pdf, host, duplex=duplex)
+            except Exception as err:
+                deliver.record_print_result(host, f"{type(err).__name__}: {err}")
+                raise
+        deliver.record_print_result(host)
         return {"sent": True, "pages": result.pages, "host": host}
 
     return await check_json(work)

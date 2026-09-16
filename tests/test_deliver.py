@@ -20,6 +20,7 @@ from pyipp.enums import IppOperation, IppTag
 from pyipp.parser import parse as parse_ipp
 from pyipp.serializer import construct_attribute
 
+import deliver as deliver_package
 from app.settings import Settings
 from deliver import deliver
 from deliver import email as email_route
@@ -320,6 +321,203 @@ def test_test_printer_parses_get_printer_attributes(fake_printer):
         struct.unpack_from(">h", body, 2)[0]
         == IppOperation.GET_PRINTER_ATTRIBUTES.value
     )
+
+
+
+# ---------------------------------------------------------------- diagnosis
+# A printer that has stopped with an empty paper tray and toner running low.
+PRINTER_STOPPED = _ipp_response(
+    0x0000,
+    [
+        OPERATION_GROUP,
+        (
+            IppTag.PRINTER.value,
+            [
+                construct_attribute("printer-name", "HL-L2460DW", IppTag.NAME),
+                construct_attribute(
+                    "printer-make-and-model", "Brother HL-L2460DW series", IppTag.TEXT
+                ),
+                construct_attribute("printer-state", 5, IppTag.ENUM),
+                construct_attribute(
+                    "printer-state-reasons",
+                    ["media-empty", "marker-supply-low-warning"],
+                    IppTag.KEYWORD,
+                ),
+                construct_attribute("printer-up-time", 12345, IppTag.INTEGER),
+                construct_attribute(
+                    "printer-uri-supported", "ipp://printer/ipp/print", IppTag.URI
+                ),
+                construct_attribute(
+                    "document-format-supported",
+                    ["application/octet-stream", "application/pdf"],
+                    IppTag.MIME_TYPE,
+                ),
+            ],
+        ),
+    ],
+)
+
+
+def test_diagnose_walks_every_step_when_the_printer_answers(fake_printer):
+    diagnosis = printer_route.diagnose(fake_printer.host)
+
+    assert diagnosis.ok is True
+    assert [step.name for step in diagnosis.steps] == [
+        "resolve", "connect", "ipp", "pdf", "state"
+    ]
+    assert all(step.ok for step in diagnosis.steps)
+    assert diagnosis.failed is None
+    assert diagnosis.info is not None and diagnosis.info.accepts_pdf is True
+    assert "HL-L2460DW series" in diagnosis.summary
+    assert "idle" in diagnosis.summary and "accepts PDF" in diagnosis.summary
+
+
+def test_diagnose_stops_at_resolve_when_the_name_is_unknown(monkeypatch):
+    def unknown(*args, **kwargs):
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr(printer_route.socket, "getaddrinfo", unknown)
+
+    diagnosis = printer_route.diagnose("brother.local")
+
+    assert diagnosis.ok is False
+    assert [step.name for step in diagnosis.steps] == ["resolve"]
+    step = diagnosis.failed
+    assert step is not None
+    assert "Could not resolve 'brother.local'" in step.detail
+    assert "IP address" in step.hint
+    assert diagnosis.summary == f"resolve: {step.detail}"
+    assert diagnosis.info is None
+
+
+def test_diagnose_stops_at_connect_when_the_port_is_closed():
+    host = f"127.0.0.1:{_free_port()}"  # bound, then let go: nothing listens
+
+    diagnosis = printer_route.diagnose(host, timeout=2.0)
+
+    assert diagnosis.ok is False
+    assert [step.name for step in diagnosis.steps] == ["resolve", "connect"]
+    step = diagnosis.failed
+    assert step is not None and step.name == "connect"
+    assert "No answer from" in step.detail and "refused" in step.detail
+    assert "same network" in step.hint
+
+
+def test_diagnose_reports_a_stopped_printer_in_words(fake_printer, monkeypatch):
+    monkeypatch.setitem(globals(), "PRINTER_ATTRIBUTES", PRINTER_STOPPED)
+
+    diagnosis = printer_route.diagnose(fake_printer.host)
+
+    assert diagnosis.ok is False
+    step = diagnosis.failed
+    assert step is not None and step.name == "state"
+    assert "Stopped." in step.detail
+    assert "paper" in step.detail.lower()
+    assert "Toner low." in step.detail  # marker-supply-low-warning, in English
+    assert "Clear the printer's error" in step.hint
+    assert diagnosis.summary.startswith("state: ")
+    # The steps before it all passed, so the reader knows how far it got.
+    assert [s.name for s in diagnosis.steps] == ["resolve", "connect", "ipp", "pdf", "state"]
+    assert diagnosis.info is not None and diagnosis.info.state == "stopped"
+
+
+def test_diagnose_never_raises_on_a_host_it_cannot_parse():
+    diagnosis = printer_route.diagnose("")
+
+    assert diagnosis.ok is False
+    assert diagnosis.failed is not None and diagnosis.failed.name == "resolve"
+
+
+def test_reason_words_keeps_unknown_reasons_readable():
+    assert printer_route.reason_words("media-empty") == "Out of paper."
+    assert printer_route.reason_words("cover-open") == "Cover open."
+    assert printer_route.reason_words("none") == ""
+    assert printer_route.reason_words("wumpus-jammed-error") == "Wumpus jammed."
+
+
+def test_record_printer_check_writes_the_state_file():
+    import state
+
+    printer_route.record_printer_check(
+        printer_route.Diagnosis(True, [], None, "Brother: idle, accepts PDF")
+    )
+
+    check = state.load_state()["printer_check"]
+    assert check["ok"] is True
+    assert check["summary"] == "Brother: idle, accepts PDF"
+    assert check["when"]
+
+
+def test_print_route_failure_says_what_the_diagnosis_found(pdf, monkeypatch):
+    settings = Settings()
+    settings.output.print.enabled = True
+    settings.output.print.printer_host = "192.168.1.40"
+
+    def boom(*args, **kwargs):
+        raise OSError("Connection aborted")
+
+    step = printer_route.Step(
+        "connect",
+        False,
+        "No answer from 192.168.1.40:631 (timed out)",
+        "Is the printer on and on the same network as the Unraid box?",
+    )
+    monkeypatch.setattr(deliver_package, "print_pdf", boom)
+    monkeypatch.setattr(
+        deliver_package,
+        "diagnose",
+        lambda host, **kwargs: printer_route.Diagnosis(
+            False, [step], None, f"connect: {step.detail}"
+        ),
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        deliver_package._print_route(pdf, settings, test=False)
+
+    message = str(raised.value)
+    assert step.detail in message
+    assert step.hint in message
+    assert "Connection aborted" in message  # the original error, in parentheses
+
+    # ... and the same sentence reaches the delivery report and the strip.
+    assert step.detail in (deliver(pdf, settings)["print"] or "")
+
+    import state
+
+    assert state.load_state()["printer_check"]["summary"] == f"connect: {step.detail}"
+
+
+def test_print_route_keeps_the_original_error_when_nothing_is_wrong(pdf, monkeypatch):
+    settings = Settings()
+    settings.output.print.enabled = True
+    settings.output.print.printer_host = "192.168.1.40"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("Printer rejected the job: ERROR_BAD_REQUEST")
+
+    monkeypatch.setattr(deliver_package, "print_pdf", boom)
+    monkeypatch.setattr(
+        deliver_package,
+        "diagnose",
+        lambda host, **kwargs: printer_route.Diagnosis(True, [], None, "all well"),
+    )
+
+    with pytest.raises(RuntimeError, match="ERROR_BAD_REQUEST"):
+        deliver_package._print_route(pdf, settings, test=False)
+
+
+def test_print_route_records_a_successful_print(pdf, fake_printer):
+    settings = Settings()
+    settings.output.print.enabled = True
+    settings.output.print.printer_host = fake_printer.host
+
+    deliver_package._print_route(pdf, settings, test=False)
+
+    import state
+
+    check = state.load_state()["printer_check"]
+    assert check["ok"] is True
+    assert fake_printer.host in check["summary"]
 
 
 # ----------------------------------------------------------------- discovery
