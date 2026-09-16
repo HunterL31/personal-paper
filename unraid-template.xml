@@ -1,0 +1,188 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>molly-ledger</Name>
+  <Repository>hunterl31/molly-ledger:latest</Repository>
+  <Registry/>
+  <Network>host</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>
+    The Molly Ledger: a one-reader morning newspaper. It gathers the day's
+    calendar, tasks, weather and Substack posts, renders a black-and-white
+    US Letter broadsheet as a PDF, and prints it over IPP and/or emails it,
+    on a schedule set from its own web page.
+
+    Host networking is the default because mDNS printer discovery only works
+    when the container shares the host's broadcast domain. On bridge
+    networking discovery finds nothing and the printer is entered as an IP
+    on the Output tab.
+
+    Set WEB_PASSWORD before starting: the app refuses to start without it.
+    Everything else the reader changes (look, sources, routes, schedule)
+    lives in the web page, not here.
+  </Overview>
+  <Category>Productivity: HomeAutomation: Other:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config
+    Name="Web page"
+    Target="8080"
+    Default="8080"
+    Mode="tcp"
+    Description="The settings, preview and status page, and POST /tasks for the iPhone Shortcut. On host networking this port must be free on the box."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8080</Config>
+  <Config
+    Name="Data"
+    Target="/data"
+    Default="/mnt/user/appdata/molly-ledger"
+    Mode="rw"
+    Description="settings.json, state.json, tasks.json, logs/, out/ and the PDF archive. Nothing secret is kept here."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/molly-ledger</Config>
+  <Config
+    Name="Unraid notify script"
+    Target="/usr/local/emhttp/webGui/scripts/notify"
+    Default="/usr/local/emhttp/webGui/scripts/notify"
+    Mode="ro"
+    Description="Optional. Mount this to let a failed run raise an Unraid notification (Output tab, Notify on failure = unraid)."
+    Type="Path"
+    Display="advanced"
+    Required="false"
+    Mask="false">/usr/local/emhttp/webGui/scripts/notify</Config>
+  <Config
+    Name="WEB_PASSWORD"
+    Target="WEB_PASSWORD"
+    Default=""
+    Mode=""
+    Description="Required. HTTP basic auth password for the web page; the app refuses to start without it. Use a long random string."
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="true"/>
+  <Config
+    Name="TASKS_TOKEN"
+    Target="TASKS_TOKEN"
+    Default=""
+    Mode=""
+    Description="Bearer token the iPhone Shortcut sends to POST /tasks. Leave empty to disable the task endpoint."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="true"/>
+  <Config
+    Name="SMTP_HOST"
+    Target="SMTP_HOST"
+    Default="smtp.gmail.com"
+    Mode=""
+    Description="Outgoing mail server for the email route and failure notifications."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false">smtp.gmail.com</Config>
+  <Config
+    Name="SMTP_PORT"
+    Target="SMTP_PORT"
+    Default="587"
+    Mode=""
+    Description="587 for STARTTLS, 465 for implicit TLS."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false">587</Config>
+  <Config
+    Name="SMTP_USER"
+    Target="SMTP_USER"
+    Default=""
+    Mode=""
+    Description="The account the paper is sent from; it is also the From address."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false"/>
+  <Config
+    Name="SMTP_PASSWORD"
+    Target="SMTP_PASSWORD"
+    Default=""
+    Mode=""
+    Description="Password for SMTP_USER. A Gmail app password works."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="true"/>
+  <Config
+    Name="IMAP_HOST"
+    Target="IMAP_HOST"
+    Default="imap.gmail.com"
+    Mode=""
+    Description="Only needed if a paid Substack has to be read from email instead of RSS."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">imap.gmail.com</Config>
+  <Config
+    Name="IMAP_USER"
+    Target="IMAP_USER"
+    Default=""
+    Mode=""
+    Description="Mailbox the Substack emails land in. Only for paid publications."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+  <Config
+    Name="IMAP_PASSWORD"
+    Target="IMAP_PASSWORD"
+    Default=""
+    Mode=""
+    Description="Password for IMAP_USER. A Gmail app password works."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="true"/>
+  <Config
+    Name="TZ"
+    Target="TZ"
+    Default="America/Los_Angeles"
+    Mode=""
+    Description="Timezone for the schedule, the calendar window and the weather."
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false">America/Los_Angeles</Config>
+  <Config
+    Name="DATA_DIR"
+    Target="DATA_DIR"
+    Default="/data"
+    Mode=""
+    Description="Where settings, state, logs and the archive live inside the container. Change this only if the Data path above is mapped somewhere else."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">/data</Config>
+  <Config
+    Name="CHROMIUM_PATH"
+    Target="CHROMIUM_PATH"
+    Default=""
+    Mode=""
+    Description="Advanced. Path to a Chromium binary for the renderer. The image already ships Playwright's Chromium; leave empty."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+</Container>

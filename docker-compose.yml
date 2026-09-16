@@ -1,0 +1,24 @@
+services:
+  molly-ledger:
+    # Published by .github/workflows/docker.yml. Change the namespace if your
+    # Docker Hub username is not hunterl31. To build locally instead,
+    # comment out `image:` and uncomment `build:`.
+    image: hunterl31/molly-ledger:latest
+    # build: .
+    container_name: molly-ledger
+    # Host networking is what lets mDNS printer discovery see the LAN
+    # broadcast domain. Port 8080 must then be free on the box.
+    network_mode: host
+    # Bridge alternative: printer discovery returns nothing and the printer
+    # is entered as an IP on the Output tab. Comment out network_mode above
+    # and uncomment these two lines.
+    # ports:
+    #   - "8080:8080"
+    volumes:
+      - ./data:/data
+      # Unraid failure notifications (settings.output.notify = "unraid"):
+      # - /usr/local/emhttp/webGui/scripts/notify:/usr/local/emhttp/webGui/scripts/notify:ro
+    env_file: .env
+    environment:
+      TZ: America/Los_Angeles
+    restart: unless-stopped

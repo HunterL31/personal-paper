@@ -1,0 +1,95 @@
+"""Delivery: run every enabled output route, and never raise.
+
+A run is a success if the render succeeded and at least one enabled route
+succeeded; each failed route is logged, returned, and shown on the Status
+strip. The archive copy is written by `run.py` before any route runs, so
+the issue survives even when every route here fails.
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from app.settings import Env
+
+from ._util import issue_label
+from .email import send_pdf, send_test
+from .notify import notify_failure
+from .printer import (
+    DiscoveredPrinter,
+    PrinterInfo,
+    discover,
+    print_pdf,
+    test_printer,
+)
+
+if TYPE_CHECKING:
+    from app.settings import Settings
+
+_LOGGER = logging.getLogger(__name__)
+
+__all__ = [
+    "deliver",
+    "print_pdf",
+    "test_printer",
+    "discover",
+    "send_pdf",
+    "send_test",
+    "notify_failure",
+    "PrinterInfo",
+    "DiscoveredPrinter",
+]
+
+
+def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
+    route = settings.output.print
+    if not route.printer_host:
+        raise RuntimeError("Print route is enabled but no printer is configured")
+    # A test print is the same operation on a different PDF (the sample
+    # issue), so `test` changes nothing here.
+    print_pdf(pdf, route.printer_host, duplex=route.duplex)
+
+
+def _email_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
+    route = settings.output.email
+    if not route.to:
+        raise RuntimeError("Email route is enabled but no recipients are configured")
+    subject = (route.subject or "The Molly Ledger, {date}").replace(
+        "{date}", issue_label(pdf)
+    )
+    if test:
+        subject = f"[test] {subject}"
+    send_pdf(pdf, list(route.to), subject, Env.smtp())
+
+
+_ROUTES = {"print": _print_route, "email": _email_route}
+
+
+def deliver(pdf: Path, settings: "Settings", *, test: bool = False) -> dict[str, str | None]:
+    """Run every enabled route over `pdf`.
+
+    Returns one entry per *enabled* route: `None` when it succeeded, the
+    error text when it did not. Never raises; a route that blows up is the
+    other routes' business only insofar as it is reported.
+    """
+    pdf = Path(pdf)
+    results: dict[str, str | None] = {}
+
+    for name, run_route in _ROUTES.items():
+        route = getattr(settings.output, name)
+        if not route.enabled:
+            continue
+        try:
+            run_route(pdf, settings, test=test)
+        except Exception as err:  # noqa: BLE001 - every route is isolated
+            _LOGGER.exception("%s route failed", name)
+            results[name] = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__
+        else:
+            _LOGGER.info("%s route ok", name)
+            results[name] = None
+
+    if not results:
+        _LOGGER.info("no output routes enabled; archive only")
+
+    return results
