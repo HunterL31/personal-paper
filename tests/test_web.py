@@ -253,16 +253,108 @@ def test_substack_check_reports_errors(client, monkeypatch):
     assert body["ok"] is False and "no such feed" in body["error"]
 
 
+def _diagnosis(ok: bool):
+    """A canned Diagnosis, so no test here touches a printer."""
+    from deliver.printer import Diagnosis, PrinterInfo, Step
+
+    if ok:
+        return Diagnosis(
+            ok=True,
+            steps=[
+                Step("resolve", True, "192.168.1.40:631"),
+                Step("connect", True, "192.168.1.40:631 answered"),
+                Step("ipp", True, "Brother HL-L2460DW answered Get-Printer-Attributes"),
+                Step("pdf", True, "Accepts application/pdf"),
+                Step("state", True, "Idle."),
+            ],
+            info=PrinterInfo("Brother HL-L2460DW", "HL-L2460DW", "idle", True, []),
+            summary="Brother HL-L2460DW: idle, accepts PDF",
+        )
+    step = Step(
+        "connect",
+        False,
+        "No answer from 192.168.1.40:631 (timed out)",
+        "Is the printer on and on the same network as the Unraid box?",
+    )
+    return Diagnosis(ok=False, steps=[Step("resolve", True, "192.168.1.40:631"), step],
+                     info=None, summary=f"connect: {step.detail}")
+
+
 def test_printer_endpoints_never_crash(client, monkeypatch):
     monkeypatch.setattr("deliver.discover", lambda *a, **k: [])
     assert client.post("/output/printer/discover", auth=AUTH).json() == {"ok": True, "result": []}
 
-    def boom(host):
-        raise TimeoutError("printer did not answer")
-
-    monkeypatch.setattr("deliver.test_printer", boom)
+    monkeypatch.setattr("deliver.diagnose", lambda host, **k: _diagnosis(False))
     body = client.post("/output/printer/test", auth=AUTH, json={"host": "192.168.1.40"}).json()
-    assert body["ok"] is False and "printer did not answer" in body["error"]
+    assert body["ok"] is True  # a failed printer is a result, not a crash
+    assert body["result"]["ok"] is False
+    assert "timed out" in body["result"]["summary"]
+
+    assert client.post("/output/printer/test", auth=AUTH, json={}).json() == {
+        "ok": False, "error": "No printer host set"
+    }
+
+
+def test_printer_test_returns_the_whole_checklist(client, monkeypatch):
+    monkeypatch.setattr("deliver.diagnose", lambda host, **k: _diagnosis(True))
+
+    body = client.post("/output/printer/test", auth=AUTH, json={"host": "192.168.1.40"}).json()
+
+    assert body["ok"] is True
+    result = body["result"]
+    assert result["ok"] is True
+    assert result["summary"] == "Brother HL-L2460DW: idle, accepts PDF"
+    assert [s["name"] for s in result["steps"]] == [
+        "resolve", "connect", "ipp", "pdf", "state"
+    ]
+    assert set(result["steps"][0]) == {"name", "ok", "detail", "hint"}
+    assert result["info"]["accepts_pdf"] is True
+
+    # The check is remembered for the status strip.
+    import state
+
+    assert state.load_state()["printer_check"]["summary"] == result["summary"]
+
+
+def test_status_strip_shows_the_last_printer_check(client, monkeypatch):
+    import state
+
+    settings = Settings()
+    settings.output.print.printer_host = "192.168.1.40"
+    settings.save()
+
+    # Nothing recorded yet: the strip says nothing about the printer.
+    assert "<dt>Printer</dt>" not in client.get("/output", auth=AUTH).text
+
+    monkeypatch.setattr("deliver.diagnose", lambda host, **k: _diagnosis(True))
+    client.post("/output/printer/test", auth=AUTH, json={"host": "192.168.1.40"})
+
+    text = client.get("/output", auth=AUTH).text
+    assert "<dt>Printer</dt>" in text
+    assert "Brother HL-L2460DW: idle, accepts PDF" in text
+    assert "checked" in text
+
+    # No printer configured at all: the line goes away again.
+    blank = Settings()
+    blank.save()
+    assert "<dt>Printer</dt>" not in client.get("/output", auth=AUTH).text
+    assert state.load_state()["printer_check"]["ok"] is True
+
+
+def test_test_page_refuses_when_the_printer_cannot_be_reached(client, monkeypatch):
+    printed = []
+
+    monkeypatch.setattr("deliver.diagnose", lambda host, **k: _diagnosis(False))
+    monkeypatch.setattr("deliver.print_pdf", lambda *a, **k: printed.append(a))
+
+    body = client.post(
+        "/output/printer/test-page", auth=AUTH, json={"host": "192.168.1.40"}
+    ).json()
+
+    assert body["ok"] is False
+    assert "No answer from 192.168.1.40:631" in body["error"]
+    assert "same network" in body["error"]  # the hint travels with it
+    assert printed == [], "nothing was rendered or sent to a printer that is not there"
 
 
 def test_email_test_reports_errors(client, monkeypatch):

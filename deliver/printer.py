@@ -21,9 +21,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import socket
 import struct
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -66,7 +68,7 @@ REQUESTED_ATTRIBUTES = [
 
 @dataclass
 class PrinterInfo:
-    """What the Output tab's "Test" button shows."""
+    """What the Output tab's "Verify connection" button shows."""
 
     name: str
     model: str
@@ -200,8 +202,8 @@ def print_pdf(pdf: Path, host: str, *, duplex: bool = True) -> None:
 
 
 # ---------------------------------------------------------------- attributes
-async def _fetch_attributes(uri: str) -> dict[str, Any]:
-    async with IPP(host=uri, request_timeout=10) as ipp:
+async def _fetch_attributes(uri: str, *, timeout: float = 10.0) -> dict[str, Any]:
+    async with IPP(host=uri, request_timeout=timeout) as ipp:
         response = await ipp.execute(
             IppOperation.GET_PRINTER_ATTRIBUTES,
             {"operation-attributes-tag": {"requested-attributes": REQUESTED_ATTRIBUTES}},
@@ -232,6 +234,261 @@ def test_printer(host: str) -> PrinterInfo:
     )
     _LOGGER.info("printer %s: %s, pdf=%s", uri, info.state, info.accepts_pdf)
     return info
+
+
+
+# ---------------------------------------------------------------- diagnosis
+@dataclass
+class Step:
+    """One question asked of the printer, and what came back."""
+
+    name: str
+    ok: bool
+    detail: str
+    hint: str = ""
+
+
+@dataclass
+class Diagnosis:
+    """Every step tried, in order, stopping at the first failure."""
+
+    ok: bool
+    steps: list[Step]
+    info: PrinterInfo | None
+    summary: str
+
+    @property
+    def failed(self) -> Step | None:
+        return next((step for step in self.steps if not step.ok), None)
+
+
+HINT_RESOLVE = (
+    "Use the printer's IP address from its network settings page, or enable "
+    "host networking so .local names resolve."
+)
+HINT_CONNECT = (
+    "Is the printer on and on the same network as the Unraid box? Check the "
+    "IP on the printer's Network menu."
+)
+HINT_IPP = (
+    "The printer answered on the port but not to IPP. Try the path "
+    "/ipp/print, or ipps:// if it only allows TLS."
+)
+HINT_PDF = (
+    "This printer does not accept PDF directly; the CUPS fallback in PLAN.md "
+    "is needed."
+)
+HINT_STOPPED = "Clear the printer's error (paper, cover, toner) and test again."
+
+#: IPP printer-state values, in the words the Output tab uses.
+STATE_WORDS = {3: "idle", 4: "processing", 5: "stopped"}
+
+#: IPP printer-state-reasons keywords in plain English. The `-warning`,
+#: `-report` and `-error` suffix a printer may append is stripped first.
+REASON_WORDS = {
+    "connecting-to-device": "Connecting to the print engine.",
+    "cover-open": "Cover open.",
+    "developer-empty": "Developer empty.",
+    "developer-low": "Developer low.",
+    "door-open": "Door open.",
+    "fuser-over-temp": "Fuser too hot.",
+    "fuser-under-temp": "Fuser warming up.",
+    "input-tray-missing": "Paper tray missing.",
+    "interpreter-resource-unavailable": "The printer is out of memory.",
+    "marker-supply-empty": "Out of toner.",
+    "marker-supply-low": "Toner low.",
+    "marker-waste-almost-full": "Waste toner box nearly full.",
+    "marker-waste-full": "Waste toner box full.",
+    "media-empty": "Out of paper.",
+    "media-jam": "Paper jam.",
+    "media-low": "Paper low.",
+    "media-needed": "Out of paper.",
+    "moving-to-paused": "The printer is pausing.",
+    "offline": "The printer is offline.",
+    "opc-life-over": "Drum worn out.",
+    "opc-near-eol": "Drum near the end of its life.",
+    "other": "Something else needs attention.",
+    "output-area-almost-full": "Output tray nearly full.",
+    "output-area-full": "Output tray full.",
+    "output-tray-missing": "Output tray missing.",
+    "paused": "The printer is paused.",
+    "shutdown": "The printer is shut down.",
+    "spool-area-full": "The printer's queue is full.",
+    "stopped-partly": "The printer is partly stopped.",
+    "stopping": "The printer is stopping.",
+    "timed-out": "The print engine timed out.",
+    "toner-empty": "Out of toner.",
+    "toner-low": "Toner low.",
+}
+REASON_SEVERITIES = ("-error", "-warning", "-report")
+
+
+def _as_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+def reason_words(reason: str) -> str:
+    """One IPP state reason as a sentence; unknown ones keep their own words."""
+    reason = (reason or "").strip()
+    base = reason
+    for severity in REASON_SEVERITIES:
+        if base.endswith(severity):
+            base = base[: -len(severity)]
+            break
+    if not base or base == "none":
+        return ""
+    known = REASON_WORDS.get(base)
+    if known:
+        return known
+    words = base.replace("-", " ").strip()
+    return f"{words[:1].upper()}{words[1:]}." if words else ""
+
+
+def _state_detail(state: str, reasons: list[str]) -> str:
+    sentences = [f"{state[:1].upper()}{state[1:]}." if state else "Unknown state."]
+    for reason in reasons:
+        words = reason_words(reason)
+        if words and words not in sentences:
+            sentences.append(words)
+    return " ".join(sentences)
+
+
+def _connect_failure(err: Exception) -> str:
+    if isinstance(err, socket.timeout) or isinstance(err, TimeoutError):
+        return "timed out"
+    if isinstance(err, ConnectionRefusedError):
+        return "connection refused"
+    if isinstance(err, OSError) and err.strerror:
+        return str(err.strerror).lower()
+    return str(err) or type(err).__name__
+
+
+def diagnose(host: str, *, timeout: float = 5.0) -> Diagnosis:
+    """Ask the printer, step by step, and say plainly what is wrong.
+
+    Never raises: every failure becomes the last `Step` in the diagnosis,
+    with a hint the reader can act on.
+    """
+    steps: list[Step] = []
+
+    def done(info: PrinterInfo | None, summary: str) -> Diagnosis:
+        ok = all(step.ok for step in steps)
+        return Diagnosis(ok=ok, steps=steps, info=info, summary=summary)
+
+    def failed(name: str, detail: str, hint: str) -> Diagnosis:
+        steps.append(Step(name=name, ok=False, detail=detail, hint=hint))
+        return done(None, f"{name}: {detail}")
+
+    # 1. resolve -----------------------------------------------------------
+    try:
+        uri = printer_uri(host)
+    except ValueError as err:
+        return failed("resolve", str(err), HINT_RESOLVE)
+
+    parts = urlsplit(uri)
+    hostname = parts.hostname or ""
+    port = parts.port or DEFAULT_PORT
+    try:
+        addresses = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return failed("resolve", f"Could not resolve {hostname!r}", HINT_RESOLVE)
+    if not addresses:
+        return failed("resolve", f"Could not resolve {hostname!r}", HINT_RESOLVE)
+
+    address = str(addresses[0][4][0])
+    where = f"{hostname}:{port}"
+    detail = where if address == hostname else f"{where} is {address}"
+    steps.append(Step("resolve", True, detail))
+
+    # 2. connect -----------------------------------------------------------
+    try:
+        with socket.create_connection((hostname, port), timeout=timeout):
+            pass
+    except Exception as err:  # noqa: BLE001 - every failure is a diagnosis
+        return failed(
+            "connect", f"No answer from {where} ({_connect_failure(err)})", HINT_CONNECT
+        )
+    steps.append(Step("connect", True, f"{where} answered"))
+
+    # 3. ipp ---------------------------------------------------------------
+    try:
+        attributes = asyncio.run(_fetch_attributes(uri, timeout=max(timeout, 10.0)))
+    except Exception as err:  # noqa: BLE001 - pyipp raises a family of errors
+        _LOGGER.warning("IPP query to %s failed", uri, exc_info=True)
+        text = str(err) or type(err).__name__
+        return failed("ipp", f"{uri} did not answer IPP ({text})", HINT_IPP)
+    if not attributes:
+        return failed("ipp", f"No printer attributes returned by {uri}", HINT_IPP)
+
+    printer = Printer.from_dict(attributes)
+    formats = [str(f) for f in _as_list(attributes.get("document-format-supported"))]
+    label = printer.info.name or printer.info.model or where
+    steps.append(Step("ipp", True, f"{label} answered Get-Printer-Attributes"))
+
+    # 4. pdf ---------------------------------------------------------------
+    accepts_pdf = "application/pdf" in formats
+    if not accepts_pdf:
+        return failed(
+            "pdf",
+            f"{label} does not list application/pdf"
+            + (f" (it takes {', '.join(formats)})" if formats else ""),
+            HINT_PDF,
+        )
+    steps.append(Step("pdf", True, "Accepts application/pdf"))
+
+    # 5. state -------------------------------------------------------------
+    raw_state = attributes.get("printer-state")
+    state = STATE_WORDS.get(
+        raw_state if isinstance(raw_state, int) else -1,
+        str(printer.state.printer_state or "unknown"),
+    )
+    reasons = [r for r in _as_list(attributes.get("printer-state-reasons")) if r]
+    detail = _state_detail(state, reasons)
+    info = PrinterInfo(
+        name=printer.info.name,
+        model=printer.info.model or printer.info.name,
+        state=state,
+        accepts_pdf=accepts_pdf,
+        formats=formats,
+    )
+
+    in_error = any(r.strip().endswith("-error") for r in reasons)
+    if state == "stopped" or in_error:
+        steps.append(Step("state", False, detail, HINT_STOPPED))
+        return done(info, f"state: {detail}")
+
+    steps.append(Step("state", True, detail))
+    _LOGGER.info("printer %s: %s", uri, detail)
+    return done(info, f"{label}: {state}, accepts PDF")
+
+
+# ------------------------------------------------------- remembering a check
+def record_printer_check(diagnosis: Diagnosis) -> None:
+    """Remember the last check for the status strip. Never raises."""
+    try:
+        import state as state_file
+
+        state_file.update_state(
+            printer_check={
+                "ok": bool(diagnosis.ok),
+                "when": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "summary": diagnosis.summary,
+            }
+        )
+    except Exception:  # noqa: BLE001 - the strip is never worth an exception
+        _LOGGER.warning("could not record the printer check", exc_info=True)
+
+
+def record_print_result(host: str, error: str = "") -> None:
+    """Remember a print attempt the same way a check is remembered."""
+    summary = (
+        f"print to {host} failed: {error}" if error else f"print job accepted by {host}"
+    )
+    record_printer_check(Diagnosis(ok=not error, steps=[], info=None, summary=summary))
 
 
 # ----------------------------------------------------------------- discovery

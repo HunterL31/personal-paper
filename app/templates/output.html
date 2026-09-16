@@ -17,10 +17,14 @@
   </div>
   <div class="actions">
     <button type="button" id="discover">Discover</button>
-    <button type="button" id="test-printer">Test</button>
+    <button type="button" id="test-printer">Verify connection</button>
     <button type="button" id="test-page">Print test page</button>
   </div>
   <p class="result" id="printer_result"></p>
+  <div class="check" id="printer_check" hidden>
+    <p class="check-summary" id="printer_summary"></p>
+    <ul class="check-steps" id="printer_steps"></ul>
+  </div>
   <p class="note">Discovery needs the container on the host's network (mDNS); on bridge
   networking type the printer's IP instead.</p>
 
@@ -117,16 +121,78 @@ discovered.addEventListener("change", function () {
   nameField.value = option.dataset.name || "";
 });
 
+/* The verification checklist: one line per step, ✓ or ✗, detail and hint. */
+const checkBox = document.getElementById("printer_check");
+const summaryLine = document.getElementById("printer_summary");
+const stepList = document.getElementById("printer_steps");
+
+function showChecking(text) {
+  checkBox.hidden = false;
+  summaryLine.textContent = text;
+  summaryLine.className = "check-summary";
+  stepList.innerHTML = "";
+}
+
+function showDiagnosis(result) {
+  if (!result || !result.steps) return "";
+  checkBox.hidden = false;
+  summaryLine.textContent = result.summary || "";
+  summaryLine.className = result.ok ? "check-summary" : "check-summary err";
+  stepList.innerHTML = "";
+  result.steps.forEach(function (step) {
+    const item = document.createElement("li");
+    item.className = step.ok ? "step" : "step bad-step";
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    mark.textContent = step.ok ? "\u2713" : "\u2717";
+    const name = document.createElement("span");
+    name.className = "step-name";
+    name.textContent = step.name;
+    const detail = document.createElement("span");
+    detail.className = "step-detail";
+    detail.textContent = step.detail || "";
+    item.appendChild(mark);
+    item.appendChild(name);
+    item.appendChild(detail);
+    if (step.hint) {
+      const hint = document.createElement("p");
+      hint.className = "step-hint";
+      hint.textContent = step.hint;
+      item.appendChild(hint);
+    }
+    stepList.appendChild(item);
+  });
+  if (result.info && !nameField.value) nameField.value = result.info.name || "";
+  return "";
+}
+
+function verifyPrinter(host) {
+  showChecking("Checking printer…");
+  return postJSON("/output/printer/test", { host: host }).then(function (data) {
+    if (data && data.ok) {
+      showDiagnosis(data.result);
+    } else {
+      checkBox.hidden = false;
+      summaryLine.textContent = (data && data.error) || "The check failed";
+      summaryLine.className = "check-summary err";
+      stepList.innerHTML = "";
+    }
+    return data;
+  });
+}
+
 const testButton = document.getElementById("test-printer");
 testButton.addEventListener("click", function () {
   withButton(testButton, printerResult,
-    function () { return postJSON("/output/printer/test", { host: hostField.value.trim() }); },
-    function (result) {
-      if (!nameField.value) nameField.value = result.name || "";
-      return result.name + " (" + result.model + ") — " + result.state
-        + ", PDF " + (result.accepts_pdf ? "accepted" : "NOT accepted");
-    });
+    function () {
+      /* The checklist below says everything; the line beside the button stays quiet. */
+      return verifyPrinter(hostField.value.trim()).then(function () { return { ok: true }; });
+    },
+    function () { return ""; });
 });
+
+/* A saved printer is checked as the page opens, so the tab opens on the truth. */
+if (hostField.value.trim()) verifyPrinter(hostField.value.trim());
 
 const testPageButton = document.getElementById("test-page");
 testPageButton.addEventListener("click", function () {
@@ -137,7 +203,11 @@ testPageButton.addEventListener("click", function () {
         duplex: document.getElementById("duplex").checked,
       });
     },
-    function (result) { return "Sent " + result.pages + " page(s) to " + result.host; });
+    function (result) { return "Sent " + result.pages + " page(s) to " + result.host; })
+    .then(function (data) {
+      /* A refused test page is a printer problem: re-run the checklist. */
+      if (data && !data.ok && hostField.value.trim()) verifyPrinter(hostField.value.trim());
+    });
 });
 
 const emailButton = document.getElementById("send-test");
