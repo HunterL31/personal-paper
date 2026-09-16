@@ -166,6 +166,26 @@
     Required="true"
     Mask="false">America/Los_Angeles</Config>
   <Config
+    Name="IMAP_MAILBOX"
+    Target="IMAP_MAILBOX"
+    Default="INBOX"
+    Mode=""
+    Description="Mailbox or Gmail label the Substack emails land in. Default INBOX."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+  <Config
+    Name="TZ"
+    Target="TZ"
+    Default="INBOX"
+    Mode=""
+    Description="Mailbox or Gmail label the Substack emails land in. Default INBOX."
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false">America/Los_Angeles</Config>
+  <Config
     Name="DATA_DIR"
     Target="DATA_DIR"
     Default="/data"

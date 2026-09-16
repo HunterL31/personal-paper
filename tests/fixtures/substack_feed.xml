@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>The Slow Kitchen</title>
+    <description>Cooking on the long setting.</description>
+    <link>https://slowkitchen.substack.com</link>
+    <image>
+      <url>https://substackcdn.com/image/fetch/slowkitchen.png</url>
+      <title>The Slow Kitchen</title>
+      <link>https://slowkitchen.substack.com</link>
+    </image>
+    <generator>Substack</generator>
+    <lastBuildDate>Mon, 15 Sep 2025 16:02:11 GMT</lastBuildDate>
+    <atom:link href="https://slowkitchen.substack.com/feed" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>The bread you meant to make</title>
+      <description>A loaf is mostly a decision you made the night before.</description>
+      <link>https://slowkitchen.substack.com/p/the-bread-you-meant-to-make</link>
+      <guid isPermaLink="false">https://slowkitchen.substack.com/p/the-bread-you-meant-to-make</guid>
+      <dc:creator>Nora Feld</dc:creator>
+      <pubDate>Mon, 15 Sep 2025 16:00:00 GMT</pubDate>
+      <enclosure url="https://substackcdn.com/image/fetch/loaf.jpg" length="0" type="image/jpeg"/>
+      <content:encoded><![CDATA[<div class="captioned-image-container"><figure><a class="image-link image2 is-viewable-img" target="_blank" href="https://substackcdn.com/image/fetch/loaf.jpg"><div class="image2-inset"><picture><img src="https://substackcdn.com/image/fetch/loaf.jpg" width="1456" height="1092" alt=""/></picture></div></a><figcaption class="image-caption">A loaf, photographed badly, on a Tuesday.</figcaption></figure></div>
+<p>There is a loaf that exists only in the future tense, and most weeks that is where it stays. You buy the flour on Saturday with real intent, and on Thursday the bag is still standing there on the counter, faintly accusing.</p>
+<h2>Start on Friday</h2>
+<p>The dough does not care what time it is. It cares about temperature, and about being left alone, which are the two things a weeknight kitchen is worst at providing. Friday night is the exception: nothing is expected of you, and the oven is free.</p>
+<blockquote><p>Flour, water, salt, time. The rest is decoration.</p></blockquote>
+<ul>
+<li>Mix at nine, when the kitchen has finished being a kitchen.</li>
+<li>Fold it twice before bed, badly, with wet hands.</li>
+<li>Bake it before the coffee, while the oven is the hottest thing in the house.</li>
+</ul>
+<div class="subscription-widget-wrap" data-attrs="{&quot;url&quot;:&quot;https://slowkitchen.substack.com/subscribe&quot;}"><div class="subscription-widget show-subscribe"><div class="preamble"><p class="cta-caption">Thanks for reading The Slow Kitchen! Subscribe for free to receive new posts.</p></div><form class="subscription-widget-subscribe"><input type="email" class="email-input" name="email" placeholder="Type your email..." tabindex="-1"/><button type="submit" class="button primary" tabindex="-1"><span>Subscribe</span></button></form></div></div>
+<p>I have made this loaf badly for six years, which is long enough to say with some confidence that the bad ones are still better than no bread at all.<sup class="footnote-anchor">1</sup></p>
+<div class="captioned-button-wrap"><div class="button-wrapper"><a class="button primary" href="https://slowkitchen.substack.com/p/the-bread-you-meant-to-make?action=share"><span>Share</span></a></div></div>
+<p>Friday, then. Nine o'clock. <em>Flour, water, salt,</em> and the patience to go to bed while something else is working.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>The case for the second cup</title>
+      <description>Nobody needs it. That is the entire appeal.</description>
+      <link>https://slowkitchen.substack.com/p/the-case-for-the-second-cup</link>
+      <guid isPermaLink="false">https://slowkitchen.substack.com/p/the-case-for-the-second-cup</guid>
+      <dc:creator>Nora Feld</dc:creator>
+      <pubDate>Sun, 14 Sep 2025 17:30:00 GMT</pubDate>
+      <content:encoded><![CDATA[<p>The first cup is chemistry. The second cup is a decision, and it is the decision I would like to defend.</p>
+<div class="paywall-jump"></div>
+<div class="subscription-widget-wrap" data-attrs="{&quot;url&quot;:&quot;https://slowkitchen.substack.com/subscribe&quot;}"><div class="subscription-widget show-subscribe"><div class="preamble"><p class="cta-caption">This post is for paid subscribers</p></div><form class="subscription-widget-subscribe"><input type="email" class="email-input" name="email" placeholder="Type your email..." tabindex="-1"/><button type="submit" class="button primary" tabindex="-1"><span>Subscribe</span></button></form></div></div>]]></content:encoded>
+    </item>
+    <item>
+      <title>What to do with the end of the summer tomatoes</title>
+      <description>They are not going to get any better than this.</description>
+      <link>https://slowkitchen.substack.com/p/end-of-the-summer-tomatoes</link>
+      <guid isPermaLink="false">https://slowkitchen.substack.com/p/end-of-the-summer-tomatoes</guid>
+      <dc:creator>Nora Feld</dc:creator>
+      <pubDate>Fri, 05 Sep 2025 16:00:00 GMT</pubDate>
+      <content:encoded><![CDATA[<p>The tomatoes at the end of the season are ugly and they are the best ones, and both of those facts are the same fact.</p>
+<p>Cut out whatever has gone soft, salt the rest, and let them sit in a bowl on the counter for an hour while you decide what you are doing with your evening.</p>]]></content:encoded>
+    </item>
+  </channel>
+</rss>
