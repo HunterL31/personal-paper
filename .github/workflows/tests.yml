@@ -1,0 +1,43 @@
+name: tests
+
+# Runs the offline test suite. Tests must never touch the network: the
+# gatherers are exercised against fixtures under tests/fixtures/.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    name: pytest (python 3.11)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install sgmllib3k first
+        # sgmllib3k is a feedparser dependency whose setup.py does not build
+        # against modern setuptools; forcing the stdlib distutils shim lets it
+        # install. It has to go in before requirements-dev.txt pulls it in.
+        run: SETUPTOOLS_USE_DISTUTILS=stdlib pip install sgmllib3k
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Install Playwright Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Run tests
+        env:
+          DATA_DIR: /tmp/ml-data
+        run: python -m pytest -q
