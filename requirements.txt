@@ -1,0 +1,16 @@
+# Runtime
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+jinja2==3.1.6
+pydantic==2.11.9
+playwright==1.56.0
+apscheduler==3.11.0
+requests==2.32.5
+icalendar==6.3.1
+recurring-ical-events==3.8.0
+feedparser==6.0.12
+beautifulsoup4==4.13.5
+pyipp==0.17.0
+zeroconf==0.148.0
+pymupdf==1.26.4
+python-multipart==0.0.20
