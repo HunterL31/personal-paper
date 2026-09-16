@@ -339,6 +339,13 @@ which negotiates the format. Not built unless needed.
   printer IP; volume `./data:/data`, `env_file: .env`,
   `restart: unless-stopped`. `unraid-template.xml` carries the same with
   every variable documented and secrets marked as password fields.
+- Image publishing: `.github/workflows/docker.yml` builds the image on
+  every push to `main` and on `v*` tags and pushes it to Docker Hub as
+  `<DOCKERHUB_USERNAME>/molly-ledger` with tags `latest`, the version, and
+  the short SHA. Needs two repository secrets, `DOCKERHUB_USERNAME` and
+  `DOCKERHUB_TOKEN` (a Docker Hub access token, not the account password).
+  `docker-compose.yml` and `unraid-template.xml` reference that published
+  image so the Unraid box never builds anything.
 - Failure notification: if a run fails, post to Unraid's notification
   script (`/usr/local/emhttp/webGui/scripts/notify`, reachable by mounting
   it) or send an email to the same SMTP account; chosen on the Output
