@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" action="/look">
+
+  <h2>The paper</h2>
+  <p class="note">Nothing here can change an article's words. It sets the masthead,
+  the ears, the fonts and how much of the lead story fits on the front page.</p>
+
+  <div class="grid">
+    <label class="field"><span>Paper name</span>
+      <input type="text" name="paper_name" value="{{ look.paper_name }}"></label>
+    <label class="field"><span>Imprint</span>
+      <input type="text" name="imprint" value="{{ look.imprint }}"></label>
+    <label class="field"><span>Price line</span>
+      <input type="text" name="price" value="{{ look.price }}"></label>
+  </div>
+
+  <h2>Ears</h2>
+  <div class="grid">
+    <label class="field"><span>Initials (right ear)</span>
+      <input type="text" name="ear_initials" value="{{ look.ear.initials }}"></label>
+    <label class="field"><span>Ear lines (one per line)</span>
+      <textarea name="ear_lines">{{ look.ear.lines | join("\n") }}</textarea></label>
+  </div>
+
+  <h2>Type</h2>
+  <div class="grid">
+    <label class="field"><span>Masthead font</span>
+      <select name="masthead_font">
+        {% for font in fonts_masthead %}
+        <option value="{{ font }}" {{ "selected" if font == look.masthead_font else "" }}>{{ font }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="field"><span>Headline font</span>
+      <select name="headline_font">
+        {% for font in fonts_head %}
+        <option value="{{ font }}" {{ "selected" if font == look.headline_font else "" }}>{{ font }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="field"><span>Body font</span>
+      <select name="body_font">
+        {% for font in fonts_body %}
+        <option value="{{ font }}" {{ "selected" if font == look.body_font else "" }}>{{ font }}</option>
+        {% endfor %}
+      </select></label>
+  </div>
+  <div class="grid">
+    <label class="field"><span>Body size (pt)</span>
+      <select name="body_size_pt" class="narrow">
+        {% for size in body_sizes %}
+        <option value="{{ "%.1f"|format(size) }}" {{ "selected" if size == look.body_size_pt else "" }}>{{ "%.1f"|format(size) }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="field"><span>Lead story body height (in)</span>
+      <input type="number" class="narrow" name="lead_body_height_in" step="0.1" min="1.5" max="5.0"
+             value="{{ "%.1f"|format(look.lead_body_height_in) }}"></label>
+  </div>
+
+  <h2>Sections</h2>
+  <p>
+    <label class="inline"><input type="checkbox" name="show_todo" {{ "checked" if look.show_todo else "" }}> To do</label>
+    <label class="inline"><input type="checkbox" name="show_hourly" {{ "checked" if look.show_hourly else "" }}> Hour by hour</label>
+    <label class="inline"><input type="checkbox" name="show_notes" {{ "checked" if look.show_notes else "" }}> Notes</label>
+  </p>
+
+  <div class="actions">
+    <button class="primary" type="submit">Save look</button>
+    <a href="/preview">See it on the Preview tab &rarr;</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,106 @@
+/* The Molly Ledger settings page: newspaper-plain, black rules, system serif. */
+:root {
+  --rule: 1px solid #000;
+  --grey: #555;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+  color: #000;
+  background: #fff;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------- masthead */
+.masthead { text-align: center; border-bottom: 3px double #000; padding-bottom: 0.4rem; }
+.masthead h1 { font-size: 2.4rem; margin: 0.4rem 0 0.2rem; letter-spacing: 0.02em; }
+.masthead .dateline { margin: 0 0 0.3rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.12em; }
+
+/* ------------------------------------------------------------ status */
+.status { border-bottom: var(--rule); padding: 0.5rem 0; font-size: 0.85rem; }
+.status dl { display: flex; flex-wrap: wrap; gap: 0.2rem 1.5rem; margin: 0; }
+.status dl div { display: flex; gap: 0.35rem; }
+.status dt { font-variant: small-caps; color: var(--grey); }
+.status dt::after { content: ":"; }
+.status dd { margin: 0; }
+.good { font-weight: bold; }
+.bad, .error { color: #a00; }
+.error { margin: 0.4rem 0 0; font-size: 0.85rem; }
+
+/* -------------------------------------------------------------- tabs */
+.tabs { display: flex; gap: 1.25rem; border-bottom: var(--rule); padding: 0.5rem 0; margin-bottom: 1rem; }
+.tabs a { color: #000; text-decoration: none; font-variant: small-caps; font-size: 1.05rem; letter-spacing: 0.05em; }
+.tabs a.active { font-weight: bold; border-bottom: 3px solid #000; }
+.tabs a:hover { text-decoration: underline; }
+
+.flash { border: var(--rule); padding: 0.35rem 0.6rem; font-size: 0.85rem; background: #f3f3f3; }
+
+/* ----------------------------------------------------------- content */
+main h2 { font-size: 1.15rem; border-bottom: var(--rule); padding-bottom: 0.2rem; margin: 1.6rem 0 0.6rem; }
+main h2:first-child { margin-top: 0.4rem; }
+p.note { font-size: 0.85rem; color: var(--grey); margin: 0.2rem 0 0.8rem; }
+
+label { display: block; font-size: 0.85rem; }
+label.inline { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; margin-right: 1rem; }
+.field { margin-bottom: 0.7rem; }
+.field > span { display: block; font-variant: small-caps; color: var(--grey); font-size: 0.8rem; }
+
+input[type="text"], input[type="number"], input[type="time"], select, textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.25rem 0.35rem;
+  border: var(--rule);
+  background: #fff;
+  color: #000;
+  width: 100%;
+  max-width: 28rem;
+}
+input[readonly] { background: #f2f2f2; color: #333; }
+textarea { min-height: 4.5rem; }
+input.narrow, select.narrow { max-width: 9rem; }
+
+.grid { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.grid > .field { flex: 1 1 14rem; }
+
+button {
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.3rem 0.8rem;
+  border: var(--rule);
+  background: #fff;
+  cursor: pointer;
+}
+button:hover { background: #eee; }
+button.primary { font-weight: bold; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 1rem 0; }
+
+/* ------------------------------------------------------------- rows */
+table { border-collapse: collapse; width: 100%; margin-bottom: 0.5rem; }
+th, td { text-align: left; padding: 0.3rem 0.5rem 0.3rem 0; vertical-align: top; font-size: 0.9rem; }
+th { font-variant: small-caps; color: var(--grey); font-weight: normal; border-bottom: var(--rule); }
+tbody tr + tr td { border-top: 1px dotted #999; }
+td input[type="text"], td input[type="number"] { max-width: 100%; }
+
+.result { font-size: 0.85rem; margin: 0.25rem 0 0; }
+.result.err { color: #a00; }
+.env { font-size: 0.85rem; }
+.env td:first-child { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.mono, code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.82rem; }
+pre.log { border: var(--rule); padding: 0.6rem; overflow-x: auto; max-height: 34rem; overflow-y: auto; white-space: pre-wrap; }
+.panel { border: var(--rule); padding: 0.6rem 0.8rem; font-size: 0.88rem; }
+.panel p { margin: 0.25rem 0; }
+
+/* ---------------------------------------------------------- preview */
+.pages { margin-top: 1rem; }
+.pagecount { font-weight: bold; font-size: 1rem; }
+.warn { color: #a00; font-weight: bold; }
+.pages figure { margin: 0 0 1.2rem; }
+.pages figcaption { font-variant: small-caps; color: var(--grey); font-size: 0.8rem; margin-bottom: 0.2rem; }
+.pages img { width: 100%; max-width: 40rem; border: var(--rule); display: block; }
+
+footer { border-top: var(--rule); margin-top: 2.5rem; padding-top: 0.4rem; font-size: 0.8rem; color: var(--grey); text-align: center; }
