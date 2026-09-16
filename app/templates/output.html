@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" action="/output">
+
+  <h2>Print</h2>
+  <p>
+    <label class="inline"><input type="checkbox" name="print_enabled" {{ "checked" if output.print.enabled else "" }}> Print every morning</label>
+    <label class="inline"><input type="checkbox" name="duplex" id="duplex" {{ "checked" if output.print.duplex else "" }}> Duplex (long edge)</label>
+  </p>
+  <div class="grid">
+    <label class="field"><span>Printer host or IP</span>
+      <input type="text" name="printer_host" id="printer_host" value="{{ output.print.printer_host }}" placeholder="192.168.1.40"></label>
+    <label class="field"><span>Printer name (from discovery)</span>
+      <input type="text" name="printer_name" id="printer_name" value="{{ output.print.printer_name }}" readonly></label>
+    <div class="field"><span>Discovered on the LAN</span>
+      <select id="discovered"><option value="">—</option></select></div>
+  </div>
+  <div class="actions">
+    <button type="button" id="discover">Discover</button>
+    <button type="button" id="test-printer">Test</button>
+    <button type="button" id="test-page">Print test page</button>
+  </div>
+  <p class="result" id="printer_result"></p>
+  <p class="note">Discovery needs the container on the host's network (mDNS); on bridge
+  networking type the printer's IP instead.</p>
+
+  <h2>Email</h2>
+  <p>
+    <label class="inline"><input type="checkbox" name="email_enabled" {{ "checked" if output.email.enabled else "" }}> Email the PDF every morning</label>
+  </p>
+  <div class="grid">
+    <label class="field"><span>To (comma separated)</span>
+      <input type="text" name="email_to" id="email_to" value="{{ email_to }}"></label>
+    <label class="field"><span>Subject ({date} is filled in)</span>
+      <input type="text" name="email_subject" value="{{ output.email.subject }}"></label>
+  </div>
+  <div class="actions">
+    <button type="button" id="send-test">Send test</button>
+    <span class="note">{% if smtp_user %}Sent from {{ smtp_user }}.{% else %}No SMTP account is configured.{% endif %}</span>
+  </div>
+  <p class="result" id="email_result"></p>
+
+  <h2>Schedule</h2>
+  <div class="grid">
+    <label class="field"><span>Time</span>
+      <input type="time" class="narrow" name="schedule_time" value="{{ output.schedule.time }}"></label>
+    <div class="field"><span>Days</span>
+      <p>
+        {% for index, label in days %}
+        <label class="inline"><input type="checkbox" name="day_{{ index }}" {{ "checked" if index in output.schedule.days else "" }}> {{ label }}</label>
+        {% endfor %}
+      </p>
+    </div>
+  </div>
+  <div class="grid">
+    <label class="field"><span>Notify on failure</span>
+      <select name="notify" class="narrow">
+        {% for option in ["none", "email", "unraid"] %}
+        <option value="{{ option }}" {{ "selected" if option == output.notify else "" }}>{{ option }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="field"><span>Notification email</span>
+      <input type="text" name="notify_email" value="{{ output.notify_email }}"></label>
+  </div>
+
+  <div class="actions"><button class="primary" type="submit">Save output</button></div>
+</form>
+
+<h2>Run</h2>
+<div class="actions">
+  <button type="button" id="run-now">Run now</button>
+  <button type="button" id="dry-run">Dry run</button>
+  <span class="note">&ldquo;Run now&rdquo; delivers to every enabled route; a dry run only archives.</span>
+</div>
+<p class="result" id="run_result"></p>
+
+<h2>Container variables</h2>
+<table class="env">
+  <thead><tr><th style="width:16rem">Variable</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for row in env_rows %}
+    <tr><td>{{ row.name }}</td><td>{{ "set in container" if row.set else "not set" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="note">Read-only here: these live in the container's variables, never in the browser.</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const printerResult = document.getElementById("printer_result");
+const hostField = document.getElementById("printer_host");
+const nameField = document.getElementById("printer_name");
+const discovered = document.getElementById("discovered");
+
+const discoverButton = document.getElementById("discover");
+discoverButton.addEventListener("click", function () {
+  withButton(discoverButton, printerResult,
+    function () { return postJSON("/output/printer/discover", {}); },
+    function (result) {
+      discovered.innerHTML = '<option value="">—</option>';
+      result.forEach(function (printer) {
+        const option = document.createElement("option");
+        option.value = printer.host;
+        option.dataset.name = printer.name;
+        option.textContent = printer.name + " — " + printer.host + (printer.model ? " (" + printer.model + ")" : "");
+        discovered.appendChild(option);
+      });
+      return result.length ? result.length + " printer(s) found" : "none found (try the IP)";
+    });
+});
+
+discovered.addEventListener("change", function () {
+  const option = discovered.selectedOptions[0];
+  if (!option || !option.value) return;
+  hostField.value = option.value;
+  nameField.value = option.dataset.name || "";
+});
+
+const testButton = document.getElementById("test-printer");
+testButton.addEventListener("click", function () {
+  withButton(testButton, printerResult,
+    function () { return postJSON("/output/printer/test", { host: hostField.value.trim() }); },
+    function (result) {
+      if (!nameField.value) nameField.value = result.name || "";
+      return result.name + " (" + result.model + ") — " + result.state
+        + ", PDF " + (result.accepts_pdf ? "accepted" : "NOT accepted");
+    });
+});
+
+const testPageButton = document.getElementById("test-page");
+testPageButton.addEventListener("click", function () {
+  withButton(testPageButton, printerResult,
+    function () {
+      return postJSON("/output/printer/test-page", {
+        host: hostField.value.trim(),
+        duplex: document.getElementById("duplex").checked,
+      });
+    },
+    function (result) { return "Sent " + result.pages + " page(s) to " + result.host; });
+});
+
+const emailButton = document.getElementById("send-test");
+emailButton.addEventListener("click", function () {
+  withButton(emailButton, document.getElementById("email_result"),
+    function () { return postJSON("/output/email/test", { to: document.getElementById("email_to").value }); },
+    function (result) { return "Test sent to " + result.sent_to.join(", "); });
+});
+
+/* Run now / Dry run: start the job, then poll until it reports back. */
+const runResult = document.getElementById("run_result");
+function startRun(button, dry) {
+  button.disabled = true;
+  runResult.className = "result";
+  runResult.textContent = dry ? "Dry run started…" : "Run started…";
+  postJSON("/run" + (dry ? "?dry=1" : ""), {}).then(function (data) {
+    if (!data.ok) {
+      button.disabled = false;
+      show(runResult, data.error || "could not start", true);
+      return;
+    }
+    pollJob(data.job, null, function (job) {
+      button.disabled = false;
+      if (job.status === "error") {
+        show(runResult, job.error, true);
+        return;
+      }
+      const r = job.result;
+      const routes = Object.keys(r.delivery || {}).map(function (k) { return k + ": " + r.delivery[k]; });
+      show(runResult,
+        (r.ok ? "Done" : "Failed") + " — " + r.date + ", " + r.pages + " page(s)"
+          + (routes.length ? " — " + routes.join("; ") : "")
+          + (r.error ? " — " + r.error : ""),
+        !r.ok);
+    });
+  });
+}
+document.getElementById("run-now").addEventListener("click", function () { startRun(this, false); });
+document.getElementById("dry-run").addEventListener("click", function () { startRun(this, true); });
+</script>
+{% endblock %}

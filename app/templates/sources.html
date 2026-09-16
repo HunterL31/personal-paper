@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" action="/sources">
+
+  <h2>Calendars</h2>
+  <p class="note">Google Calendar &rarr; the calendar &rarr; &ldquo;Secret address in iCal format&rdquo;.
+  Saved URLs are masked; leave a box empty to keep the URL that is already there.</p>
+  <table>
+    <thead><tr><th style="width:38%">iCal URL</th><th style="width:30%">Name</th><th>Check</th><th style="width:5rem">Remove</th></tr></thead>
+    <tbody>
+      {% for cal in calendars %}
+      <tr>
+        <td>
+          <input type="hidden" name="cal_index" value="{{ cal.index }}">
+          <input type="text" name="cal_url_{{ cal.index }}" id="cal_url_{{ cal.index }}"
+                 placeholder="{{ cal.masked }}" autocomplete="off">
+        </td>
+        <td><input type="text" name="cal_name_{{ cal.index }}" id="cal_name_{{ cal.index }}"
+                   value="{{ cal.name }}" readonly></td>
+        <td>
+          <button type="button" data-check-calendar="{{ cal.index }}">Check</button>
+          <p class="result" id="cal_result_{{ cal.index }}"></p>
+        </td>
+        <td><label class="inline"><input type="checkbox" name="cal_remove_{{ cal.index }}"></label></td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td><input type="text" name="cal_new_url" id="cal_url_new" placeholder="https://calendar.google.com/…/basic.ics" autocomplete="off"></td>
+        <td><input type="text" name="cal_new_name" id="cal_name_new" value="" readonly></td>
+        <td>
+          <button type="button" data-check-calendar="new">Check</button>
+          <p class="result" id="cal_result_new"></p>
+        </td>
+        <td><em>add</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Substacks</h2>
+  <p class="note">The name in <code>&lt;name&gt;.substack.com</code>, or a full feed URL.
+  Order is front-page priority: 1 goes first.</p>
+  <table>
+    <thead><tr><th style="width:5rem">Order</th><th style="width:38%">Publication</th><th style="width:5rem">Paid</th><th>Check</th><th style="width:5rem">Remove</th></tr></thead>
+    <tbody>
+      {% for sub in substacks %}
+      <tr>
+        <td>
+          <input type="hidden" name="sub_index" value="{{ sub.index }}">
+          <input type="number" class="narrow" name="sub_order_{{ sub.index }}" min="1" max="99" value="{{ sub.index + 1 }}">
+        </td>
+        <td><input type="text" name="sub_name_{{ sub.index }}" id="sub_name_{{ sub.index }}" value="{{ sub.name }}"></td>
+        <td><label class="inline"><input type="checkbox" name="sub_paid_{{ sub.index }}" {{ "checked" if sub.paid else "" }}></label></td>
+        <td>
+          <button type="button" data-check-substack="{{ sub.index }}">Check</button>
+          <p class="result" id="sub_result_{{ sub.index }}"></p>
+        </td>
+        <td><label class="inline"><input type="checkbox" name="sub_remove_{{ sub.index }}"></label></td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td><input type="number" class="narrow" name="sub_new_order" min="1" max="99" value="{{ substacks|length + 1 }}"></td>
+        <td><input type="text" name="sub_new_name" id="sub_name_new" placeholder="oneuseful"></td>
+        <td><label class="inline"><input type="checkbox" name="sub_new_paid"></label></td>
+        <td>
+          <button type="button" data-check-substack="new">Check</button>
+          <p class="result" id="sub_result_new"></p>
+        </td>
+        <td><em>add</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Weather</h2>
+  <div class="grid">
+    <label class="field"><span>Latitude</span>
+      <input type="text" class="narrow" name="lat" id="lat" value="{{ sources.weather.lat }}"></label>
+    <label class="field"><span>Longitude</span>
+      <input type="text" class="narrow" name="lon" id="lon" value="{{ sources.weather.lon }}"></label>
+    <div class="field"><span>&nbsp;</span>
+      <button type="button" id="check-weather">Check</button>
+      <p class="result" id="weather_result"></p>
+    </div>
+  </div>
+
+  <h2>Tasks</h2>
+  <div class="grid">
+    <label class="field"><span>Ignore the sync when older than (hours)</span>
+      <input type="number" class="narrow" name="tasks_max_age_hours" min="1" max="168"
+             value="{{ sources.tasks_max_age_hours }}"></label>
+  </div>
+  <div class="panel">
+    <p><strong>Last sync:</strong>
+      {% if tasks_status.updated %}
+        {{ tasks_status.updated }}
+        {%- if tasks_status.age_hours is not none %} ({{ "%.1f"|format(tasks_status.age_hours) }} h ago){% endif %},
+        {{ tasks_status.count }} task{{ "" if tasks_status.count == 1 else "s" }}
+      {% else %}never{% endif %}
+    </p>
+    <p><strong>The iPhone Shortcut posts:</strong></p>
+    <p class="mono">POST http://{{ tasks_host }}/tasks</p>
+    <p class="mono">Authorization: Bearer &lt;TASKS_TOKEN&gt;</p>
+    <p class="mono">Content-Type: application/json</p>
+    <p class="mono">{"tasks": ["..."]}</p>
+    <p class="note">TASKS_TOKEN is {{ "set in container" if tasks_token_set else "not set" }}.
+      A plain-text body with one task per line works too.</p>
+  </div>
+
+  <h2>Container variables</h2>
+  <table class="env">
+    <thead><tr><th style="width:16rem">Variable</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for row in env_rows %}
+      <tr><td>{{ row.name }}</td><td>{{ "set in container" if row.set else "not set" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">Read-only here: these live in the container's variables, never in the browser.</p>
+
+  <div class="actions"><button class="primary" type="submit">Save sources</button></div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-check-calendar]").forEach(function (button) {
+  const key = button.dataset.checkCalendar;
+  button.addEventListener("click", function () {
+    const url = document.getElementById("cal_url_" + key).value.trim();
+    const body = url ? { url: url } : { index: parseInt(key, 10) };
+    withButton(button, document.getElementById("cal_result_" + key),
+      function () { return postJSON("/sources/calendar/check", body); },
+      function (result) {
+        document.getElementById("cal_name_" + key).value = result.name || "";
+        return result.name + " — " + result.events_today + " event(s) today";
+      });
+  });
+});
+
+document.querySelectorAll("[data-check-substack]").forEach(function (button) {
+  const key = button.dataset.checkSubstack;
+  button.addEventListener("click", function () {
+    const name = document.getElementById("sub_name_" + key).value.trim();
+    withButton(button, document.getElementById("sub_result_" + key),
+      function () { return postJSON("/sources/substack/check", { name: name }); },
+      function (result) {
+        return result.publication + " — latest: " + (result.latest_title || "none")
+          + (result.paid_marker_seen ? " (paywalled)" : "");
+      });
+  });
+});
+
+const weatherButton = document.getElementById("check-weather");
+weatherButton.addEventListener("click", function () {
+  withButton(weatherButton, document.getElementById("weather_result"),
+    function () {
+      return postJSON("/sources/weather/check", {
+        lat: document.getElementById("lat").value.trim(),
+        lon: document.getElementById("lon").value.trim(),
+      });
+    },
+    function (result) {
+      return result.summary + " — high " + result.high + ", low " + result.low;
+    });
+});
+</script>
+{% endblock %}

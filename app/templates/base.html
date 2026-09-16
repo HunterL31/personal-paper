@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Molly Ledger — {{ tab|capitalize }}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Molly Ledger</h1>
+  <p class="dateline">Settings, sources and preview &middot; issue No. {{ status.issue }}</p>
+</header>
+
+<section class="status" id="status">
+  <dl>
+    <div><dt>Last run</dt><dd>{{ status.last_run or "never" }}</dd></div>
+    <div><dt>Result</dt><dd>
+      {%- if status.last_error %}<span class="bad">failed</span>
+      {%- elif status.last_run and status.last_pages %}<span class="good">ok</span>, {{ status.last_pages }} page{{ "" if status.last_pages == 1 else "s" }}
+      {%- else %}&mdash;{% endif %}
+    </dd></div>
+    <div><dt>Last success</dt><dd>{{ status.last_success or "never" }}</dd></div>
+    <div><dt>Last paper</dt><dd>
+      {%- if status.archive_url %}<a href="{{ status.archive_url }}">{{ status.archive_name }}</a>
+      {%- else %}none yet{% endif %}
+    </dd></div>
+    <div><dt>Scheduler</dt><dd>
+      {%- if status.scheduler_on %}Next run: {{ status.next_run }}
+      {%- else %}Scheduler off{% endif %}
+    </dd></div>
+    <div><dt>Log</dt><dd><a href="/log">last 200 lines</a></dd></div>
+  </dl>
+  {% if status.last_error %}<p class="error">Last error: {{ status.last_error }}</p>{% endif %}
+</section>
+
+<nav class="tabs">
+  {% for slug, label in tabs %}
+    <a href="/{{ slug }}" class="{{ 'active' if tab == slug else '' }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+
+{% if saved %}<p class="flash">Saved.</p>{% endif %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer>
+  <p>Every article is printed exactly as its author wrote it.</p>
+</footer>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

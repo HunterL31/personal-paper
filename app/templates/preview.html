@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Preview</h2>
+<p class="note">Rendering runs Chromium and takes a few seconds. A paper that spills
+onto a fifth page is the thing to catch here.</p>
+
+<div class="actions">
+  <form method="post" action="/preview?source=sample">
+    <button class="primary" type="submit">Render example</button>
+  </form>
+  <form method="post" action="/preview?source=today">
+    <button type="submit">Render today</button>
+  </form>
+  <span class="note">&ldquo;Render today&rdquo; gathers real data (a dry run: nothing is printed or mailed).</span>
+</div>
+
+{% if job %}
+<p class="result" id="preview_status">Rendering…</p>
+<div class="pages" id="pages"></div>
+{% else %}
+<p class="note">No preview yet.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if job %}
+<script>
+const job = {{ job | tojson }};
+const statusLine = document.getElementById("preview_status");
+const pages = document.getElementById("pages");
+
+function renderJob(job) {
+  if (job.status === "error") {
+    show(statusLine, job.error || "render failed", true);
+    return;
+  }
+  if (job.status !== "done") {
+    statusLine.textContent = "Rendering…";
+    return;
+  }
+  const result = job.result;
+  statusLine.innerHTML = '<span class="pagecount">' + result.pages + ' page'
+    + (result.pages === 1 ? '' : 's') + '</span>'
+    + (result.pages > 4 ? ' <span class="warn">— more than four pages; the paper is getting long.</span>' : '')
+    + ' &middot; <a href="' + result.html + '">inspect the HTML</a>';
+  pages.innerHTML = "";
+  result.pngs.forEach(function (src, index) {
+    const figure = document.createElement("figure");
+    const caption = document.createElement("figcaption");
+    caption.textContent = "Page " + (index + 1);
+    const image = document.createElement("img");
+    image.src = src;
+    image.alt = "Page " + (index + 1);
+    figure.appendChild(caption);
+    figure.appendChild(image);
+    pages.appendChild(figure);
+  });
+}
+
+if (job.status === "running") {
+  pollJob(job.id, null, renderJob);
+} else {
+  renderJob(job);
+}
+</script>
+{% endif %}
+{% endblock %}
