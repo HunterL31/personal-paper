@@ -1,0 +1,148 @@
+"""
+The gather step: `run_all(settings)` returns exactly the shape of
+`render/sample_data.json`, plus an `errors` dict.
+
+House rule 3: the paper is produced every morning even when a source
+fails. Every gatherer therefore runs in its own thread, inside its own
+try/except, with a wall-clock timeout; a failure or a hang yields that
+section's empty value and an entry in `errors`, never an exception out of
+`run_all`.
+
+Gatherer modules are imported lazily, inside the worker, so a module that
+is missing or has a syntax error is just another error entry.
+"""
+from __future__ import annotations
+
+import importlib
+import logging
+import threading
+import time
+import traceback
+from concurrent.futures import Future, TimeoutError as FutureTimeout
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
+
+#: Wall-clock budget for the whole gather step (PLAN.md, run.py step 2).
+#: Every gatherer starts at once, so this is also each gatherer's timeout.
+TIMEOUT_SECONDS = 30.0
+
+#: section name -> (module, function) — the lazy import happens in the worker.
+GATHERERS: dict[str, tuple[str, str]] = {
+    "weather": ("gather.weather", "fetch"),
+    "events": ("gather.calendar", "fetch"),
+    "tasks": ("gather.tasks", "fetch"),
+    "articles": ("gather.substack", "fetch"),
+}
+
+# Used when gather.weather cannot even be imported.
+_WEATHER_UNAVAILABLE: dict[str, Any] = {
+    "summary": "Forecast unavailable",
+    "high": None,
+    "low": None,
+    "wind": "",
+    "sunrise": "",
+    "sunset": "",
+    "hourly": [],
+}
+
+
+def _empty_weather() -> dict:
+    """The empty weather value: gather.weather.unavailable(), if reachable."""
+    try:
+        mod = importlib.import_module("gather.weather")
+        return dict(mod.unavailable())
+    except Exception:
+        logger.debug("gather.weather.unavailable() not available", exc_info=True)
+        return dict(_WEATHER_UNAVAILABLE)
+
+
+def _empty(section: str) -> Any:
+    if section == "weather":
+        return _empty_weather()
+    return []
+
+
+def _call(module_name: str, func_name: str, settings) -> Any:
+    """Import the gatherer lazily and call it. Runs on a worker thread."""
+    mod = importlib.import_module(module_name)
+    fn: Callable = getattr(mod, func_name)
+    return fn(settings)
+
+
+def _submit(section: str, fn: Callable, *args) -> Future:
+    """
+    Run `fn` on a daemon thread and report through a `concurrent.futures`
+    Future, so the caller can wait with `future.result(timeout=...)`.
+
+    Not a ThreadPoolExecutor: its workers are non-daemon, and the interpreter
+    joins every non-daemon thread on the way out, so one wedged gatherer would
+    keep the container alive forever. A daemon thread is abandoned instead.
+    """
+    future: Future = Future()
+
+    def runner() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            future.set_result(fn(*args))
+        except BaseException as exc:  # noqa: BLE001 - reported to the caller
+            future.set_exception(exc)
+
+    threading.Thread(target=runner, name=f"gather-{section}", daemon=True).start()
+    return future
+
+
+def run_all(settings) -> dict:
+    """
+    Run every gatherer and return the render contract.
+
+    Returns `{paper, weather, events, tasks, articles, errors}`. `paper.volume`
+    and `paper.date` are left empty for run.py to fill (it owns the issue
+    counter and the run date). `errors` maps a section name to a one-line
+    reason; an empty dict means everything worked.
+    """
+    look = settings.look
+    data: dict[str, Any] = {
+        "paper": {
+            "name": look.paper_name,
+            "volume": "",       # run.py: "Vol. I, No. {n}" from state.json
+            "date": "",         # run.py: "Wednesday, September 16, 2026"
+            "imprint": look.imprint,
+            "price": look.price,
+        },
+        "weather": None,
+        "events": [],
+        "tasks": [],
+        "articles": [],
+        "errors": {},
+    }
+    errors: dict[str, str] = data["errors"]
+
+    futures = {
+        section: _submit(section, _call, module_name, func_name, settings)
+        for section, (module_name, func_name) in GATHERERS.items()
+    }
+
+    # Every gatherer starts at once, so one shared deadline is also each
+    # gatherer's own timeout, and the whole step can never take longer.
+    timeout = float(TIMEOUT_SECONDS)
+    deadline = time.monotonic() + timeout
+    for section, future in futures.items():
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            result = future.result(timeout=remaining)
+        except FutureTimeout:
+            logger.error("%s: timed out after %.0fs", section, timeout)
+            errors[section] = f"timed out after {timeout:.0f}s"
+            data[section] = _empty(section)
+        except Exception as exc:
+            logger.error("%s failed: %s\n%s", section, exc, traceback.format_exc())
+            errors[section] = f"{type(exc).__name__}: {exc}"
+            data[section] = _empty(section)
+        else:
+            data[section] = result
+
+    if data["weather"] is None:  # a gatherer returned None
+        data["weather"] = _empty("weather")
+    return data
