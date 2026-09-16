@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ paper.name }}, {{ paper.date }}</title>
+<!--
+  HOUSE RULES FOR THIS PAPER
+
+  1. Articles are printed exactly as their authors published them.
+     Never summarize, paraphrase, shorten, or reword an article, its
+     title, its subtitle, or its byline. The pipeline hands this template
+     the author's own paragraphs, in order, and the template prints them.
+
+  2. The only thing the layout is allowed to do to an article is cut it
+     at a paragraph boundary when the front-page slot is full, and carry
+     the rest, unchanged, to an inside page under "Continued from Page 1".
+     The script at the bottom of this file does that measurement; nothing
+     upstream should ever trim article text to "make it fit".
+
+  3. Weather, the agenda, and the to-do list are Molly's own data and are
+     laid out as data, not prose.
+
+  Sizes: US Letter, 0.4in top/bottom margin, 0.45in sides, black only.
+-->
+<style>
+  @font-face { font-family: "Maguntia"; src: url("{{ font_dir | default('fonts') }}/UnifrakturMaguntia-Book.ttf"); }
+  @font-face { font-family: "Old Standard"; src: url("{{ font_dir | default('fonts') }}/OldStandard-Regular.ttf"); }
+  @font-face { font-family: "Old Standard"; font-weight: bold; src: url("{{ font_dir | default('fonts') }}/OldStandard-Bold.ttf"); }
+  @font-face { font-family: "Old Standard"; font-style: italic; src: url("{{ font_dir | default('fonts') }}/OldStandard-Italic.ttf"); }
+  @font-face { font-family: "PT Serif"; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Regular.ttf"); }
+  @font-face { font-family: "PT Serif"; font-weight: bold; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Bold.ttf"); }
+  @font-face { font-family: "PT Serif"; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Italic.ttf"); }
+  @font-face { font-family: "PT Serif"; font-weight: bold; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-BoldItalic.ttf"); }
+
+  @page { size: letter; margin: 0; }
+
+  :root {
+    --gutter: 0.16in;      /* space between text columns */
+    --head: "Old Standard", "Times New Roman", serif;
+    --body: "PT Serif", Georgia, serif;
+  }
+
+  html, body { margin: 0; padding: 0; }
+  body { background: #7a7a7a; font-family: var(--body); font-size: 9pt; line-height: 1.32; color: #000; }
+  @media print { body { background: none; } }
+
+  /* One sheet. Fixed size so the script can measure what actually fits. */
+  .page {
+    box-sizing: border-box; width: 8.5in; height: 11in;
+    padding: 0.4in 0.45in; margin: 0.3in auto;
+    background: #fff; display: flex; flex-direction: column;
+    overflow: hidden; break-after: page; page-break-after: always;
+    box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  }
+  @media print { .page { margin: 0; box-shadow: none; } }
+
+  /* ---------- Nameplate ---------- */
+  .nameplate {
+    display: grid; grid-template-columns: 1.3in 1fr 1.3in; column-gap: 0.12in;
+    height: 1.12in; align-items: stretch;
+  }
+  .masthead {
+    font-family: "Maguntia", "Old English Text MT", serif; font-weight: normal;
+    font-size: 42pt; line-height: 1; margin: 0; text-align: center; align-self: center; white-space: nowrap;
+  }
+  .ear {
+    border: 1px solid #000; padding: 0.05in 0.08in; font-size: 7.5pt; line-height: 1.25;
+    display: flex; flex-direction: column; justify-content: center; gap: 0.02in;
+  }
+  .ear .big { font-family: var(--head); font-weight: bold; font-size: 19pt; line-height: 1; margin: 0.02in 0; }
+  .ear .big small { font-size: 10pt; font-weight: normal; }
+  .ear.right { text-align: right; }
+  .ear .initials { font-family: var(--head); font-weight: bold; font-size: 15pt; line-height: 1; letter-spacing: 0.08em; }
+
+  .folio {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--head); font-size: 8pt; margin-top: 0.08in; padding: 0.035in 0;
+    border-top: 1px solid #000; border-bottom: 3px double #000;
+  }
+
+  /* ---------- Front page grid ---------- */
+  .front-grid {
+    flex: 1; min-height: 0; display: grid;
+    grid-template-columns: 1fr 1.9in; column-gap: 0.18in; padding-top: 0.13in;
+  }
+  .stories { display: flex; flex-direction: column; min-height: 0; }
+
+  h2 { font-family: var(--head); font-weight: bold; margin: 0; line-height: 1.04; }
+  .deck { font-family: var(--head); font-style: italic; margin: 0.05in 0 0; line-height: 1.2; }
+  .byline { font-size: 8pt; margin: 0.06in 0 0.07in; }
+  .byline .pub { font-style: italic; }
+  .byline .when { font-family: var(--head); }
+
+  .body p { margin: 0; text-align: justify; text-indent: 0.14in; hyphens: auto; -webkit-hyphens: auto; }
+  .body p:first-child, .story-head + p, p.tail { text-indent: 0; }
+  p.jump { text-indent: 0; text-align: right; font-style: italic; font-size: 8pt; padding-top: 0.03in; break-inside: avoid; }
+
+  /* Lead story: headline across the full width, text in three columns */
+  .story.lead { flex: 0 0 auto; }
+  .lead h2 { font-size: 27pt; }
+  .lead .deck { font-size: 11pt; }
+  .lead .body {
+    height: 2.7in; overflow: hidden;
+    column-count: 3; column-gap: var(--gutter); column-rule: 1px solid #000; column-fill: auto;
+  }
+
+  /* Second row: three single-column stories that take whatever height is left */
+  .row {
+    flex: 1; min-height: 0; margin-top: 0.14in; padding-top: 0.1in; border-top: 1px solid #000;
+    display: grid; grid-template-columns: repeat(3, 1fr); column-gap: var(--gutter);
+  }
+  .row .story { display: flex; flex-direction: column; min-height: 0; }
+  .row .story + .story { border-left: 1px solid #000; padding-left: var(--gutter); }
+  .row h2 { font-size: 14pt; }
+  .row .deck { font-size: 9.5pt; }
+  .row .body { flex: 1; min-height: 0; overflow: hidden; }
+
+  /* ---------- Right rail: her day ---------- */
+  .rail { border-left: 1px solid #000; padding-left: 0.14in; overflow: hidden; display: flex; flex-direction: column; }
+  .rail section.notes { flex: 1; min-height: 0.5in; display: flex; flex-direction: column; }
+  .rail .lines { flex: 1; min-height: 0; overflow: hidden; }
+  .rail .lines div { box-sizing: border-box; height: 0.235in; border-bottom: 1px solid #000; }
+  .rail h3 {
+    font-family: var(--head); font-weight: bold; font-size: 11.5pt; line-height: 1;
+    margin: 0 0 0.05in; padding-bottom: 0.04in; border-bottom: 1px solid #000;
+  }
+  .rail section + section { margin-top: 0.2in; }
+  .rail ul { list-style: none; margin: 0; padding: 0; font-size: 8.5pt; line-height: 1.25; }
+  .rail li { padding: 0.04in 0; border-bottom: 1px dotted #000; }
+  .agenda li { display: grid; grid-template-columns: 0.48in 1fr; column-gap: 0.05in; }
+  .agenda .t { font-family: var(--head); font-weight: bold; font-variant-numeric: tabular-nums; }
+  .agenda .where { display: block; font-size: 7.5pt; font-style: italic; }
+  .todo li { display: flex; gap: 0.07in; align-items: flex-start; }
+  .todo .box { flex: 0 0 auto; width: 0.11in; height: 0.11in; border: 1px solid #000; margin-top: 0.012in; }
+  .hourly { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  .hourly td { padding: 0.03in 0; border-bottom: 1px dotted #000; }
+  .hourly td.temp { text-align: right; font-family: var(--head); font-weight: bold; white-space: nowrap; }
+  .hourly td.sky { text-align: right; font-style: italic; }
+  .sun { font-size: 7.5pt; margin: 0.06in 0 0; }
+
+  .front-foot {
+    margin-top: 0.1in; padding-top: 0.04in; border-top: 1px solid #000;
+    display: flex; justify-content: space-between; font-size: 7.5pt; font-style: italic;
+  }
+
+  /* ---------- Inside pages (continuations), built by the script ---------- */
+  .page.inside .folio { border-bottom: 1px solid #000; margin-top: 0; }
+  .cols {
+    flex: 1; min-height: 0; overflow: hidden; padding-top: 0.13in;
+    column-count: 3; column-gap: var(--gutter); column-rule: 1px solid #000; column-fill: auto;
+  }
+  .cols article + article { margin-top: 0.2in; }
+  .story-head { break-inside: avoid; }
+  .cols h2 { font-size: 15pt; }
+  .cols .cont { font-size: 8pt; font-style: italic; margin: 0.03in 0 0.07in; }
+  .cols p { margin: 0; text-align: justify; text-indent: 0.14in; hyphens: auto; -webkit-hyphens: auto; }
+</style>
+</head>
+<body>
+
+<section class="page front" id="page-1">
+  <header class="nameplate">
+    <div class="ear">
+      <div>{{ weather.summary }}.</div>
+      <div class="big">{{ weather.high }}° <small>low {{ weather.low }}°</small></div>
+      <div>Wind {{ weather.wind }}</div>
+    </div>
+    <h1 class="masthead">{{ paper.name }}</h1>
+    <div class="ear right">
+      <div class="initials">M. L.</div>
+      <div>Continued stories inside.</div>
+      <div>The crossword is on the back page.</div>
+    </div>
+  </header>
+  <div class="folio">
+    <span>{{ paper.volume }}</span>
+    <span>{{ paper.date }}</span>
+    <span>{{ paper.imprint }}</span>
+    <span>{{ paper.price }}</span>
+  </div>
+
+  <main class="front-grid">
+    <div class="stories">
+      {% set a = articles[0] %}
+      <article class="story lead" data-story="0">
+        <h2>{{ a.title }}</h2>
+        {% if a.deck %}<p class="deck">{{ a.deck }}</p>{% endif %}
+        <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span>{% if a.published %}, <span class="when">{{ a.published }}</span>{% endif %}</p>
+        <div class="body">{% for p in a.paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
+      </article>
+
+      <div class="row">
+        {% for a in articles[1:4] %}
+        <article class="story" data-story="{{ loop.index }}">
+          <h2>{{ a.title }}</h2>
+          {% if a.deck %}<p class="deck">{{ a.deck }}</p>{% endif %}
+          <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span></p>
+          <div class="body">{% for p in a.paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside class="rail">
+      <section>
+        <h3>Today</h3>
+        <ul class="agenda">
+          {% for e in events %}
+          <li><span class="t">{{ e.time }}</span><span>{{ e.title }}{% if e.where %}<span class="where">{{ e.where }}</span>{% endif %}</span></li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section>
+        <h3>To do</h3>
+        <ul class="todo">
+          {% for t in tasks %}<li><span class="box"></span><span>{{ t }}</span></li>{% endfor %}
+        </ul>
+      </section>
+      <section>
+        <h3>Hour by hour</h3>
+        <table class="hourly">
+          {% for h in weather.hourly %}<tr><td>{{ h.time }}</td><td class="sky">{{ h.sky }}</td><td class="temp">{{ h.temp }}°</td></tr>{% endfor %}
+        </table>
+        <p class="sun">Sunrise {{ weather.sunrise }}, sunset {{ weather.sunset }}</p>
+      </section>
+      <section class="notes">
+        <h3>Notes</h3>
+        <div class="lines"></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="front-foot">
+    <span>Every article appears exactly as its author wrote it.</span>
+    <span>Page 1</span>
+  </footer>
+</section>
+
+<template id="inside-page">
+  <section class="page inside">
+    <div class="folio">
+      <span>{{ paper.name }}</span>
+      <span>{{ paper.date }}</span>
+      <span class="pageno"></span>
+    </div>
+    <div class="cols"></div>
+  </section>
+</template>
+
+<script>
+/*
+  Fit-to-page, without touching the words.
+
+  Step 1: for each front-page story, keep exactly as much of the author's
+          text as the slot holds, breaking after the last word that fits
+          (measured against the slot's real rendered box), and end with a
+          "Continued on Page N" line.
+  Step 2: pour everything that was cut, unchanged, into inside pages, adding
+          a page whenever the three columns are full.
+*/
+(function () {
+  const rect = el => el.getBoundingClientRect();
+  const spills  = (el, box) => { const r = rect(el), b = rect(box); return r.right > b.right + 0.5 || r.bottom > b.bottom + 0.5; };
+  const outside = (el, box) => { const r = rect(el), b = rect(box); return r.left >= b.right - 0.5 || r.top >= b.bottom - 0.5; };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+  // Truncate p to the most words for which `ok()` still holds (binary search on a
+  // monotone predicate). Returns the words that were cut, joined, or null if not
+  // even the first word fits.
+  function truncate(p, ok) {
+    const words = p.textContent.split(' ');
+    let lo = 0, hi = words.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      p.textContent = words.slice(0, mid).join(' ');
+      if (ok()) lo = mid; else hi = mid - 1;
+    }
+    p.textContent = words.slice(0, lo).join(' ');
+    return lo === 0 ? null : words.slice(lo).join(' ');
+  }
+
+  // ---- Step 1 ----
+  function fitStory(story) {
+    const body = story.querySelector('.body');
+    const ps = Array.from(body.querySelectorAll('p'));
+    const rem = [];                                   // {text, tail} in reading order
+    const jump = el('p', 'jump', 'Continued on Page 2');
+    body.appendChild(jump);
+
+    while (ps.length > 1 && outside(ps[ps.length - 1], body)) {
+      const p = ps.pop(); rem.unshift({ text: p.textContent, tail: false }); p.remove();
+    }
+    if (!rem.length && !spills(jump, body)) { jump.remove(); return null; }
+
+    while (ps.length && spills(jump, body)) {
+      const p = ps[ps.length - 1];
+      const cut = truncate(p, () => !spills(jump, body));
+      if (cut === null) { ps.pop(); rem.unshift({ text: p.textContent, tail: false }); p.remove(); continue; }
+      if (cut) rem.unshift({ text: cut, tail: true });
+      break;
+    }
+    return { jump, title: story.querySelector('h2').textContent, rem };
+  }
+
+  // ---- Step 2 ----
+  function run() {
+    const remainders = [];
+    for (const story of document.querySelectorAll('#page-1 .story')) {
+      const r = fitStory(story);
+      if (r) remainders.push(r);
+    }
+
+    // Ruled lines for the notes box: as many whole lines as the leftover rail space holds.
+    const lines = document.querySelector('.rail .lines');
+    if (lines) for (let i = 0; i < 80; i++) { const d = el('div'); lines.appendChild(d); if (spills(d, lines)) { d.remove(); break; } }
+
+    const tpl = document.getElementById('inside-page');
+    let pageNo = 1, cols = null;
+    const newPage = () => {
+      pageNo++;
+      const frag = tpl.content.cloneNode(true);
+      frag.querySelector('.pageno').textContent = 'Page ' + pageNo;
+      cols = frag.querySelector('.cols');
+      document.body.appendChild(frag);
+    };
+    const head = (title, from) => {
+      const art = el('article');
+      const h = el('div', 'story-head');
+      h.append(el('h2', null, title), el('p', 'cont', 'Continued from Page ' + from));
+      art.appendChild(h);
+      return art;
+    };
+
+    if (remainders.length) newPage();
+    for (const r of remainders) {
+      let art = head(r.title, 1);
+      cols.appendChild(art);
+      if (spills(art, cols)) { art.remove(); newPage(); cols.appendChild(art); }
+      r.jump.textContent = 'Continued on Page ' + pageNo;
+
+      const queue = r.rem.slice();
+      while (queue.length) {
+        const it = queue.shift();
+        const p = el('p', it.tail ? 'tail' : null, it.text);
+        art.appendChild(p);
+        if (!spills(p, cols)) continue;
+
+        if (outside(p, cols)) { p.remove(); queue.unshift(it); }
+        else {
+          const cut = truncate(p, () => !spills(p, cols));
+          if (cut === null) { p.remove(); queue.unshift(it); }
+          else if (cut) queue.unshift({ text: cut, tail: true });
+          else continue;
+        }
+        if (!art.querySelector('p:not(.cont)')) {
+          // Heading would sit alone at the foot of a column: carry the story over whole.
+          art.remove(); newPage(); cols.appendChild(art);
+          r.jump.textContent = 'Continued on Page ' + pageNo;
+        } else {
+          const from = pageNo; newPage(); art = head(r.title, from); cols.appendChild(art);
+        }
+      }
+    }
+
+    window.__pages = document.querySelectorAll('.page').length;
+    window.__layoutDone = true;
+  }
+
+  document.fonts.ready.then(run);
+})();
+</script>
+</body>
+</html>

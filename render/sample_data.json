@@ -1,0 +1,103 @@
+{
+  "paper": {
+    "name": "The Molly Ledger",
+    "volume": "Vol. I, No. 1",
+    "date": "Wednesday, September 16, 2026",
+    "imprint": "Printed at home before sunrise",
+    "price": "Single copy, free"
+  },
+  "weather": {
+    "summary": "Fog early, clearing by noon",
+    "high": 68,
+    "low": 55,
+    "wind": "W 12 mph",
+    "sunrise": "6:53 a.m.",
+    "sunset": "7:15 p.m.",
+    "hourly": [
+      {"time": "7 a.m.", "temp": 55, "sky": "Fog"},
+      {"time": "10 a.m.", "temp": 60, "sky": "Overcast"},
+      {"time": "1 p.m.", "temp": 66, "sky": "Sunny"},
+      {"time": "4 p.m.", "temp": 67, "sky": "Sunny"},
+      {"time": "7 p.m.", "temp": 61, "sky": "Clear"},
+      {"time": "10 p.m.", "temp": 57, "sky": "Fog"}
+    ]
+  },
+  "events": [
+    {"time": "All day", "title": "Recycling goes out tonight"},
+    {"time": "7:30", "title": "Pilates"},
+    {"time": "9:30", "title": "Coffee with Dana", "where": "Corner cafe on 24th"},
+    {"time": "12:00", "title": "Lunch with Priya"},
+    {"time": "3:00", "title": "Dentist", "where": "Dr. Okafor, suite 210"},
+    {"time": "6:30", "title": "Dinner reservation for two"}
+  ],
+  "tasks": [
+    "Return library books",
+    "Call the vet about Biscuit's appointment",
+    "Order more coffee beans",
+    "Send Mom the photos from Saturday",
+    "Water the fig tree"
+  ],
+  "articles": [
+    {
+      "title": "Why every good soup starts on Tuesday",
+      "deck": "The best thing you can do for dinner is something you did yesterday.",
+      "author": "Nora Feld",
+      "publication": "The Slow Kitchen",
+      "published": "Sept. 15",
+      "paragraphs": [
+        "There is a version of soup that happens in forty minutes on a weeknight, and it is fine. It is warm and it is food. But there is another version that only happens when you decided, sometime the day before, to put a pot on the back of the stove and mostly ignore it, and the difference between the two is not effort. It is time, borrowed from a day when you had some to spare.",
+        "I make stock on Tuesdays because Tuesday is the day nothing else happens. The chicken carcass from Sunday has been sitting in the fridge looking accusatory. There is half an onion, the green tops of a leek, a carrot that has gone slightly soft. None of this is a recipe. It is a pot, water to cover, the lowest flame the burner will hold, and three hours during which I answer email and occasionally walk past to skim the top.",
+        "What comes out is not dramatic. It is pale gold, a little cloudy if I forgot to skim, and it tastes like the idea of chicken rather than the fact of it. This is exactly right. Stock is supposed to be a background. It is the thing that makes Wednesday's soup taste like it took all day, when in fact Wednesday's soup took twenty minutes and most of that was chopping.",
+        "The trick, if there is one, is to stop treating stock as a project. Nobody needs a recipe with a bouquet garni and a specific number of peppercorns. The French have rules about this and the rules are worth knowing, but the rules are also how people end up never making stock at all, because the rules make it sound like something you do on a weekend with the windows open and a glass of wine.",
+        "Put the bones in the pot. Put in whatever vegetable ends you have that are not cabbage or anything from the cabbage family, which turn bitter. Cover with cold water by an inch or two. Bring it just to the edge of a simmer, then back off until you see one lazy bubble every few seconds. Leave it. That is the entire method.",
+        "Strain it through whatever you have. A colander is fine. A colander lined with a paper towel is slightly better. Let it cool on the counter until it is not steaming, then into a jar and into the fridge. By Wednesday morning the fat will have risen and set into a lid you can lift off in one piece, and the stock underneath will have gone firm and jiggly, which is how you know you did it right.",
+        "Now Wednesday is easy. Sweat an onion in a little of that fat. Add whatever vegetable is in the house, cut small. Add the stock, which is already seasoned by the time it has spent with the bones, and simmer until the vegetables are tender. Salt at the end, and be more generous than feels reasonable. Bread on the side. That is dinner, and it tastes like the kind of dinner someone cared about.",
+        "People ask whether they can skip the stock and use the boxed kind, and the honest answer is that of course they can, and it will be a perfectly good soup. But it will be a forty-minute soup. It will not have that particular roundness, the thing you cannot quite name that makes a bowl of vegetables in liquid feel like a meal rather than a compromise.",
+        "The larger point, and I suppose there is always a larger point, is that the most useful cooking happens when you are not cooking. It happens in the pot you set going while doing something else, the beans you soaked before bed, the dough you left in the fridge for two days because you forgot about it and it got better anyway. The kitchen is patient. It rewards the person who starts things and walks away.",
+        "So: Tuesday. Find the bones. Find the pot. Start something, and let tomorrow finish it."
+      ]
+    },
+    {
+      "title": "The tide pools are back",
+      "deck": "A low, low tide this week, and what turned up in the rocks.",
+      "author": "Casey Whitlock",
+      "publication": "Field Notes from the Peninsula",
+      "published": "Sept. 15",
+      "paragraphs": [
+        "The minus tides this week are the lowest of the year, which means the rocks that are usually a rumor under the swell are out in the open for an hour either side of dawn. I went down on Monday with a headlamp and a thermos and had the whole shelf to myself, apart from a heron who was clearly annoyed that I had shown up first.",
+        "The anemones are the easy part. They are everywhere, green and rust colored, closed up like fists where the water has drained away. Poke one gently and it grips your finger with a sensation that is somewhere between velcro and being kissed by something that would eat you if it could.",
+        "What I was actually looking for were the chitons, which are the tide pool animal nobody photographs because they look like a stone with a stone on top of it. There were dozens, wedged into cracks where the surge can't peel them off. One was the size of my palm. It did not react to me in any way, which I have come to respect.",
+        "A note on manners: the rule is to touch nothing you would not be comfortable being touched by, to put every rock back exactly as you found it, and to leave before the tide turns rather than after. The water comes back faster than it left. It always does.",
+        "By seven the light was up and the surfers had arrived at the point, and the shelf was already half a foot under. The heron had won. I finished the thermos in the car and drove home with sand in my shoes, which is the correct way to end any morning in September.",
+        "Next minus tide is Thursday, a shade after six. Bring shoes you don't mind ruining."
+      ]
+    },
+    {
+      "title": "Rereading is the whole point",
+      "deck": "On going back to a book you already know the ending of.",
+      "author": "June Marlow",
+      "publication": "Margins",
+      "published": "Sept. 14",
+      "paragraphs": [
+        "I finished the same novel this week for the fourth time, and I would like to say something in defense of doing that, because every time I mention it someone tells me about the hundreds of books they haven't read yet, as if reading were a list you were supposed to be getting through.",
+        "The first time you read a book you are mostly finding out what happens. This is fine, and it is why plots exist, but it means you spend the whole book leaning forward, and leaning forward is not a good position for noticing anything. You miss the sentences. You miss the chapter that seemed slow and turns out, on the second pass, to be the one holding the whole thing up.",
+        "By the third time you know where the trapdoors are, and you can watch the author lay them. You see the small lie in chapter two that becomes the big one in chapter twenty. You start to feel, faintly, what it might have been like to write the thing rather than read it, which is the closest most of us will get.",
+        "There is also the plainer pleasure of company. A book you have read four times is a room you have lived in. You know where the light comes in. You know which floorboard creaks. Returning to it is not a failure of curiosity. It is what people do with places they love.",
+        "So, no, I have not read the hundreds of books on the list. I have read one book four times, and I know it better than I know most people, and I am not sorry."
+      ]
+    },
+    {
+      "title": "A cheap fix for a wobbly chair",
+      "deck": null,
+      "author": "Elliot Grange",
+      "publication": "Small Fixes",
+      "published": "Sept. 15",
+      "paragraphs": [
+        "Most wobbly chairs are not broken. One leg is a few millimeters shorter than the others, either because the floor is uneven, the glue joint has crept, or the little plastic foot has fallen off and is somewhere under the sofa. Before you buy anything, turn the chair over and look for the missing foot.",
+        "If all four feet are present, sit the chair on a flat surface and find the short leg by pressing down on each corner. The one that rocks is your target. A single felt pad, the kind sold in sheets for a couple of dollars, stuck to the bottom of that leg will usually do it. Stack two if one isn't enough.",
+        "For a chair that is loose at the joints rather than the feet, the fix is glue and patience. Wood glue into the joint, a strap clamp or a length of rope twisted tight, and leave it overnight. Do not use the fast-setting stuff. It is brittle and you will be doing this again in a year.",
+        "That is the whole repair. Ten minutes, no tools you don't already own, and a chair that will outlast the next three you'd have bought instead."
+      ]
+    }
+  ]
+}
