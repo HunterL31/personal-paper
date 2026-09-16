@@ -1,0 +1,57 @@
+{
+  "look": {
+    "paper_name": "The Molly Ledger",
+    "imprint": "Printed at home before sunrise",
+    "price": "Single copy, free",
+    "ear": {
+      "initials": "M. L.",
+      "lines": [
+        "Continued stories inside."
+      ]
+    },
+    "masthead_font": "Maguntia",
+    "headline_font": "Old Standard",
+    "body_font": "PT Serif",
+    "body_size_pt": 9.0,
+    "lead_body_height_in": 2.7,
+    "show_todo": true,
+    "show_hourly": true,
+    "show_notes": true
+  },
+  "sources": {
+    "calendars": [],
+    "substacks": [],
+    "weather": {
+      "lat": 37.7749,
+      "lon": -122.4194
+    },
+    "tasks_max_age_hours": 24
+  },
+  "output": {
+    "print": {
+      "enabled": false,
+      "printer_host": "",
+      "printer_name": "",
+      "duplex": true
+    },
+    "email": {
+      "enabled": false,
+      "to": [],
+      "subject": "The Molly Ledger, {date}"
+    },
+    "schedule": {
+      "time": "06:00",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "notify": "none",
+    "notify_email": ""
+  }
+}
