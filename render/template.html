@@ -1,8 +1,29 @@
 <!doctype html>
+{#
+  `look` is app.settings.Look.model_dump() (render.py fills in the defaults),
+  `paper`, `weather`, `events`, `tasks`, `articles` are the gather output.
+  The name, imprint, price and both ears come from `look`; the volume and
+  date come from `paper`.  Nothing here may change an article's words.
+#}
+{% set FONTS = {
+  "Maguntia":          '"Maguntia", "Old English Text MT", serif',
+  "UnifrakturCook":    '"UnifrakturCook", "Old English Text MT", serif',
+  "Old Standard":      '"Old Standard", "Times New Roman", serif',
+  "PT Serif":          '"PT Serif", Georgia, serif',
+  "EB Garamond":       '"EB Garamond", Garamond, Georgia, serif',
+  "Libre Baskerville": '"Libre Baskerville", Baskerville, Georgia, serif',
+  "Playfair Display":  '"Playfair Display", "Times New Roman", serif'
+} %}
+{# An unknown font name falls back to the default; it never fails the render. #}
+{% set masthead_family = FONTS.get(look.masthead_font, FONTS["Maguntia"]) %}
+{% set head_family     = FONTS.get(look.headline_font, FONTS["Old Standard"]) %}
+{% set body_family     = FONTS.get(look.body_font, FONTS["PT Serif"]) %}
+{% set s = (look.body_size_pt | float) / 9.0 %}
+{% set row_articles = articles[1:4] %}
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>{{ paper.name }}, {{ paper.date }}</title>
+<title>{{ look.paper_name }}, {{ paper.date }}</title>
 <!--
   HOUSE RULES FOR THIS PAPER
 
@@ -11,9 +32,9 @@
      title, its subtitle, or its byline. The pipeline hands this template
      the author's own paragraphs, in order, and the template prints them.
 
-  2. The only thing the layout is allowed to do to an article is cut it
-     at a paragraph boundary when the front-page slot is full, and carry
-     the rest, unchanged, to an inside page under "Continued from Page 1".
+  2. The only thing the layout is allowed to do to an article is break the
+     text after the last word that fits the front-page slot, and carry the
+     rest, unchanged, to an inside page under "Continued from Page 1".
      The script at the bottom of this file does that measurement; nothing
      upstream should ever trim article text to "make it fit".
 
@@ -24,6 +45,7 @@
 -->
 <style>
   @font-face { font-family: "Maguntia"; src: url("{{ font_dir | default('fonts') }}/UnifrakturMaguntia-Book.ttf"); }
+  @font-face { font-family: "UnifrakturCook"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/UnifrakturCook-Bold.ttf"); }
   @font-face { font-family: "Old Standard"; src: url("{{ font_dir | default('fonts') }}/OldStandard-Regular.ttf"); }
   @font-face { font-family: "Old Standard"; font-weight: bold; src: url("{{ font_dir | default('fonts') }}/OldStandard-Bold.ttf"); }
   @font-face { font-family: "Old Standard"; font-style: italic; src: url("{{ font_dir | default('fonts') }}/OldStandard-Italic.ttf"); }
@@ -31,17 +53,42 @@
   @font-face { font-family: "PT Serif"; font-weight: bold; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Bold.ttf"); }
   @font-face { font-family: "PT Serif"; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Italic.ttf"); }
   @font-face { font-family: "PT Serif"; font-weight: bold; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-BoldItalic.ttf"); }
+  /* Variable faces: one file covers the whole weight axis. */
+  @font-face { font-family: "EB Garamond"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/EBGaramond-var.ttf"); }
+  @font-face { font-family: "EB Garamond"; font-weight: 100 1000; font-style: italic; src: url("{{ font_dir | default('fonts') }}/EBGaramond-Italic-var.ttf"); }
+  @font-face { font-family: "Libre Baskerville"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/LibreBaskerville-var.ttf"); }
+  @font-face { font-family: "Libre Baskerville"; font-weight: 100 1000; font-style: italic; src: url("{{ font_dir | default('fonts') }}/LibreBaskerville-Italic-var.ttf"); }
+  @font-face { font-family: "Playfair Display"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/PlayfairDisplay-var.ttf"); }
+  @font-face { font-family: "Playfair Display"; font-weight: 100 1000; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PlayfairDisplay-Italic-var.ttf"); }
 
   @page { size: letter; margin: 0; }
 
   :root {
     --gutter: 0.16in;      /* space between text columns */
-    --head: "Old Standard", "Times New Roman", serif;
-    --body: "PT Serif", Georgia, serif;
+    --masthead: {{ masthead_family | safe }};
+    --head: {{ head_family | safe }};
+    --body: {{ body_family | safe }};
+
+    /* Type scale. Everything the reader reads is a multiple of the body size,
+       so 9pt (the default) reproduces the original sizes exactly. The
+       nameplate and the folio rules are fixed: they are furniture, not text. */
+    --body-size:   {{ (9    * s) | round(3) }}pt;
+    --lead-head:   {{ (27   * s) | round(3) }}pt;
+    --lead-deck:   {{ (11   * s) | round(3) }}pt;
+    --row-head:    {{ (14   * s) | round(3) }}pt;
+    --row-deck:    {{ (9.5  * s) | round(3) }}pt;
+    --cols-head:   {{ (15   * s) | round(3) }}pt;
+    --byline:      {{ (8    * s) | round(3) }}pt;
+    --rail-head:   {{ (11.5 * s) | round(3) }}pt;
+    --rail-text:   {{ (8.5  * s) | round(3) }}pt;
+    --rail-table:  {{ (8    * s) | round(3) }}pt;
+    --rail-small:  {{ (7.5  * s) | round(3) }}pt;
+
+    --lead-body-height: {{ look.lead_body_height_in }}in;
   }
 
   html, body { margin: 0; padding: 0; }
-  body { background: #7a7a7a; font-family: var(--body); font-size: 9pt; line-height: 1.32; color: #000; }
+  body { background: #7a7a7a; font-family: var(--body); font-size: var(--body-size); line-height: 1.32; color: #000; }
   @media print { body { background: none; } }
 
   /* One sheet. Fixed size so the script can measure what actually fits. */
@@ -60,7 +107,7 @@
     height: 1.12in; align-items: stretch;
   }
   .masthead {
-    font-family: "Maguntia", "Old English Text MT", serif; font-weight: normal;
+    font-family: var(--masthead); font-weight: normal;
     font-size: 42pt; line-height: 1; margin: 0; text-align: center; align-self: center; white-space: nowrap;
   }
   .ear {
@@ -87,32 +134,34 @@
 
   h2 { font-family: var(--head); font-weight: bold; margin: 0; line-height: 1.04; }
   .deck { font-family: var(--head); font-style: italic; margin: 0.05in 0 0; line-height: 1.2; }
-  .byline { font-size: 8pt; margin: 0.06in 0 0.07in; }
+  .byline { font-size: var(--byline); margin: 0.06in 0 0.07in; }
   .byline .pub { font-style: italic; }
   .byline .when { font-family: var(--head); }
 
   .body p { margin: 0; text-align: justify; text-indent: 0.14in; hyphens: auto; -webkit-hyphens: auto; }
   .body p:first-child, .story-head + p, p.tail { text-indent: 0; }
-  p.jump { text-indent: 0; text-align: right; font-style: italic; font-size: 8pt; padding-top: 0.03in; break-inside: avoid; }
+  p.jump { text-indent: 0; text-align: right; font-style: italic; font-size: var(--byline); padding-top: 0.03in; break-inside: avoid; }
+  p.no-stories { font-family: var(--head); font-style: italic; font-size: var(--row-head); margin: 0.3in 0 0; text-align: center; }
 
   /* Lead story: headline across the full width, text in three columns */
   .story.lead { flex: 0 0 auto; }
-  .lead h2 { font-size: 27pt; }
-  .lead .deck { font-size: 11pt; }
+  .lead h2 { font-size: var(--lead-head); }
+  .lead .deck { font-size: var(--lead-deck); }
   .lead .body {
-    height: 2.7in; overflow: hidden;
+    height: var(--lead-body-height); overflow: hidden;
     column-count: 3; column-gap: var(--gutter); column-rule: 1px solid #000; column-fill: auto;
   }
 
-  /* Second row: three single-column stories that take whatever height is left */
+  /* Second row: one to three single-column stories taking whatever height is
+     left. The column count is set inline from the number of stories. */
   .row {
     flex: 1; min-height: 0; margin-top: 0.14in; padding-top: 0.1in; border-top: 1px solid #000;
     display: grid; grid-template-columns: repeat(3, 1fr); column-gap: var(--gutter);
   }
   .row .story { display: flex; flex-direction: column; min-height: 0; }
   .row .story + .story { border-left: 1px solid #000; padding-left: var(--gutter); }
-  .row h2 { font-size: 14pt; }
-  .row .deck { font-size: 9.5pt; }
+  .row h2 { font-size: var(--row-head); }
+  .row .deck { font-size: var(--row-deck); }
   .row .body { flex: 1; min-height: 0; overflow: hidden; }
 
   /* ---------- Right rail: her day ---------- */
@@ -121,22 +170,22 @@
   .rail .lines { flex: 1; min-height: 0; overflow: hidden; }
   .rail .lines div { box-sizing: border-box; height: 0.235in; border-bottom: 1px solid #000; }
   .rail h3 {
-    font-family: var(--head); font-weight: bold; font-size: 11.5pt; line-height: 1;
+    font-family: var(--head); font-weight: bold; font-size: var(--rail-head); line-height: 1;
     margin: 0 0 0.05in; padding-bottom: 0.04in; border-bottom: 1px solid #000;
   }
   .rail section + section { margin-top: 0.2in; }
-  .rail ul { list-style: none; margin: 0; padding: 0; font-size: 8.5pt; line-height: 1.25; }
+  .rail ul { list-style: none; margin: 0; padding: 0; font-size: var(--rail-text); line-height: 1.25; }
   .rail li { padding: 0.04in 0; border-bottom: 1px dotted #000; }
   .agenda li { display: grid; grid-template-columns: 0.48in 1fr; column-gap: 0.05in; }
   .agenda .t { font-family: var(--head); font-weight: bold; font-variant-numeric: tabular-nums; }
-  .agenda .where { display: block; font-size: 7.5pt; font-style: italic; }
+  .agenda .where { display: block; font-size: var(--rail-small); font-style: italic; }
   .todo li { display: flex; gap: 0.07in; align-items: flex-start; }
   .todo .box { flex: 0 0 auto; width: 0.11in; height: 0.11in; border: 1px solid #000; margin-top: 0.012in; }
-  .hourly { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  .hourly { width: 100%; border-collapse: collapse; font-size: var(--rail-table); }
   .hourly td { padding: 0.03in 0; border-bottom: 1px dotted #000; }
   .hourly td.temp { text-align: right; font-family: var(--head); font-weight: bold; white-space: nowrap; }
   .hourly td.sky { text-align: right; font-style: italic; }
-  .sun { font-size: 7.5pt; margin: 0.06in 0 0; }
+  .sun { font-size: var(--rail-small); margin: 0.06in 0 0; }
 
   .front-foot {
     margin-top: 0.1in; padding-top: 0.04in; border-top: 1px solid #000;
@@ -151,8 +200,8 @@
   }
   .cols article + article { margin-top: 0.2in; }
   .story-head { break-inside: avoid; }
-  .cols h2 { font-size: 15pt; }
-  .cols .cont { font-size: 8pt; font-style: italic; margin: 0.03in 0 0.07in; }
+  .cols h2 { font-size: var(--cols-head); }
+  .cols .cont { font-size: var(--byline); font-style: italic; margin: 0.03in 0 0.07in; }
   .cols p { margin: 0; text-align: justify; text-indent: 0.14in; hyphens: auto; -webkit-hyphens: auto; }
 </style>
 </head>
@@ -165,22 +214,22 @@
       <div class="big">{{ weather.high }}° <small>low {{ weather.low }}°</small></div>
       <div>Wind {{ weather.wind }}</div>
     </div>
-    <h1 class="masthead">{{ paper.name }}</h1>
+    <h1 class="masthead">{{ look.paper_name }}</h1>
     <div class="ear right">
-      <div class="initials">M. L.</div>
-      <div>Continued stories inside.</div>
-      <div>The crossword is on the back page.</div>
+      {% if look.ear.initials %}<div class="initials">{{ look.ear.initials }}</div>{% endif %}
+      {% for line in look.ear.lines %}<div>{{ line }}</div>{% endfor %}
     </div>
   </header>
   <div class="folio">
     <span>{{ paper.volume }}</span>
     <span>{{ paper.date }}</span>
-    <span>{{ paper.imprint }}</span>
-    <span>{{ paper.price }}</span>
+    <span>{{ look.imprint }}</span>
+    <span>{{ look.price }}</span>
   </div>
 
   <main class="front-grid">
     <div class="stories">
+      {% if articles %}
       {% set a = articles[0] %}
       <article class="story lead" data-story="0">
         <h2>{{ a.title }}</h2>
@@ -188,9 +237,13 @@
         <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span>{% if a.published %}, <span class="when">{{ a.published }}</span>{% endif %}</p>
         <div class="body">{% for p in a.paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
       </article>
+      {% else %}
+      <p class="no-stories">No new stories this morning.</p>
+      {% endif %}
 
-      <div class="row">
-        {% for a in articles[1:4] %}
+      {% if row_articles %}
+      <div class="row" style="grid-template-columns: repeat({{ row_articles | length }}, 1fr);">
+        {% for a in row_articles %}
         <article class="story" data-story="{{ loop.index }}">
           <h2>{{ a.title }}</h2>
           {% if a.deck %}<p class="deck">{{ a.deck }}</p>{% endif %}
@@ -199,6 +252,7 @@
         </article>
         {% endfor %}
       </div>
+      {% endif %}
     </div>
 
     <aside class="rail">
@@ -210,12 +264,15 @@
           {% endfor %}
         </ul>
       </section>
+      {% if look.show_todo %}
       <section>
         <h3>To do</h3>
         <ul class="todo">
           {% for t in tasks %}<li><span class="box"></span><span>{{ t }}</span></li>{% endfor %}
         </ul>
       </section>
+      {% endif %}
+      {% if look.show_hourly %}
       <section>
         <h3>Hour by hour</h3>
         <table class="hourly">
@@ -223,10 +280,13 @@
         </table>
         <p class="sun">Sunrise {{ weather.sunrise }}, sunset {{ weather.sunset }}</p>
       </section>
+      {% endif %}
+      {% if look.show_notes %}
       <section class="notes">
         <h3>Notes</h3>
         <div class="lines"></div>
       </section>
+      {% endif %}
     </aside>
   </main>
 
@@ -239,7 +299,7 @@
 <template id="inside-page">
   <section class="page inside">
     <div class="folio">
-      <span>{{ paper.name }}</span>
+      <span>{{ look.paper_name }}</span>
       <span>{{ paper.date }}</span>
       <span class="pageno"></span>
     </div>
@@ -294,8 +354,9 @@
 
     while (ps.length && spills(jump, body)) {
       const p = ps[ps.length - 1];
+      const full = p.textContent;                     // truncate() rewrites p; keep the author's text
       const cut = truncate(p, () => !spills(jump, body));
-      if (cut === null) { ps.pop(); rem.unshift({ text: p.textContent, tail: false }); p.remove(); continue; }
+      if (cut === null) { ps.pop(); rem.unshift({ text: full, tail: false }); p.remove(); continue; }
       if (cut) rem.unshift({ text: cut, tail: true });
       break;
     }
