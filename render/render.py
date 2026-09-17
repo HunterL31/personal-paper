@@ -61,6 +61,19 @@ _FALLBACK_LOOK: dict[str, Any] = {
     "show_todo": True,
     "show_hourly": True,
     "show_notes": True,
+    "layout": {
+        "sections": [
+            {"key": "agenda", "place": "rail"},
+            {"key": "list:tasks", "place": "rail"},
+            {"key": "hourly", "place": "rail"},
+            {"key": "notes", "place": "rail"},
+        ],
+        "rail_width_in": 1.9,
+        "front_stories": 4,
+        "crossword_place": "bottom",
+        "crossword_cell_in": 0.19,
+        "crossword_max_pct": 55,
+    },
 }
 
 
@@ -116,13 +129,19 @@ def hyphenate(text: Any) -> Any:
 
 
 def DEFAULT_LOOK() -> dict[str, Any]:
-    """The default Look as a plain dict (from `app.settings` when importable)."""
+    """The default Look as a plain dict (from `app.settings` when importable).
+
+    The fallback underneath it is what keeps a Look that predates a key --
+    or one that never had it -- from leaving the template without it.
+    """
+    base = json.loads(json.dumps(_FALLBACK_LOOK))
     try:
         from app.settings import Look
 
-        return Look().model_dump()
+        base.update(Look().model_dump())
     except Exception:  # pragma: no cover - app/ missing or broken
-        return json.loads(json.dumps(_FALLBACK_LOOK))
+        pass
+    return base
 
 
 @dataclass
@@ -148,7 +167,11 @@ class RenderResult:
 
 
 def _look_dict(look: "Look | dict | None") -> dict[str, Any]:
-    """Normalise whatever the caller passed into a full look dict."""
+    """Normalise whatever the caller passed into a full look dict.
+
+    `ear` and `layout` are merged key by key, so a caller may hand over one
+    layout setting and still get a whole arrangement.
+    """
     base = DEFAULT_LOOK()
     if look is None:
         return base
@@ -158,6 +181,10 @@ def _look_dict(look: "Look | dict | None") -> dict[str, Any]:
     if hasattr(ear, "model_dump"):
         ear = ear.model_dump()
     merged["ear"] = {**base["ear"], **{k: v for k, v in dict(ear).items() if v is not None}}
+    layout = raw.get("layout") or {}
+    if hasattr(layout, "model_dump"):
+        layout = layout.model_dump()
+    merged["layout"] = {**base["layout"], **{k: v for k, v in dict(layout).items() if v is not None}}
     return merged
 
 
@@ -172,6 +199,12 @@ def build_html(data: dict, look: "Look | dict | None" = None, *, font_dir: str |
     ctx.setdefault("tasks", [])
     ctx.setdefault("articles", [])
     ctx.setdefault("crossword", None)
+    # A data.json from before the reader could keep several lists has one,
+    # under `tasks`. It is the list the default layout calls "To do".
+    if not ctx.get("lists") and ctx.get("tasks"):
+        ctx["lists"] = [{"name": "To do", "slug": "tasks", "style": "checkbox",
+                         "items": list(ctx["tasks"])}]
+    ctx.setdefault("lists", [])
     return env.get_template("template.html").render(
         font_dir=font_dir if font_dir is not None else FONT_DIR.as_uri(),
         look=_look_dict(look),

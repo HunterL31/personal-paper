@@ -31,7 +31,7 @@ TIMEOUT_SECONDS = 30.0
 GATHERERS: dict[str, tuple[str, str]] = {
     "weather": ("gather.weather", "fetch"),
     "events": ("gather.calendar", "fetch"),
-    "tasks": ("gather.tasks", "fetch"),
+    "lists": ("gather.lists", "fetch"),
     "articles": ("gather.substack", "fetch"),
 }
 
@@ -101,7 +101,7 @@ def run_all(settings) -> dict:
     """
     Run every gatherer and return the render contract.
 
-    Returns `{paper, weather, events, tasks, articles, errors}`. `paper.volume`
+    Returns `{paper, weather, events, lists, articles, errors}`. `paper.volume`
     and `paper.date` are left empty for run.py to fill (it owns the issue
     counter and the run date). `errors` maps a section name to a one-line
     reason; an empty dict means everything worked.
@@ -117,7 +117,8 @@ def run_all(settings) -> dict:
         },
         "weather": None,
         "events": [],
-        "tasks": [],
+        # One entry per configured list, in the order of the Sources tab.
+        "lists": [],
         "articles": [],
         # The puzzle is fetched by run.py, outside the gather step, but the
         # key belongs to the contract, so it is here and nullable.

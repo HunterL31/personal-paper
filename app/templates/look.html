@@ -59,12 +59,62 @@
              value="{{ "%.1f"|format(look.lead_body_height_in) }}"></label>
   </div>
 
-  <h2>Sections</h2>
-  <p>
-    <label class="inline"><input type="checkbox" name="show_todo" {{ "checked" if look.show_todo else "" }}> To do</label>
-    <label class="inline"><input type="checkbox" name="show_hourly" {{ "checked" if look.show_hourly else "" }}> Hour by hour</label>
-    <label class="inline"><input type="checkbox" name="show_notes" {{ "checked" if look.show_notes else "" }}> Notes</label>
-  </p>
+  <h2>Layout</h2>
+  <p class="note">Sections in the rail fill page 1&rsquo;s right column top to bottom;
+  sections on page 2 go in a column beside the continuations.</p>
+  <table>
+    <thead><tr><th style="width:5rem">Order</th><th style="width:40%">Section</th><th>Place</th></tr></thead>
+    <tbody>
+      {% for section in sections %}
+      <tr>
+        <td>
+          <input type="hidden" name="sec_key" value="{{ section.key }}">
+          <input type="number" class="narrow" name="sec_order_{{ loop.index0 }}" min="1" max="99"
+                 value="{{ loop.index }}">
+        </td>
+        <td>{{ section.label }}{% if section.is_list %} <span class="note">(list)</span>{% endif %}</td>
+        <td>
+          <select name="sec_place_{{ loop.index0 }}">
+            {% for value, label in places %}
+            <option value="{{ value }}" {{ "selected" if value == section.place else "" }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">Lists are added and named on the Sources tab; each one appears here
+  as soon as it is saved.</p>
+
+  <div class="grid">
+    <label class="field"><span>Rail width (in)</span>
+      <input type="number" class="narrow" name="rail_width_in" step="0.1" min="1.5" max="2.8"
+             value="{{ "%.1f"|format(layout.rail_width_in) }}"></label>
+    <label class="field"><span>Stories on the front page</span>
+      <select name="front_stories" class="narrow">
+        {% for n in [1, 2, 3, 4] %}
+        <option value="{{ n }}" {{ "selected" if n == layout.front_stories else "" }}>{{ n }}</option>
+        {% endfor %}
+      </select></label>
+  </div>
+
+  <h2>Crossword</h2>
+  <p class="note">Where the puzzle sits on page 2 and how big its squares are.
+  Switch it on, and pick which days get one, on the Sources tab.</p>
+  <div class="grid">
+    <label class="field"><span>Place on page 2</span>
+      <select name="crossword_place" class="narrow">
+        <option value="bottom" {{ "selected" if layout.crossword_place == "bottom" else "" }}>Bottom</option>
+        <option value="top" {{ "selected" if layout.crossword_place == "top" else "" }}>Top</option>
+      </select></label>
+    <label class="field"><span>Square size (in)</span>
+      <input type="number" class="narrow" name="crossword_cell_in" step="0.01" min="0.14" max="0.26"
+             value="{{ "%.2f"|format(layout.crossword_cell_in) }}"></label>
+    <label class="field"><span>Most of page 2 it may take (%)</span>
+      <input type="number" class="narrow" name="crossword_max_pct" step="1" min="25" max="75"
+             value="{{ layout.crossword_max_pct }}"></label>
+  </div>
 
   <h2>Columns</h2>
   <p>

@@ -114,9 +114,8 @@ def test_a_short_lead_survives_an_impossible_second_story(sample_data, tmp_path)
     assert list(result.partial) == [1] and result.partial[1] >= 1, result.partial
 
 
-def test_a_sunday_size_crossword_still_leaves_room_for_the_lead(sample_data, tmp_path):
+def _sunday_crossword(n=21):
     """21x21, 140 clues: the biggest puzzle the paper will ever carry."""
-    n = 21
     grid = []
     number = 0
     for r in range(n):
@@ -131,7 +130,7 @@ def test_a_sunday_size_crossword_still_leaves_room_for_the_lead(sample_data, tmp
             else:
                 row.append({"n": None})
         grid.append(row)
-    data = _with(sample_data, crossword={
+    return {
         "provider": "nyt", "date": "2026-09-20", "title": "The Big One",
         "author": "Dana Kestrel", "editor": "Margaret Ivey",
         "width": n, "height": n, "grid": grid,
@@ -139,7 +138,11 @@ def test_a_sunday_size_crossword_still_leaves_room_for_the_lead(sample_data, tmp
                    for i in range(70)],
         "down": [{"n": i + 1, "clue": f"Another clue, the {i + 1}th, of moderate length"}
                  for i in range(70)],
-    })
+    }
+
+
+def test_a_sunday_size_crossword_still_leaves_room_for_the_lead(sample_data, tmp_path):
+    data = _with(sample_data, crossword=_sunday_crossword())
     result = _render(data, tmp_path, "sunday")
     assert 0 in result.printed, "the lead story must still be printed"
 
@@ -168,9 +171,82 @@ def test_event_counts(sample_data, tmp_path, n):
 
 
 def test_twelve_long_tasks(sample_data, tmp_path):
-    tasks = [f"Task {i}: " + "something that will not fit on one line " * 2 for i in range(12)]
-    data = _with(sample_data, tasks=tasks)
+    items = [f"Task {i}: " + "something that will not fit on one line " * 2 for i in range(12)]
+    lists = [dict(sample_data["lists"][0], items=items)] + sample_data["lists"][1:]
+    data = _with(sample_data, lists=lists)
     _render(data, tmp_path, "tasks")
+
+
+def test_a_data_file_from_before_the_lists_still_renders(sample_data, tmp_path):
+    """An archived data.json has one list, under `tasks`. It is "To do"."""
+    from bs4 import BeautifulSoup
+
+    data = _with(sample_data, tasks=["Return library books", "Water the fig tree"])
+    del data["lists"]
+    result = _render(data, tmp_path, "oldtasks")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert [h.get_text() for h in soup.select("#page-1 .rail h3")] == \
+        ["Today", "To do", "Hour by hour", "Notes"]
+    items = soup.select("#page-1 .rail .todo li")
+    assert [li.get_text() for li in items] == data["tasks"]
+    assert all(li.select(".box") for li in items)      # the box the paper has always had
+
+
+# ------------------------------------------------ the crossword, arranged
+def test_the_crossword_can_be_put_at_the_top_of_page_two(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    result = render(sample_data, {"layout": {"crossword_place": "top"}}, tmp_path / "xwtop")
+    assert result.pages == 2
+    assert_verbatim(result, sample_data["articles"])
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    page2 = soup.select_one("#page-2")
+    kids = [k for k in page2.find_all(["section", "div"], recursive=False)]
+    order = [" ".join(k.get("class") or []) for k in kids]
+    assert order.index("xword top") < next(i for i, c in enumerate(order) if "cols" in c), order
+    assert result.printed, "the sheet still carries stories"
+
+
+@pytest.mark.parametrize("cell, expected", [(0.14, 0.14), (0.26, 0.24)])
+def test_the_grid_is_set_to_the_cell_size_asked_for(sample_data, tmp_path, cell, expected):
+    """A 15-wide grid never takes more than 3.6in of the 7.6in measure, so
+    the clues beside it always have their half of the page."""
+    from bs4 import BeautifulSoup
+
+    result = render(sample_data, {"layout": {"crossword_cell_in": cell}}, tmp_path / f"cell{cell}")
+    assert result.pages == 2
+    assert_verbatim(result, sample_data["articles"])
+    style = BeautifulSoup(result.laid_out_html, "html.parser").select_one("#xword")["style"]
+    assert f"--cell: {expected}in" in style, style
+
+
+def test_the_two_cell_sizes_are_two_different_grids(sample_data, tmp_path):
+    """Measured on the printed page: the clues begin where the grid ends."""
+    import pymupdf
+
+    def grid_width(cell):
+        result = render(sample_data, {"layout": {"crossword_cell_in": cell}},
+                        tmp_path / f"w{cell}")
+        assert result.pages == 2
+        with pymupdf.open(result.pdf) as doc:
+            across = min(b[0] for b in doc[1].search_for("Across"))
+        return (across / 72) - 0.45 - 0.17          # left margin, then the gap
+
+    #: 15 cells of 0.14in, against 15 of 0.24in (0.26 capped so that the grid
+    #: keeps to its 3.6in of the measure): an inch and a half between them.
+    small, big = grid_width(0.14), grid_width(0.26)
+    assert small < big, (small, big)
+    assert 1.4 <= big - small <= 1.6, (small, big)
+
+
+def test_a_smaller_share_of_page_two_still_prints_the_paper(sample_data, tmp_path):
+    """25% and a Sunday grid: the clues shrink as far as they go, the sheet
+    is still one sheet, and not a word of a story is touched."""
+    data = _with(sample_data, crossword=_sunday_crossword())
+    result = render(data, {"layout": {"crossword_max_pct": 25}}, tmp_path / "pct25")
+    assert result.pages == 2
+    assert_verbatim(result, data["articles"])
+    assert "--xw-clue: 4.5pt" in result.laid_out_html, "the clues were shrunk as far as they go"
 
 
 def test_deck_may_be_null(sample_data, tmp_path):

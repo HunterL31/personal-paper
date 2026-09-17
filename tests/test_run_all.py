@@ -16,13 +16,18 @@ import pytest
 import gather
 from app.settings import Settings
 
-SECTIONS = ["weather", "events", "tasks", "articles"]
+SECTIONS = ["weather", "events", "lists", "articles"]
 MODULES = {
     "weather": "gather.weather",
     "events": "gather.calendar",
-    "tasks": "gather.tasks",
+    "lists": "gather.lists",
     "articles": "gather.substack",
 }
+
+SAMPLE_LISTS = [
+    {"name": "To do", "slug": "tasks", "style": "checkbox",
+     "items": ["Return library books", "Water the fig tree"]},
+]
 
 GOOD_WEATHER = {
     "summary": "Sunny all day", "high": 68, "low": 55, "wind": "W 12 mph",
@@ -52,12 +57,16 @@ def settings():
 def test_shape_matches_the_contract(monkeypatch, settings, sample_data):
     stub(monkeypatch, "weather", lambda s: GOOD_WEATHER)
     stub(monkeypatch, "events", lambda s: sample_data["events"])
-    stub(monkeypatch, "tasks", lambda s: sample_data["tasks"])
+    stub(monkeypatch, "lists", lambda s: SAMPLE_LISTS)
     stub(monkeypatch, "articles", lambda s: sample_data["articles"])
 
     data = gather.run_all(settings)
 
-    assert set(data) == set(sample_data) | {"errors"}
+    # `lists` replaced `tasks`: one entry per configured list, never a bare
+    # list of strings, and nothing called `tasks` anywhere in the contract.
+    assert "tasks" not in data
+    assert set(data) == {"paper", "weather", "events", "lists", "articles", "crossword", "errors"}
+    assert set(data) == set(sample_data) | {"errors"}     # render/sample_data.json is the contract
     assert data["errors"] == {}
     assert set(data["paper"]) == set(sample_data["paper"])
     assert data["paper"] == {
@@ -68,7 +77,7 @@ def test_shape_matches_the_contract(monkeypatch, settings, sample_data):
         "price": settings.look.price,
     }
     assert data["events"] == sample_data["events"]
-    assert data["tasks"] == sample_data["tasks"]
+    assert data["lists"] == SAMPLE_LISTS
     assert data["articles"] == sample_data["articles"]
     assert data["weather"] == GOOD_WEATHER
 
@@ -82,7 +91,7 @@ def test_every_gatherer_failing_still_produces_a_paper(monkeypatch, settings, ca
 
     assert set(data["errors"]) == set(SECTIONS)
     assert all("source is down" in reason for reason in data["errors"].values())
-    assert data["events"] == [] and data["tasks"] == [] and data["articles"] == []
+    assert data["events"] == [] and data["lists"] == [] and data["articles"] == []
     assert data["weather"]["summary"] == "Forecast unavailable"
     assert data["weather"]["hourly"] == []
     assert data["paper"]["name"] == settings.look.paper_name
@@ -96,7 +105,7 @@ def test_weather_empty_value_comes_from_the_module(monkeypatch, settings):
                              "high": None, "low": None, "wind": "",
                              "sunrise": "", "sunset": ""},
     )
-    for section in ("events", "tasks", "articles"):
+    for section in ("events", "lists", "articles"):
         stub(monkeypatch, section, lambda s: [])
 
     data = gather.run_all(settings)
@@ -107,14 +116,14 @@ def test_weather_empty_value_comes_from_the_module(monkeypatch, settings):
 def test_a_missing_module_is_only_an_error_entry(monkeypatch, settings):
     monkeypatch.setitem(sys.modules, "gather.calendar", None)   # import fails
     stub(monkeypatch, "weather", lambda s: GOOD_WEATHER)
-    stub(monkeypatch, "tasks", lambda s: ["Water the fig tree"])
+    stub(monkeypatch, "lists", lambda s: SAMPLE_LISTS)
     stub(monkeypatch, "articles", lambda s: [])
 
     data = gather.run_all(settings)
 
     assert data["events"] == []
     assert "events" in data["errors"]
-    assert data["tasks"] == ["Water the fig tree"]      # the others still ran
+    assert data["lists"] == SAMPLE_LISTS                # the others still ran
     assert data["weather"] == GOOD_WEATHER
 
 
@@ -124,7 +133,7 @@ def test_a_hung_gatherer_does_not_hold_up_the_run(monkeypatch, settings):
     def hang(_settings):
         time.sleep(60)
 
-    stub(monkeypatch, "tasks", hang)
+    stub(monkeypatch, "lists", hang)
     stub(monkeypatch, "weather", lambda s: GOOD_WEATHER)
     stub(monkeypatch, "events", lambda s: [])
     stub(monkeypatch, "articles", lambda s: [])
@@ -134,10 +143,10 @@ def test_a_hung_gatherer_does_not_hold_up_the_run(monkeypatch, settings):
     elapsed = time.monotonic() - started
 
     assert elapsed < 10
-    assert data["tasks"] == []
-    assert "timed out" in data["errors"]["tasks"]
+    assert data["lists"] == []
+    assert "timed out" in data["errors"]["lists"]
     assert data["weather"] == GOOD_WEATHER          # the rest of the paper is intact
-    assert set(data["errors"]) == {"tasks"}
+    assert set(data["errors"]) == {"lists"}
 
 
 def test_gatherers_run_in_parallel(monkeypatch, settings):
@@ -151,7 +160,7 @@ def test_gatherers_run_in_parallel(monkeypatch, settings):
 
     stub(monkeypatch, "weather", slow(GOOD_WEATHER))
     stub(monkeypatch, "events", slow([]))
-    stub(monkeypatch, "tasks", slow([]))
+    stub(monkeypatch, "lists", slow([]))
     stub(monkeypatch, "articles", slow([]))
 
     started = time.monotonic()

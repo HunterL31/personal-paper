@@ -14,9 +14,35 @@
     "body_font": "PT Serif",
     "body_size_pt": 9.0,
     "lead_body_height_in": 2.7,
+    "justify": true,
     "show_todo": true,
     "show_hourly": true,
-    "show_notes": true
+    "show_notes": true,
+    "layout": {
+      "sections": [
+        {
+          "key": "agenda",
+          "place": "rail"
+        },
+        {
+          "key": "list:tasks",
+          "place": "rail"
+        },
+        {
+          "key": "hourly",
+          "place": "rail"
+        },
+        {
+          "key": "notes",
+          "place": "rail"
+        }
+      ],
+      "rail_width_in": 1.9,
+      "front_stories": 4,
+      "crossword_place": "bottom",
+      "crossword_cell_in": 0.19,
+      "crossword_max_pct": 55
+    }
   },
   "sources": {
     "calendars": [],
@@ -39,6 +65,14 @@
       ]
     },
     "article_max_age_days": 7,
+    "lists": [
+      {
+        "name": "To do",
+        "slug": "tasks",
+        "style": "checkbox",
+        "max_age_hours": 24
+      }
+    ],
     "tasks_max_age_hours": 24,
     "tasks_post_url": ""
   },

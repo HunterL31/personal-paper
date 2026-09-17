@@ -98,42 +98,101 @@
     </div>
   </div>
 
-  <h2>Tasks</h2>
+  <h2>Lists</h2>
+  <p class="note">Your own lists &mdash; to do, groceries, packing &mdash; each pushed
+  from the phone to its own address. The slug is the list's address; it is worked out
+  from the name when the list is first saved and then stays put, because it is half of
+  what the Shortcut is set up with. A list that has not been synced within its age
+  prints empty rather than stale.</p>
+  <table>
+    <thead><tr>
+      <th style="width:26%">Name</th><th style="width:18%">Slug</th>
+      <th style="width:22%">Style</th><th>Ignore the sync when older than (hours)</th>
+      <th style="width:5rem">Remove</th>
+    </tr></thead>
+    <tbody>
+      {% for li in lists %}
+      <tr>
+        <td>
+          <input type="hidden" name="list_index" value="{{ li.index }}">
+          <input type="text" name="list_name_{{ li.index }}" value="{{ li.name }}">
+        </td>
+        <td><input type="text" name="list_slug_{{ li.index }}" value="{{ li.slug }}" readonly></td>
+        <td>
+          <select name="list_style_{{ li.index }}">
+            {% for value, label in list_styles %}
+            <option value="{{ value }}" {{ "selected" if value == li.style else "" }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="number" class="narrow" name="list_max_age_{{ li.index }}" min="1" max="168"
+                   value="{{ li.max_age_hours }}"></td>
+        <td><label class="inline"><input type="checkbox" name="list_remove_{{ li.index }}"></label></td>
+      </tr>
+      {% endfor %}
+      <tr class="new-row" data-new="list" data-key="n0">
+        <td>
+          <input type="hidden" name="list_new" value="n0">
+          <input type="text" name="list_new_name_n0" placeholder="Groceries">
+        </td>
+        <td><em class="note">from the name</em></td>
+        <td>
+          <select name="list_new_style_n0">
+            {% for value, label in list_styles %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="number" class="narrow" name="list_new_max_age_n0" min="1" max="168" value="24"></td>
+        <td><em>add</em></td>
+      </tr>
+    </tbody>
+  </table>
+  <p><button type="button" data-add-row="list">Add another list</button></p>
+  <p class="note">A new list is added to the rail on the Look tab by itself; move it to
+  page 2 or switch it off there.</p>
+
   <div class="grid">
-    <label class="field"><span>Ignore the sync when older than (hours)</span>
-      <input type="number" class="narrow" name="tasks_max_age_hours" min="1" max="168"
-             value="{{ sources.tasks_max_age_hours }}"></label>
     <label class="field"><span>Address the phone posts to</span>
       <input type="text" name="tasks_post_url" value="{{ sources.tasks_post_url }}"
              placeholder="{{ tasks_url_derived }}" autocomplete="off"></label>
   </div>
-  <p class="note">Leave it empty unless the address below is not one the phone
-  can reach — behind a reverse proxy, or on a different port outside the box.</p>
+  <p class="note">Leave it empty unless the addresses below are not ones the phone
+  can reach &mdash; behind a reverse proxy, or on a different port outside the box.</p>
+
+  {% for li in lists %}
   <div class="panel">
+    <p><strong>{{ li.name }}</strong> <span class="note">&mdash; slug <code>{{ li.slug }}</code></span></p>
     <p><strong>Last sync:</strong>
-      {% if tasks_status.updated %}
-        {{ tasks_status.updated }}
-        {%- if tasks_status.age_hours is not none %} ({{ "%.1f"|format(tasks_status.age_hours) }} h ago){% endif %},
-        {{ tasks_status.count }} task{{ "" if tasks_status.count == 1 else "s" }}
+      {% if li.status.updated %}
+        {{ li.status.updated }}
+        {%- if li.status.age_hours is not none %} ({{ "%.1f"|format(li.status.age_hours) }} h ago){% endif %},
+        {{ li.status.count }} item{{ "" if li.status.count == 1 else "s" }}
       {% else %}never{% endif %}
     </p>
-    <p><strong>The iPhone Shortcut posts:</strong></p>
-    <p class="mono">POST <a href="{{ tasks_url }}/tasks" id="tasks-url">{{ tasks_url }}/tasks</a>
-      <button type="button" class="copy" data-copy="{{ tasks_url }}/tasks">Copy URL</button></p>
+    <p class="mono">POST <a href="{{ li.url }}">{{ li.url }}</a>
+      <button type="button" class="copy" data-copy="{{ li.url }}">Copy URL</button></p>
+    <p class="mono">Authorization: Bearer {{ li.slug }}
+      <button type="button" class="copy" data-copy="{{ li.auth_slug }}">Copy Authorization header</button></p>
+    {%- if tasks_token_set %}
     <p class="mono">Authorization: Bearer &lt;TASKS_TOKEN&gt;
       <span class="note">&mdash; {{ tasks_token_hint }}</span>
-      {%- if tasks_token_set %}
-      <button type="button" class="copy" data-copy="{{ tasks_auth_copy }}">Copy Authorization header</button>
-      {%- endif %}</p>
+      <button type="button" class="copy" data-copy="{{ tasks_auth_copy }}">Copy TASKS_TOKEN header</button></p>
     {%- if tasks_auth_locked %}
-    <p class="note">The copy button gives a placeholder because this page has no login.
+    <p class="note">The TASKS_TOKEN copy button gives a placeholder because this page has no login.
       Set <code>WEB_PASSWORD</code> and it copies the real header.</p>
     {%- endif %}
+    {%- else %}
+    <p class="note">{{ tasks_token_hint }}, so a post with no Authorization header
+      is accepted as well as <code>Bearer {{ li.slug }}</code>.</p>
+    {%- endif %}
     <p class="mono">Content-Type: application/json</p>
-    <p class="mono">{"tasks": ["first task", "second task"]}
-      <button type="button" class="copy" data-copy='{"tasks": ["first task", "second task"]}'>Copy example body</button></p>
-    <p class="note">A plain-text body with one task per line works too.</p>
+    <p class="mono">{{ li.example }}
+      <button type="button" class="copy" data-copy='{{ li.example }}'>Copy example body</button></p>
+    <p class="note">A plain-text body with one item per line works too, and
+      <code>{"tasks": [...]}</code> is still read for Shortcuts built before lists had names.</p>
   </div>
+  {% endfor %}
 
   <h2>Crossword</h2>
   <p class="note">The New York Times daily puzzle, typeset into the paper. It needs a
@@ -255,7 +314,10 @@ document.querySelectorAll("[data-add-row]").forEach(function (button) {
       });
       if (el.matches('input[type="hidden"]')) el.value = key;
       else if (el.matches('input[type="checkbox"]')) el.checked = false;
-      else if (el.matches('input[type="number"]')) el.value = String(parseInt(el.value || "0", 10) + 1);
+      else if (el.matches('input[type="number"]')) {
+        // Only an order box counts up; an age in hours keeps its value.
+        if (/_order_/.test(el.getAttribute("name") || "")) el.value = String(parseInt(el.value || "0", 10) + 1);
+      }
       else if (el.matches("input")) el.value = "";
       else if (el.matches("p.result")) el.textContent = "";
     });

@@ -3,8 +3,9 @@
 One reader, one password, taken from the container's `WEB_PASSWORD`. The
 username is ignored. Leaving `WEB_PASSWORD` unset turns the login off
 entirely: the page is then open to anyone on the network, and the status
-strip says so. Two routes are open: `POST /tasks` (the iPhone
-Shortcut carries its own bearer token) and `GET /healthz`.
+strip says so. The list endpoints are open: `POST /lists/<slug>` and its
+older alias `POST /tasks` (the iPhone Shortcut carries its own bearer
+token, checked in `app.main`), and so is `GET /healthz`.
 """
 from __future__ import annotations
 
@@ -19,12 +20,19 @@ from app.settings import Env
 
 #: Paths that never ask for the browser password.
 OPEN_ROUTES: set[tuple[str, str]] = {("POST", "/tasks"), ("GET", "/healthz")}
+#: Path prefixes that never ask for it either: the phone posts a list to
+#: `/lists/<slug>` with a bearer token of its own.
+OPEN_PREFIXES: set[tuple[str, str]] = {("POST", "/lists/")}
 
 _CHALLENGE = {"WWW-Authenticate": 'Basic realm="Personal Paper: any username, password is WEB_PASSWORD"'}
 
 
 def is_open(method: str, path: str) -> bool:
-    return (method.upper(), path.rstrip("/") or "/") in OPEN_ROUTES
+    method = method.upper()
+    path = path.rstrip("/") or "/"
+    if (method, path) in OPEN_ROUTES:
+        return True
+    return any(method == m and path.startswith(prefix) for m, prefix in OPEN_PREFIXES)
 
 
 def _password() -> str | None:

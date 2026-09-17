@@ -133,9 +133,14 @@ def test_look_supplies_name_imprint_price_and_ears(sample_data, tmp_path):
     assert html.index("The Evening Gull", html.index('id="page-2"')) > 0
 
 
-def test_section_toggles_hide_rail_sections(sample_data, tmp_path):
-    look = Look(show_todo=False, show_hourly=False, show_notes=False)
-    result = render(sample_data, look, tmp_path / "toggles")
+def test_the_old_section_switches_still_hide_their_sections(sample_data, tmp_path):
+    """A settings file from before the Look tab could arrange the paper.
+
+    Its three switches are not the arrangement, but while they are set they
+    still veto the sections they always vetoed.
+    """
+    result = render(sample_data, {"show_todo": False, "show_hourly": False, "show_notes": False},
+                    tmp_path / "toggles")
     html = result.laid_out_html
     assert "<h3>To do</h3>" not in html
     assert "<h3>Hour by hour</h3>" not in html
@@ -143,6 +148,150 @@ def test_section_toggles_hide_rail_sections(sample_data, tmp_path):
     assert "<h3>Today</h3>" in html              # the agenda is not a toggle
     assert result.pages == 2
     assert_verbatim(result, sample_data["articles"])
+
+
+@pytest.mark.skipif(not {"show_todo", "show_hourly", "show_notes"} <= set(Look.model_fields),
+                    reason="the Look tab keeps its sections in look.layout now")
+def test_section_toggles_hide_rail_sections(sample_data, tmp_path):
+    look = Look(show_todo=False, show_hourly=False, show_notes=False)
+    result = render(sample_data, look, tmp_path / "toggles-model")
+    html = result.laid_out_html
+    assert "<h3>To do</h3>" not in html
+    assert "<h3>Hour by hour</h3>" not in html
+    assert "<h3>Notes</h3>" not in html
+    assert "<h3>Today</h3>" in html
+
+
+# ------------------------------------------------- the reader's arrangement
+#: The sections as the paper has always had them, to rearrange in the tests.
+AGENDA = {"key": "agenda", "place": "rail"}
+TASKS = {"key": "list:tasks", "place": "rail"}
+HOURLY = {"key": "hourly", "place": "rail"}
+NOTES = {"key": "notes", "place": "rail"}
+
+
+def _layout(**over):
+    """A look that is the default everywhere but in the layout."""
+    return {"layout": over}
+
+
+def _rail(html, where="#page-1 .rail"):
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    return [h.get_text() for h in soup.select(f"{where} h3")]
+
+
+def test_the_look_tabs_own_default_is_the_paper_as_it_was(sample_data, tmp_path):
+    """`Look()` carries an arrangement now; it must be the old one, to the pixel."""
+    plain = render(sample_data, None, tmp_path / "no-look", png=True)
+    default = render(sample_data, Look(), tmp_path / "default-look", png=True)
+    assert plain.printed == default.printed and plain.partial == default.partial
+    assert [q.read_bytes() for q in plain.pngs] == [q.read_bytes() for q in default.pngs]
+    assert _rail(default.laid_out_html) == ["Today", "To do", "Hour by hour", "Notes"]
+
+
+def test_the_rail_is_set_in_the_order_the_reader_chose(sample_data, tmp_path):
+    """Hour by hour first means Hour by hour at the top of the rail."""
+    result = _check(sample_data, _layout(sections=[HOURLY, AGENDA, TASKS, NOTES]),
+                    tmp_path, "reordered")
+    rail = _rail(result.laid_out_html)
+    assert rail[0] == "Hour by hour"
+    assert rail == ["Hour by hour", "Today", "To do", "Notes"]
+
+
+def test_the_notes_are_ruled_wherever_they_are_put(sample_data, tmp_path):
+    """The filler measures the space the notes got, not the bottom of the rail."""
+    from bs4 import BeautifulSoup
+
+    result = _check(sample_data, _layout(sections=[NOTES, AGENDA, TASKS, HOURLY]),
+                    tmp_path, "notes-first")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert _rail(result.laid_out_html)[0] == "Notes"
+    assert len(soup.select("#page-1 .rail .notes .lines div")) >= 3, "the notes were not ruled"
+
+
+def test_a_section_can_be_moved_to_page_two(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    result = _check(sample_data, _layout(sections=[AGENDA, dict(TASKS, place="page2"), HOURLY, NOTES]),
+                    tmp_path, "list-on-2")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert _rail(result.laid_out_html) == ["Today", "Hour by hour", "Notes"]
+    assert _rail(result.laid_out_html, "#page-2 .page2-rail") == ["To do"]
+    items = [li.get_text() for li in soup.select("#page-2 .page2-rail .todo li")]
+    assert items == sample_data["lists"][0]["items"]
+    assert result.pages == 2
+
+
+def test_a_section_switched_off_is_nowhere_on_the_sheet(sample_data, tmp_path):
+    result = _check(sample_data, _layout(sections=[AGENDA, TASKS, HOURLY, dict(NOTES, place="off")]),
+                    tmp_path, "notes-off")
+    assert _rail(result.laid_out_html) == ["Today", "To do", "Hour by hour"]
+    assert "<h3>Notes</h3>" not in result.laid_out_html
+
+
+def test_an_unknown_key_and_a_missing_list_are_skipped(sample_data, tmp_path):
+    """A settings file this template does not understand still prints a paper."""
+    result = _check(sample_data, _layout(sections=[
+        {"key": "horoscope", "place": "rail"},          # no such section
+        {"key": "list:errands", "place": "rail"},       # no such list in the data
+        AGENDA,
+    ]), tmp_path, "unknown")
+    assert _rail(result.laid_out_html) == ["Today"]
+
+
+def test_a_list_the_default_layout_leaves_out_can_be_asked_for(sample_data, tmp_path):
+    result = _check(sample_data, _layout(sections=[AGENDA, TASKS, {"key": "list:groceries", "place": "rail"}]),
+                    tmp_path, "groceries")
+    assert _rail(result.laid_out_html) == ["Today", "To do", "Groceries"]
+    for item in sample_data["lists"][1]["items"]:
+        assert item in result.laid_out_html
+
+
+@pytest.mark.parametrize("style, marker", [("checkbox", "box"), ("plain", None), ("numbered", "num")])
+def test_list_styles_set_their_own_markers(sample_data, tmp_path, style, marker):
+    import copy
+
+    from bs4 import BeautifulSoup
+
+    data = copy.deepcopy(sample_data)
+    data["lists"][0]["style"] = style
+    result = _check(data, None, tmp_path / "styles", style)
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    items = soup.select("#page-1 .rail .todo li")
+    assert len(items) == len(data["lists"][0]["items"])
+    for li, text in zip(items, data["lists"][0]["items"]):
+        if marker is None:
+            assert li.select(".box") == [] and li.select(".num") == []
+            assert li.get_text() == text
+        else:
+            assert len(li.select(f".{marker}")) == 1
+    if style == "numbered":
+        assert [li.select_one(".num").get_text() for li in items] == \
+            [f"{i}." for i in range(1, len(items) + 1)]
+
+
+@pytest.mark.parametrize("width", [1.5, 2.8])
+def test_the_rail_is_as_wide_as_the_reader_asked(sample_data, tmp_path, width):
+    result = _check(sample_data, _layout(rail_width_in=width), tmp_path, f"w{width}")
+    assert f"--rail-w: {width}in" in result.laid_out_html
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4])
+def test_front_stories_caps_the_front_page(sample_data, tmp_path, n):
+    from bs4 import BeautifulSoup
+
+    result = _check(sample_data, _layout(front_stories=n), tmp_path, f"front{n}")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    stories = soup.select("#page-1 article.story")
+    assert 1 <= len(stories) <= n
+    assert len(result.printed) <= n
+    if n == 1:
+        # The lead alone: the solo slot, the whole page, and no second row.
+        assert result.printed == [0]
+        assert soup.select("#page-1 .row") == []
+        assert "solo" in (soup.select_one("#page-1 .stories").get("class") or [])
 
 
 def test_unknown_font_falls_back_to_the_default(sample_data, tmp_path):

@@ -12,7 +12,7 @@ fonts, `render.py`, sample data). This plan covers everything around it.
    text after the last word that fits the front-page slot and continue the
    rest, unchanged, on page 2.
 2. **There are no LLM calls anywhere in this pipeline.** Nothing is generated.
-   The paper is assembled from data (calendar, tasks, weather) and from
+   The paper is assembled from data (calendar, lists, weather) and from
    articles as published.
 3. **The paper prints every morning even when a source fails.** A gatherer
    that errors produces an empty section and a log line; it never blocks the
@@ -38,7 +38,7 @@ fonts, `render.py`, sample data). This plan covers everything around it.
                          ┌──────────────────────────── one FastAPI process ───────────────────────────┐
                          │                                                                            │
   browser on the LAN ──▶ │  web UI  (settings, preview, "print now", status)   ──▶ /data/settings.json │
-  iPhone Shortcut ─────▶ │  POST /tasks                                        ──▶ /data/tasks.json    │
+  iPhone Shortcut ─────▶ │  POST /lists/<slug>                              ──▶ /data/lists/<slug>.json │
                          │  scheduler (APScheduler, reads print_time/days from settings)               │
                          │      └─▶ run()  ─▶ gather/* ─▶ data.json ─▶ render ─▶ paper.pdf ─▶ deliver │
                          │                                                          ├─▶ printer (IPP) │
@@ -66,7 +66,7 @@ personal-paper/
   gather/
     __init__.py         run_all(settings) -> dict matching sample_data.json
     calendar.py
-    tasks.py
+    lists.py            the reader's named lists, pushed from the phone
     weather.py
     substack.py
     crossword.py        the day's NYT puzzle as data (see below)
@@ -76,7 +76,7 @@ personal-paper/
     email.py            SMTP, PDF attached
   run.py                one issue: gather → render → deliver → archive (also the CLI)
   app/
-    main.py             FastAPI app: web UI routes, POST /tasks, scheduler startup
+    main.py             FastAPI app: web UI routes, POST /lists/<slug>, scheduler startup
     settings.py         pydantic model + load/save of /data/settings.json + defaults
     scheduler.py        APScheduler job wired to settings.schedule
     templates/          Jinja2 pages for the UI (plain HTML, no build step)
@@ -101,7 +101,12 @@ Read that file first; it is the contract. Notes per field:
 - `events[]`: `time` is a display string — `"All day"` or a bare clock time
   like `"9:30"` / `"3:00"` (order makes a.m./p.m. obvious; the rail column is
   narrow). `where` is optional.
-- `tasks[]`: plain strings.
+- `lists[]`: one entry per list configured on the Sources tab, in that
+  order: `{"name", "slug", "style", "items"}`, `style` one of `checkbox`,
+  `plain`, `numbered`, `items` plain strings — `[]` on a morning the phone
+  did not sync that list. (It replaced `tasks[]`, a bare list of strings,
+  when lists got names.) Where a list is set — rail, page 2 or off — is a
+  look setting, `look.layout.sections`, never part of the data.
 - `weather.hourly[]`: six entries at 7, 10, 13, 16, 19, 22 local time.
 - `articles[]`: `title`, `deck` (nullable), `author`, `publication`,
   `published` (short, e.g. `"Sept. 15"`), `paragraphs` (list of plain-text
@@ -132,7 +137,7 @@ volume is wiped nothing sensitive was in it.
 | Variable | Purpose |
 |---|---|
 | `WEB_PASSWORD` | HTTP basic auth on the web page. Optional: unset means no login, and the page says so on every tab. |
-| `TASKS_TOKEN` | Bearer token the iPhone Shortcut sends to `POST /tasks`. |
+| `TASKS_TOKEN` | Bearer token the iPhone Shortcut sends to `POST /lists/<slug>`. Optional: each list also accepts its own slug as the bearer token, and with no `TASKS_TOKEN` set a post with no header at all is accepted. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Outgoing mail for the email route (a Gmail app password works). |
 | `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD` | Only if a paid Substack needs the email route. |
 | `NYT_S` | The subscriber's `NYT-S` cookie from a logged-in nytimes.com browser, for the crossword. Needs a Games subscription; good for about a year. |
@@ -163,6 +168,25 @@ Served by the same app on port 8080, behind `WEB_PASSWORD` when it is set. Plain
 server-rendered HTML with a little JavaScript for the preview; no build
 step. Four tabs.
 
+### `look.layout` — where the furniture goes
+
+The rail is no longer three fixed boxes with on/off switches. `Layout`
+carries:
+
+- `sections`: an ordered list of `{key, place}`. `key` is `agenda`,
+  `hourly`, `notes`, or `list:<slug>` for one of `sources.lists`; `place`
+  is `rail` (page 1's right column, filled top to bottom, in this order),
+  `page2` (a column beside the continuations) or `off`. A key naming a
+  list that no longer exists is ignored by the template, and the Sources
+  tab drops it when the list goes; adding a list appends its section
+  automatically, so a new list prints without a trip to the Look tab.
+- `rail_width_in` (1.5–2.8), `front_stories` (1–4),
+- `crossword_place` (`bottom`/`top`), `crossword_cell_in` (0.14–0.26),
+  `crossword_max_pct` (25–75): how the puzzle sits on page 2.
+
+Nothing here can change an article's words; it only changes how much fits,
+which is the fitting script's problem as before.
+
 **Look.** `paper.name`, the two ear texts (initials, the right-ear lines),
 imprint and price lines; masthead font, headline font, body font, each a
 dropdown of the bundled OFL fonts (`render/fonts/`; ship a few more
@@ -178,8 +202,9 @@ and more goes inside. Nothing here can change an article's words.
 button fetches and shows the calendar name and today's event count);
 Substack publications, ordered, each with a "paid" checkbox (order =
 front-page priority); weather lat/lon with a "Check" that shows the
-current forecast; tasks: shows the age of the last sync and the exact
-Shortcut URL to configure.
+current forecast; the Lists table (name, slug, style, age limit, add and
+remove) with a box per list showing the age of the last sync, how many
+items arrived, and the exact URL and header the Shortcut needs.
 
 **Output.** Multi-select of routes, each with its own fields, plus the
 schedule:
@@ -303,21 +328,34 @@ Each module exposes `fetch(settings) -> <its part of the contract>` and a
 - More candidates than the sheet can hold is the normal case: whatever does
   not fit stays unseen and comes back to the front of the queue tomorrow.
 
-### tasks.py
+### lists.py
 
-Depends on which app "Smart Tasks" is — **ask before building this module.**
+The reader's own lists — to do, groceries, packing — configured on the
+Sources tab as `sources.lists`: `{name, slug, style, max_age_hours}`. The
+slug is derived from the name when the list is first saved (lowercase,
+`[a-z0-9]+` joined by `-`, 40 characters) and then never changes: it is
+half of the address the phone was set up with.
 
-- **If it is the iOS/macOS app "Smart Tasks: Lists Made Easy":** it has no
-  public API and no account, so the phone has to push. The app exposes
-  `POST /tasks` (bearer token from env `TASKS_TOKEN`) accepting
-  `{"tasks": ["..."]}` and writing `/data/tasks.json` with a timestamp. An
-  iPhone Shortcut personal automation at 05:50 collects today's tasks (only
-  possible if the app exposes Shortcuts actions — check the Shortcuts app;
-  if it doesn't, Apple Reminders or Todoist via the same endpoint is the
-  fallback) and posts them to `http://<unraid-ip>:8080/tasks`. `tasks.py`
-  reads the file; if it is older than 24 h, return an empty list and log
-  "tasks not synced".
-- **If it is SmartTask.co:** plain REST client with an API token.
+- There is no API to call, so the phone pushes. `POST /lists/<slug>`
+  accepts `{"items": [...]}`, `{"tasks": [...]}` or plain text, one item
+  per line, whatever the Content-Type says, and writes
+  `<DATA_DIR>/lists/<slug>.json` as `{"items": [...], "updated": <ISO>}`.
+  An iPhone Shortcut per list, run by a personal automation before print
+  time, is what posts them. `POST /tasks` stays as an alias for the
+  `tasks` list, so a Shortcut built before lists had names keeps working,
+  and a `<DATA_DIR>/tasks.json` from that time is read as the `tasks` list
+  until the first new sync replaces it.
+- **The endpoint's auth rule**, in this order: `Authorization: Bearer
+  <TASKS_TOKEN>` when the container has one; or `Bearer <slug>` — the
+  list's own name as its token, which is no weaker than the URL it is
+  already in and saves configuring a second secret on the phone; or, when
+  `TASKS_TOKEN` is not set at all, no Authorization header. An unknown or
+  malformed slug is a 404 naming the slugs this paper does have.
+- `fetch(settings)` returns one entry per configured list, in the order of
+  the Sources tab, with `items: []` and a "list <slug> not synced" log line
+  when the file is missing, has no usable timestamp, or is older than that
+  list's `max_age_hours`. A stale list prints empty; yesterday's list is
+  never printed as if it were today's.
 
 ### crossword.py
 
@@ -438,6 +476,9 @@ which negotiates the format. Not built unless needed.
 - `tests/test_deliver.py`: email route against a local `aiosmtpd` server;
   printer route against a fake IPP responder (or `pyipp`'s test fixtures);
   one failed route does not block the other.
+- `tests/test_lists.py`: each list fetched per its own age limit, a stale
+  one empty, the pre-lists `tasks.json` still read, slugs derived, the
+  60-item cap.
 - `tests/test_web.py`: the UI asks for `WEB_PASSWORD` when set and is open when unset;
   saving the Output tab reschedules the job; "Render example" produces
   PNGs.
@@ -457,7 +498,8 @@ which negotiates the format. Not built unless needed.
    tab for both.
 4. **Substack via RSS.** Front page with real posts; Sources tab entries;
    then IMAP if any subscription is paid.
-5. **Tasks.** Endpoint + Shortcut (or the API client, depending on the app).
+5. **Lists.** Endpoint + Shortcut, one list per Shortcut, and the Layout
+   table that says where each one prints.
 6. **Look tab.** Fonts, sizes, ear text, section toggles, with the
    `test_look.py` guard. Also removes the hardcoded "M. L." and "The
    crossword is on the back page." from the template: both become ear
@@ -470,7 +512,8 @@ which negotiates the format. Not built unless needed.
 
 ## Things to ask the owner before starting the relevant milestone
 
-- Which "Smart Tasks" app, and does it expose Shortcuts actions?
+- Which tasks app, and does it expose Shortcuts actions? (Answered by
+  lists: whatever produces text, one item per line, can post to a list.)
 - The list of Substack publications, in priority order, and which are paid.
 - One calendar or several? The secret iCal URL(s).
 - Host networking on the Unraid box (for printer discovery), or bridge

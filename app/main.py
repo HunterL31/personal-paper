@@ -37,13 +37,20 @@ if str(REPO) not in sys.path:  # so `state`, `run` and `render` import cleanly
 
 from app import auth, jobs, scheduler  # noqa: E402
 from app.settings import (  # noqa: E402
+    DEFAULT_LIST_SLUG,
+    PLACE_LABELS,
     FONT_CHOICES_BODY,
     FONT_CHOICES_HEAD,
     FONT_CHOICES_MASTHEAD,
+    PLACES,
+    SLUG_RE,
     CalendarSource,
     Env,
+    ListSource,
+    RailSection,
     Settings,
     SubstackSource,
+    slugify,
 )
 from state import data_dir, load_state  # noqa: E402
 
@@ -58,6 +65,10 @@ DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 #: body_size_pt choices: 8.0 to 11.0 in half points.
 BODY_SIZES = [8.0 + 0.5 * i for i in range(7)]
 TABS = [("look", "Look"), ("sources", "Sources"), ("output", "Output"), ("preview", "Preview")]
+#: How a list is set on paper, and what the Sources tab calls each choice.
+LIST_STYLES = [("checkbox", "Checkboxes"), ("plain", "Plain lines"), ("numbered", "Numbered")]
+#: Where a section goes, as the Look tab's dropdown puts it.
+PLACE_CHOICES = [(place, PLACE_LABELS[place]) for place in PLACES]
 #: Which container variables each tab shows as "set in container / not set".
 ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.NYT_S, Env.TZ]
 ENV_ON_OUTPUT = [*Env.SMTP]
@@ -261,7 +272,7 @@ def _host_and_port(raw: str) -> tuple[str, str]:
     return raw, ""
 
 
-def derived_tasks_url(request: Request) -> str:
+def derived_post_url(request: Request) -> str:
     """
     The address the phone should post to, worked out from the request.
 
@@ -280,12 +291,41 @@ def derived_tasks_url(request: Request) -> str:
     return f"http://{ip}:{port or request.url.port or DEFAULT_PORT}"
 
 
+def post_base_url(request: Request, settings: Settings) -> str:
+    """Where the phone posts: the reader's own override, or the derived one."""
+    override = (settings.sources.tasks_post_url or "").strip().rstrip("/")
+    return override or derived_post_url(request)
+
+
 def tasks_token_hint() -> str:
     """Which token the container is holding, without revealing it."""
     token = Env.get(Env.TASKS_TOKEN)
     if not token:
         return f"<{Env.TASKS_TOKEN} — not set in the container>"
     return f"Bearer {token[:4]}…"
+
+
+def list_rows(settings: Settings, base_url: str) -> list[dict[str, Any]]:
+    """One row per configured list: what it is called, how it is set, how
+    long ago the phone last reached it, and the address it posts to."""
+    from gather import lists as lists_gather
+
+    rows: list[dict[str, Any]] = []
+    for index, source in enumerate(settings.sources.lists):
+        rows.append({
+            "index": index,
+            "name": source.name,
+            "slug": source.slug,
+            "style": source.style,
+            "max_age_hours": source.max_age_hours,
+            "status": lists_gather.status(source.slug),
+            "url": f"{base_url}/lists/{source.slug}",
+            # The slug is not a secret — it is in the URL — so the header
+            # that uses it as the token can always be copied.
+            "auth_slug": f"Bearer {source.slug}",
+            "example": '{"items": ["first item", "second item"]}',
+        })
+    return rows
 
 
 # ------------------------------------------------------------------- pages
@@ -302,13 +342,61 @@ def healthz() -> dict[str, bool]:
 # --------------------------------------------------------------- Look tab
 @app.get("/look")
 def look_get(request: Request) -> Response:
+    settings = Settings.load()
     return page(
         request, "look", "look.html",
-        look=Settings.load().look,
+        look=settings.look,
+        layout=settings.look.layout,
+        # Every section the paper knows about, in the layout's own order,
+        # with the reader's own list names as labels.
+        sections=settings.known_sections(),
+        places=PLACE_CHOICES,
         fonts_masthead=FONT_CHOICES_MASTHEAD,
         fonts_head=FONT_CHOICES_HEAD,
         fonts_body=FONT_CHOICES_BODY,
         body_sizes=BODY_SIZES,
+    )
+
+
+def _save_layout(form: FormData, settings: Settings) -> None:
+    """The Layout table: where each section goes, in the order it is given.
+
+    Only keys the paper knows about are kept, so a list removed on the
+    Sources tab cannot come back through a stale form.
+    """
+    layout = settings.look.layout
+    known = {row["key"] for row in settings.known_sections()}
+    rows: list[tuple[float, RailSection]] = []
+    for i, raw in enumerate(form.getlist("sec_key")):
+        key = raw.strip() if isinstance(raw, str) else ""
+        if key not in known or any(key == r.key for _, r in rows):
+            continue
+        place = one_of(form_text(form, f"sec_place_{i}"), PLACES, "rail")
+        order = form_number(form, f"sec_order_{i}", float(i + 1), 1.0, 99.0)
+        rows.append((order, RailSection(key=key, place=place)))
+    if rows:
+        layout.sections = [section for _, section in sorted(rows, key=lambda r: r[0])]
+
+    layout.rail_width_in = form_number(form, "rail_width_in", layout.rail_width_in, 1.5, 2.8)
+    layout.front_stories = int(form_number(form, "front_stories", float(layout.front_stories), 1.0, 4.0))
+    layout.crossword_place = one_of(
+        form_text(form, "crossword_place"), ["bottom", "top"], layout.crossword_place
+    )
+    layout.crossword_cell_in = form_number(
+        form, "crossword_cell_in", layout.crossword_cell_in, 0.14, 0.26
+    )
+    layout.crossword_max_pct = int(form_number(
+        form, "crossword_max_pct", float(layout.crossword_max_pct), 25.0, 75.0
+    ))
+
+    # The old section switches are what the template asked before there
+    # were places; keep them in step so nothing reading them disagrees
+    # with the Layout table.
+    place_of = {section.key: section.place for section in layout.sections}
+    settings.look.show_hourly = place_of.get("hourly", "off") != "off"
+    settings.look.show_notes = place_of.get("notes", "off") != "off"
+    settings.look.show_todo = any(
+        place != "off" for key, place in place_of.items() if key.startswith("list:")
     )
 
 
@@ -328,10 +416,8 @@ async def look_post(request: Request) -> RedirectResponse:
     look.body_font = one_of(form_text(form, "body_font"), FONT_CHOICES_BODY, look.body_font)
     look.body_size_pt = form_number(form, "body_size_pt", look.body_size_pt, 8.0, 11.0)
     look.lead_body_height_in = form_number(form, "lead_body_height_in", look.lead_body_height_in, 1.5, 5.0)
-    look.show_todo = form_flag(form, "show_todo")
-    look.show_hourly = form_flag(form, "show_hourly")
-    look.show_notes = form_flag(form, "show_notes")
     look.justify = form_flag(form, "justify")
+    _save_layout(form, settings)
 
     settings.save()
     return saved("/look")
@@ -341,7 +427,6 @@ async def look_post(request: Request) -> RedirectResponse:
 @app.get("/sources")
 def sources_get(request: Request) -> Response:
     settings = Settings.load()
-    from gather import tasks as tasks_gather
 
     calendars = [
         {"index": i, "masked": mask(c.url), "name": c.name}
@@ -350,17 +435,18 @@ def sources_get(request: Request) -> Response:
     substacks = [
         {"index": i, "name": s.name, "paid": s.paid} for i, s in enumerate(settings.sources.substacks)
     ]
-    derived = derived_tasks_url(request)
-    override = (settings.sources.tasks_post_url or "").strip()
+    derived = derived_post_url(request)
+    # The boxes show the address the phone must use: the reader's own
+    # override when there is one, otherwise the one we worked out.
+    base_url = post_base_url(request, settings)
     return page(
         request, "sources", "sources.html",
         sources=settings.sources,
         calendars=calendars,
         substacks=substacks,
-        tasks_status=tasks_gather.status(),
-        # The box shows the address the phone must use: the reader's own
-        # override when there is one, otherwise the one we worked out.
-        tasks_url=(override.rstrip("/") or derived),
+        lists=list_rows(settings, base_url),
+        list_styles=LIST_STYLES,
+        tasks_url=base_url,
         tasks_url_derived=derived,
         tasks_token_hint=tasks_token_hint(),
         tasks_token_set=Env.is_set(Env.TASKS_TOKEN),
@@ -379,6 +465,56 @@ def sources_get(request: Request) -> Response:
         nyt_cookie_set=Env.is_set(Env.NYT_S),
         env_rows=env_rows(ENV_ON_SOURCES),
     )
+
+
+def _unique_slug(wanted: str, taken: set[str]) -> str:
+    """`wanted`, or `wanted-2`, `wanted-3`... when the reader already has one."""
+    slug = wanted or "list"
+    n = 1
+    while slug in taken:
+        n += 1
+        slug = f"{wanted[:36]}-{n}"
+    taken.add(slug)
+    return slug
+
+
+def _posted_lists(form: FormData, existing: list[ListSource]) -> list[ListSource]:
+    """The Lists table as the Sources tab submitted it.
+
+    A row that is already saved keeps its slug — it is half of the address
+    the phone is configured with — and a new row gets one derived from its
+    name, made unique.
+    """
+    out: list[ListSource] = []
+    taken: set[str] = set()
+    for raw in form.getlist("list_index"):
+        try:
+            i = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if form_flag(form, f"list_remove_{i}") or i >= len(existing):
+            continue
+        source = existing[i]
+        name = form_text(form, f"list_name_{i}") or source.name
+        taken.add(source.slug)
+        out.append(ListSource(
+            name=name,
+            slug=source.slug,
+            style=one_of(form_text(form, f"list_style_{i}"), [k for k, _ in LIST_STYLES], source.style),
+            max_age_hours=int(form_number(
+                form, f"list_max_age_{i}", float(source.max_age_hours), 1.0, 168.0)),
+        ))
+    for key in _new_row_keys(form, "list_new"):
+        name = form_text(form, f"list_new_name_{key}")
+        if not name:
+            continue
+        out.append(ListSource(
+            name=name,
+            slug=_unique_slug(slugify(name) or "list", taken),
+            style=one_of(form_text(form, f"list_new_style_{key}"), [k for k, _ in LIST_STYLES], "checkbox"),
+            max_age_hours=int(form_number(form, f"list_new_max_age_{key}", 24.0, 1.0, 168.0)),
+        ))
+    return out
 
 
 @app.post("/sources")
@@ -420,19 +556,20 @@ async def sources_post(request: Request) -> RedirectResponse:
 
     settings.sources.calendars = calendars
     settings.sources.substacks = [s for _, s in sorted(rows, key=lambda r: r[0])]
+    settings.sources.lists = _posted_lists(form, list(settings.sources.lists))
     settings.sources.weather.lat = form_number(form, "lat", settings.sources.weather.lat, -90.0, 90.0)
     settings.sources.weather.lon = form_number(form, "lon", settings.sources.weather.lon, -180.0, 180.0)
     settings.sources.article_max_age_days = int(
         form_number(form, "article_max_age_days", float(settings.sources.article_max_age_days), 1.0, 60.0)
-    )
-    settings.sources.tasks_max_age_hours = int(
-        form_number(form, "tasks_max_age_hours", float(settings.sources.tasks_max_age_hours), 1.0, 168.0)
     )
     settings.sources.tasks_post_url = form_text(
         form, "tasks_post_url", settings.sources.tasks_post_url
     ).rstrip("/")
     settings.sources.crossword.enabled = form_flag(form, "crossword_enabled")
     settings.sources.crossword.days = [d for d in range(7) if form_flag(form, f"crossword_day_{d}")]
+    # A new list gets a section in the rail, a removed one loses its
+    # section, so a list is usable without a trip to the Look tab.
+    settings.sync_list_sections()
     settings.save()
     return saved("/sources")
 
@@ -728,46 +865,102 @@ def log_page(request: Request) -> Response:
     return page(request, "log", "log.html", lines=lines, log_path=str(path))
 
 
-# ------------------------------------------------------------- POST /tasks
-@app.post("/tasks")
-async def post_tasks(request: Request) -> JSONResponse:
-    """What the iPhone Shortcut posts every morning. Bearer token, no cookies."""
+# ------------------------------------------------- POST /lists/<slug>
+def list_auth_error(request: Request, slug: str) -> str | None:
+    """None when the post may go through, otherwise why it may not.
+
+    Three ways in, in this order:
+
+    1. `Authorization: Bearer <TASKS_TOKEN>`, when the container has one;
+    2. `Authorization: Bearer <slug>` — the owner's own request: the list's
+       name in the URL is also the token, which is no weaker than the URL
+       itself and saves a second secret on the phone;
+    3. no header at all, but only when `TASKS_TOKEN` is not set.
+    """
     token = Env.get(Env.TASKS_TOKEN)
-    if not token:
-        return JSONResponse(
-            {"ok": False, "detail": f"{Env.TASKS_TOKEN} is not set in the container"},
-            status_code=503,
-        )
-    scheme, _, given = (request.headers.get("authorization") or "").partition(" ")
+    header = (request.headers.get("authorization") or "").strip()
+    if not header:
+        if token:
+            return (
+                f"no Authorization header ({Env.TASKS_TOKEN} is set in the container, "
+                f"so the header is Bearer followed by that token, or Bearer {slug})"
+            )
+        return None
+    scheme, _, given = header.partition(" ")
     given = given.strip()
-    if scheme.lower() != "bearer" or not secrets.compare_digest(given.encode(), token.encode()):
-        # The docs write the header as `Bearer <TASKS_TOKEN>`; a reader who
-        # keeps the angle brackets gets told so rather than just "bad token".
-        hint = ""
-        if given.startswith("<") and given.endswith(">"):
-            hint = " (drop the angle brackets: the header is Bearer followed by the token itself)"
-        elif scheme.lower() != "bearer":
-            hint = " (the Authorization header must start with Bearer)"
-        return JSONResponse({"ok": False, "detail": "bad token" + hint}, status_code=401)
+    if scheme.lower() != "bearer":
+        return "bad token (the Authorization header must start with Bearer)"
+    accepted = [slug, *([token] if token else [])]
+    if any(secrets.compare_digest(given.encode(), ok.encode()) for ok in accepted):
+        return None
+    # The docs write the header as `Bearer <TASKS_TOKEN>`; a reader who
+    # keeps the angle brackets gets told so rather than just "bad token".
+    if given.startswith("<") and given.endswith(">"):
+        return "bad token (drop the angle brackets: the header is Bearer followed by the token itself)"
+    return "bad token"
+
+
+def posted_items(text: str, content_type: str) -> list[Any] | None:
+    """
+    The items out of whatever the phone sent, or None when the body claims
+    to be JSON and is not.
+
+    JSON when it parses, whatever the header says: Shortcuts users often
+    leave Content-Type on application/json while sending text. `items` and
+    `tasks` are both read, so a Shortcut built before lists had names keeps
+    working.
+    """
+    try:
+        payload = json.loads(text) if text.strip() else {}
+        if isinstance(payload, dict):
+            items = payload.get("items")
+            if items is None:
+                items = payload.get("tasks")
+        else:
+            items = payload
+        if not isinstance(items, list):
+            raise ValueError("no items list")
+    except ValueError:
+        if content_type == "application/json" and text.lstrip().startswith(("{", "[")):
+            return None
+        return text.splitlines()      # plain text: one item per line
+    return items
+
+
+async def store_list(slug: str, request: Request) -> JSONResponse:
+    """The body of `POST /lists/<slug>`, shared with the `/tasks` alias."""
+    settings = Settings.load()
+    if not SLUG_RE.match(slug) or settings.sources.list_by_slug(slug) is None:
+        known = ", ".join(settings.sources.slugs()) or "none yet"
+        return JSONResponse(
+            {"ok": False, "detail": f"no list called {slug!r}; this paper has: {known}"},
+            status_code=404,
+        )
+
+    error = list_auth_error(request, slug)
+    if error is not None:
+        return JSONResponse({"ok": False, "detail": error}, status_code=401)
 
     raw = await request.body()
     text = raw.decode("utf-8", "replace")
     content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
-    tasks: Any
-    try:
-        # JSON when it parses, whatever the header says: Shortcuts users
-        # often leave Content-Type on application/json while sending text.
-        payload = json.loads(text) if text.strip() else {}
-        tasks = payload.get("tasks") if isinstance(payload, dict) else payload
-        if not isinstance(tasks, list):
-            raise ValueError("no tasks list")
-    except ValueError:
-        if content_type == "application/json" and text.lstrip().startswith(("{", "[")):
-            return JSONResponse({"ok": False, "detail": "body is not valid JSON"}, status_code=400)
-        # Plain text: one task per line.
-        tasks = text.splitlines()
+    items = posted_items(text, content_type)
+    if items is None:
+        return JSONResponse({"ok": False, "detail": "body is not valid JSON"}, status_code=400)
 
-    from gather import tasks as tasks_gather
+    from gather import lists as lists_gather
 
-    written = tasks_gather.write_tasks(tasks if isinstance(tasks, list) else [])
-    return JSONResponse({"ok": True, "count": len(written)})
+    written = lists_gather.write_list(slug, items)
+    return JSONResponse({"ok": True, "list": slug, "count": len(written)})
+
+
+@app.post("/lists/{slug}")
+async def post_list(slug: str, request: Request) -> JSONResponse:
+    """What the iPhone Shortcut posts every morning. Bearer token, no cookies."""
+    return await store_list(slug, request)
+
+
+@app.post("/tasks")
+async def post_tasks(request: Request) -> JSONResponse:
+    """The address the phone used before lists had names: still the to-do list."""
+    return await store_list(DEFAULT_LIST_SLUG, request)
