@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import secrets
 import socket
@@ -156,6 +157,9 @@ def page(request: Request, tab: str, template: str, **extra: Any) -> Response:
         "paper_name": Settings.load().look.paper_name,
         "status": _status(),
         "saved": request.query_params.get("saved") == "1",
+        # Which image this is: the commit the publish workflow built from,
+        # so "did the update take?" has an answer on every page.
+        "build": (os.environ.get("APP_BUILD") or "dev")[:12],
     }
     context.update(extra)
     return TEMPLATES.TemplateResponse(request, template, context)
