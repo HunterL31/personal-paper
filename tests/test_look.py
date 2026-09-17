@@ -1,7 +1,8 @@
 """
 The Look tab may change every size, font and toggle in the paper; it may
 never change a word of an article, and it may never change the sheet: two
-pages, always, with whole articles on them.
+pages, always, filled with whole articles and, at most, one last story
+stopped at a paragraph boundary with a line saying where the rest of it is.
 """
 from __future__ import annotations
 
@@ -45,14 +46,36 @@ def test_masthead_fonts(sample_data, tmp_path, masthead_font):
 
 
 def test_bigger_type_prints_fewer_articles(sample_data, tmp_path):
-    """The sheet does not grow, so the type has to be paid for in stories."""
-    counts = {}
+    """The sheet does not grow, so the type has to be paid for in stories.
+
+    Never in words, though: at every size the sheet is filled, the stories on
+    it are the author's, and the last of them may stop at a paragraph
+    boundary with a line pointing to the rest.
+    """
+    counts, partials = {}, {}
     for size in (8.0, 9.0, 10.0, 11.0):
         result = _check(sample_data, Look(body_size_pt=size), tmp_path, f"size{size}")
         counts[size] = len(result.printed)
+        partials[size] = result.partial
+        assert result.printed, f"{size}pt printed nothing at all"
     ordered = [counts[s] for s in (8.0, 9.0, 10.0, 11.0)]
     assert ordered == sorted(ordered, reverse=True), counts
     assert counts[11.0] < counts[9.0], counts
+    # At 11pt the lead alone is more than the sheet holds, so it prints as far
+    # as it fits rather than leaving the reader a paper with no stories in it.
+    assert counts[11.0] == 1, counts
+    assert list(partials[11.0]) == [0] and partials[11.0][0] >= 1, partials[11.0]
+
+
+@pytest.mark.parametrize("size", [8.0, 9.5, 11.0])
+def test_the_sheet_is_never_empty_and_never_reworded(sample_data, tmp_path, size):
+    """Whatever the type size, there is a story on the sheet, printed as written."""
+    result = _check(sample_data, Look(body_size_pt=size), tmp_path, f"fill{size}")
+    assert result.printed, f"{size}pt printed nothing at all"
+    assert len(result.partial) <= 1
+    for i, n in result.partial.items():
+        assert i == result.printed[-1]
+        assert 1 <= n <= len(sample_data["articles"][i]["paragraphs"])
 
 
 @pytest.mark.parametrize("justify, align", [(True, "justify"), (False, "left")])

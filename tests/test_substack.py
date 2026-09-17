@@ -60,8 +60,11 @@ SECOND_CUP_PARAGRAPHS = [
 
 
 # ------------------------------------------------------------- helpers
-def settings_for(*sources: SubstackSource) -> Settings:
-    return Settings(sources=Sources(substacks=list(sources)))
+def settings_for(*sources: SubstackSource, days: int | None = None) -> Settings:
+    kwargs = {"substacks": list(sources)}
+    if days is not None:
+        kwargs["article_max_age_days"] = days
+    return Settings(sources=Sources(**kwargs))
 
 
 def build_feed(title: str, host: str, items: list[dict]) -> bytes:
@@ -155,14 +158,47 @@ def test_article_fields(feeds, no_imap, fake_state):
     assert article["publication"] == "The Slow Kitchen"
     assert article["published"] == "Sept. 15"
     assert article["guid"] == BREAD
+    assert article["url"] == BREAD
     assert set(article) == {
-        "title", "deck", "author", "publication", "published", "paragraphs", "guid",
+        "title", "deck", "author", "publication", "published", "paragraphs",
+        "url", "guid",
     }
+
+
+def test_url_is_a_plain_link(feeds, no_imap, fake_state):
+    """The URL is printed on paper, so no tracking tail rides along."""
+    feeds["https://tracked.substack.com/feed"] = build_feed(
+        "Tracked", "tracked",
+        [{"title": "Hello", "slug": "hello", "pubdate": "Tue, 16 Sep 2025 09:00:00 GMT"}],
+    ).replace(
+        b"<link>https://tracked.substack.com/p/hello</link>",
+        b"<link>https://tracked.substack.com/p/hello?utm_source=substack&amp;utm_medium=email</link>",
+    )
+    (article,) = substack.fetch(settings_for(SubstackSource(name="tracked")))
+    assert article["url"] == "https://tracked.substack.com/p/hello"
 
 
 def test_post_older_than_a_week_is_skipped(feeds, no_imap, fake_state):
     articles = substack.fetch(settings_for(SubstackSource(name="slowkitchen")))
     assert TOMATOES not in [a["guid"] for a in articles]
+
+
+def test_the_window_comes_from_the_settings(feeds, no_imap, fake_state):
+    """A post eight days old: out with the default 7, in with 10."""
+    feeds["https://window.substack.com/feed"] = build_feed(
+        "Window", "window",
+        [{"title": "Eight days ago", "slug": "eight",
+          "pubdate": "Mon, 08 Sep 2025 15:00:00 GMT"},      # NOW is Sept 16, 15:00
+         {"title": "Yesterday", "slug": "yesterday",
+          "pubdate": "Mon, 15 Sep 2025 15:00:00 GMT"}],
+    )
+    source = SubstackSource(name="window")
+
+    default_window = substack.fetch(settings_for(source))
+    assert [a["title"] for a in default_window] == ["Yesterday"]
+
+    wider = substack.fetch(settings_for(source, days=10))
+    assert [a["title"] for a in wider] == ["Eight days ago", "Yesterday"]
 
 
 def test_seen_guids_are_skipped(feeds, no_imap, fake_state):
@@ -209,7 +245,7 @@ def test_paywalled_post_via_imap(monkeypatch, feeds, fake_state, fixtures):
         assert chrome not in body
 
 
-def test_cap_at_four(monkeypatch, feeds, no_imap, fake_state, caplog):
+def test_queue_is_capped_and_the_rest_are_logged(feeds, no_imap, fake_state, caplog):
     items = [
         {
             "title": f"Post {n}",
@@ -219,30 +255,57 @@ def test_cap_at_four(monkeypatch, feeds, no_imap, fake_state, caplog):
         }
         for n in range(6)
     ]
+    items += [
+        {"title": f"Extra {n}", "slug": f"extra-{n}",
+         "pubdate": f"Mon, 1{n} Sep 2025 18:00:00 GMT", "body": f"Extra body {n}."}
+        for n in range(4)
+    ]
     feeds["https://daily.substack.com/feed"] = build_feed("Daily", "daily", items)
     with caplog.at_level("INFO"):
         articles = substack.fetch(settings_for(SubstackSource(name="daily")))
-    assert len(articles) == 4
-    assert [a["title"] for a in articles] == ["Post 5", "Post 4", "Post 3", "Post 2"]
-    assert "held over" in caplog.text
+
+    assert len(articles) == substack.QUEUE_LIMIT == 8
+    # ten posts inside the window, oldest first: the two newest wait.
+    assert [a["title"] for a in articles[:2]] == ["Post 0", "Extra 0"]
+    assert [a["title"] for a in articles[-2:]] == ["Post 3", "Extra 3"]
+    assert "2 post(s) still in the queue" in caplog.text
+    assert "'Post 5'" in caplog.text
 
 
-def test_priority_is_settings_order_then_newest(feeds, no_imap, fake_state):
+def test_queue_order_is_source_order_then_oldest_first(feeds, no_imap, fake_state):
+    """Source order decides between publications; inside one, the queue."""
     feeds["https://first.substack.com/feed"] = build_feed(
         "First", "first",
-        [{"title": "Older but first in the list", "slug": "a",
+        [{"title": "First, newer", "slug": "a",
+          "pubdate": "Tue, 16 Sep 2025 09:00:00 GMT"},
+         {"title": "First, older", "slug": "b",
           "pubdate": "Sat, 13 Sep 2025 16:00:00 GMT"}],
     )
     feeds["https://second.substack.com/feed"] = build_feed(
         "Second", "second",
-        [{"title": "Newest", "slug": "b", "pubdate": "Tue, 16 Sep 2025 09:00:00 GMT"},
-         {"title": "Middle", "slug": "c", "pubdate": "Mon, 15 Sep 2025 09:00:00 GMT"}],
+        [{"title": "Second, newest", "slug": "c", "pubdate": "Tue, 16 Sep 2025 10:00:00 GMT"},
+         {"title": "Second, oldest", "slug": "d", "pubdate": "Fri, 12 Sep 2025 09:00:00 GMT"},
+         {"title": "Second, middle", "slug": "e", "pubdate": "Mon, 15 Sep 2025 09:00:00 GMT"}],
     )
     articles = substack.fetch(
         settings_for(SubstackSource(name="first"), SubstackSource(name="second"))
     )
     assert [a["title"] for a in articles] == [
-        "Older but first in the list", "Newest", "Middle",
+        "First, older", "First, newer",
+        "Second, oldest", "Second, middle", "Second, newest",
+    ]
+
+
+def test_every_article_carries_a_url(feeds, no_imap, fake_state):
+    feeds["https://first.substack.com/feed"] = build_feed(
+        "First", "first",
+        [{"title": "One", "slug": "one", "pubdate": "Mon, 15 Sep 2025 09:00:00 GMT"}],
+    )
+    articles = substack.fetch(
+        settings_for(SubstackSource(name="first"), SubstackSource(name="slowkitchen"))
+    )
+    assert [a["url"] for a in articles] == [
+        "https://first.substack.com/p/one", BREAD,
     ]
 
 

@@ -160,8 +160,16 @@ the lead) and press Check on each to see its latest title.
   ticked the gatherer fetches the full post from the email Substack sent
   you instead, which needs the IMAP setup below.
 
-Only posts from the last seven days are considered, and each post prints
-once. The first morning prints whatever is new that week, not the archive.
+Posts are a queue rather than a news feed: the oldest post you have not
+been given yet goes first, publication by publication in the order above,
+so nothing is skipped while newer posts jump ahead of it. **Articles
+older than N days are skipped** (7 by default, 1–60) is how far back that
+queue looks — a post still waiting when it passes that age is never
+printed, which is what keeps the first morning from printing the archive.
+
+Each post prints once. Four stories fit a sheet at most, and a story is
+printed whole or held for a morning with room; when the last slot holds
+only the beginning of one, the paper prints the address of the rest.
 
 **Email route for paid posts (Gmail):**
 
@@ -236,16 +244,25 @@ list every morning before print time.
    {"tasks": ["first task", "second task"]}
    ```
 
-   A `text/plain` body with one task per line also works.
+   A `text/plain` body with one task per line also works. The line is
+   built from the address your browser is using, so if the box is behind
+   a reverse proxy or answers on another port from the phone's side, type
+   the right address into **Address the phone posts to** on the same tab
+   and the line follows it. Beside the Authorization line the page shows
+   the first four characters of the token the container is holding, so
+   you can tell at a glance whether the Shortcut is sending the same one.
 3. On the iPhone, open Shortcuts and create a shortcut:
    - An action that produces today's tasks as text. With Apple Reminders:
      **Find Reminders** where *Is Completed* is false and *Due Date* is
      today, then **Combine Text** with a new line. If the tasks app has
      its own Shortcuts actions, use those instead; if it has none,
      Reminders is the fallback.
-   - **Get Contents of URL**: URL as above, Method POST, Headers
-     `Authorization` = `Bearer <TASKS_TOKEN>` and `Content-Type` =
-     `text/plain`, Request Body = File, pick the combined text.
+   - **Get Contents of URL**: URL as above, Method POST, one header
+     `Authorization` whose value is the word `Bearer`, a space, and the
+     token itself (no angle brackets: if the token is `test`, the value is
+     `Bearer test`; the Sources tab has a button that copies the exact
+     value), Request Body = File, pick the combined text. A Content-Type
+     header is not needed; either text lines or JSON is accepted.
 4. Run it once by hand and look at the Sources tab: it shows how many
    tasks were received and when.
 5. Automations tab, New, Time of Day, a few minutes before print time,

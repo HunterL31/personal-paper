@@ -8,11 +8,16 @@ the paper's name is whatever its one reader types on the Look tab
 ## House rules (never break these)
 
 1. Articles are printed verbatim. Never summarize, paraphrase, shorten, or
-   reword an article, title, deck, or byline. The only allowed operation is
-   the template's fitting script breaking text after the last word that fits
-   and continuing the rest, unchanged, on page 2. The paper is always
-   exactly one double-sided sheet; a story that does not fit whole is held
-   for another day, never trimmed.
+   reword an article, title, deck, or byline. A paragraph is never altered
+   and never split; the one exception is the front-page jump, where the
+   fitting script breaks the text after the last word that fits the slot and
+   continues the rest, unchanged, on page 2. The paper is always exactly one
+   double-sided sheet, and the sheet is filled: the articles that fit whole
+   are printed whole, and the last article on the sheet may stop at a
+   paragraph boundary with a line pointing to the rest online
+   (`RenderResult.partial` says how many of its paragraphs were printed).
+   The paragraphs left behind are held for another day, never trimmed, and
+   nothing anywhere is ever summarized or reworded.
 2. No LLM calls anywhere in the pipeline.
 3. The paper is produced every morning even when a source fails: a failing
    gatherer yields an empty section and a log line, never an exception out
@@ -25,6 +30,10 @@ the paper's name is whatever its one reader types on the Look tab
 ## Contracts
 
 - `render/sample_data.json` is the shape `gather.run_all(settings)` returns.
+  Each article carries `url` (the post's own page): the template prints it
+  under a story that only partly fit, so it is part of the contract, not a
+  secret, and it stays in `data.json`. `guid` does not: it is the run's own
+  bookkeeping and is stripped before the file is written.
   `crossword` is nullable: the puzzle object `gather/crossword.py` returns, or
   `null` on any morning without one. It never carries the answers.
 - `app/settings.py` is the settings contract. Extend it deliberately.
