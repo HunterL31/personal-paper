@@ -38,11 +38,15 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+try:                                    # imported as a package
+    from .fontlist import FONT_DIR, FONT_FILES, STACKS
+except ImportError:                     # run as a script: python render/render.py
+    from fontlist import FONT_DIR, FONT_FILES, STACKS
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.settings import Look
 
 HERE = Path(__file__).resolve().parent
-FONT_DIR = HERE / "fonts"
 log = logging.getLogger(__name__)
 
 #: Fallback defaults, used when `app.settings` is unavailable and to fill in
@@ -207,6 +211,11 @@ def build_html(data: dict, look: "Look | dict | None" = None, *, font_dir: str |
     ctx.setdefault("lists", [])
     return env.get_template("template.html").render(
         font_dir=font_dir if font_dir is not None else FONT_DIR.as_uri(),
+        # The faces, from render/fontlist.py: `font_faces` is what the
+        # @font-face block is built from, `FONTS` the stack each family is
+        # set in. The Look tab's picker is served the same table.
+        font_faces=FONT_FILES,
+        FONTS=STACKS,
         look=_look_dict(look),
         **ctx,
     )

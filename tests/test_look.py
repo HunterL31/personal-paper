@@ -18,6 +18,13 @@ from render.render import build_html, render
 from tests.verbatim import assert_verbatim
 
 
+@pytest.fixture
+def two_articles(sample_data):
+    """The same sheet with a short queue: enough to fill page 1 and fill
+    page 2 behind it, quick enough to lay out once per face."""
+    return {**sample_data, "articles": sample_data["articles"][:2]}
+
+
 def _check(data, look, tmp_path, name):
     result = render(data, look, tmp_path / name)
     assert result.pages == 2, f"{name}: {result.pages} pages"
@@ -27,22 +34,64 @@ def _check(data, look, tmp_path, name):
 
 @pytest.mark.parametrize("size", [8.0, 11.0])
 @pytest.mark.parametrize("body_font", FONT_CHOICES_BODY)
-def test_body_size_and_font(sample_data, tmp_path, size, body_font):
+def test_body_size_and_font(two_articles, tmp_path, size, body_font):
+    """Every body face, at either end of the size range, still sets a sheet."""
     look = Look(body_size_pt=size, body_font=body_font)
-    _check(sample_data, look, tmp_path, f"{body_font}-{size}".replace(" ", "_"))
+    result = _check(two_articles, look, tmp_path, f"{body_font}-{size}".replace(" ", "_"))
+    assert f'--body: "{body_font}"' in result.laid_out_html
+
+
+@pytest.mark.parametrize("body_font", FONT_CHOICES_BODY)
+def test_every_body_font_sets_the_whole_paper(sample_data, tmp_path, body_font):
+    """At the default size, with the day's whole queue behind it."""
+    result = _check(sample_data, Look(body_font=body_font), tmp_path,
+                    f"body-{body_font}".replace(" ", "_"))
+    assert f'--body: "{body_font}"' in result.laid_out_html
 
 
 @pytest.mark.parametrize("headline_font", FONT_CHOICES_HEAD)
-def test_headline_fonts(sample_data, tmp_path, headline_font):
-    look = Look(headline_font=headline_font)
-    _check(sample_data, look, tmp_path, headline_font.replace(" ", "_"))
+def test_headline_fonts(two_articles, tmp_path, headline_font):
+    result = _check(two_articles, Look(headline_font=headline_font), tmp_path,
+                    headline_font.replace(" ", "_"))
+    assert f'--head: "{headline_font}"' in result.laid_out_html
 
 
 @pytest.mark.parametrize("masthead_font", FONT_CHOICES_MASTHEAD)
-def test_masthead_fonts(sample_data, tmp_path, masthead_font):
-    look = Look(masthead_font=masthead_font)
-    result = _check(sample_data, look, tmp_path, masthead_font.replace(" ", "_"))
+def test_masthead_fonts(two_articles, tmp_path, masthead_font):
+    result = _check(two_articles, Look(masthead_font=masthead_font), tmp_path,
+                    masthead_font.replace(" ", "_"))
     assert f'--masthead: "{masthead_font}"' in result.laid_out_html
+
+
+# ------------------------------------------------------- the one font table
+def test_every_file_the_table_names_is_bundled():
+    """`render/fontlist.py` is the contract; a name in it with no file
+    behind it would print a fallback face without saying so."""
+    from render import fontlist
+
+    assert fontlist.missing_files() == []
+
+
+@pytest.mark.parametrize("name", sorted({*FONT_CHOICES_BODY, *FONT_CHOICES_HEAD,
+                                         *FONT_CHOICES_MASTHEAD}))
+def test_every_choice_the_look_tab_offers_has_a_face(name):
+    from render import fontlist
+
+    assert fontlist.FONT_FILES.get(name), f"{name} is offered but has no files"
+    assert fontlist.STACKS.get(name), f"{name} is offered but has no CSS stack"
+    assert fontlist.stack(name).startswith(f'"{name}"')
+
+
+def test_the_sheet_declares_every_bundled_face(sample_data):
+    """The template loops over the table, so the page and the paper are
+    set from the same files."""
+    from render import fontlist
+
+    html = build_html(sample_data, Look())
+    for family, rules in fontlist.FONT_FILES.items():
+        for file, weight, style in rules:
+            assert f'font-family: "{family}"; font-weight: {weight}; font-style: {style}' in html
+            assert f"/{file}" in html
 
 
 def test_bigger_type_prints_fewer_articles(sample_data, tmp_path):

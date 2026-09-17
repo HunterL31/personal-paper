@@ -189,9 +189,11 @@ which is the fitting script's problem as before.
 
 **Look.** `paper.name`, the two ear texts (initials, the right-ear lines),
 imprint and price lines; masthead font, headline font, body font, each a
-dropdown of the bundled OFL fonts (`render/fonts/`; ship a few more
-choices: EB Garamond and Libre Baskerville for body, Playfair Display for
-headlines, UnifrakturCook as a second blackletter); body text size
+group of radio cards, every card set in the face it names with a line of
+the text that face will set (the bundled OFL fonts, `render/fonts/`: a
+dozen and a half families, listed once in `render/fontlist.py`, which both
+`template.html` and the page's own `/fonts.css` are built from so the
+sample on the screen is the face on the sheet); body text size
 (8–11 pt in half-point steps, headlines scale with it); lead-story body
 height; section toggles for To do, Hour by hour, Notes. The template
 takes all of this as a `style` dict and the fitting script keeps

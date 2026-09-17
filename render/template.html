@@ -5,15 +5,12 @@
   The name, imprint, price and both ears come from `look`; the volume and
   date come from `paper`.  Nothing here may change an article's words.
 #}
-{% set FONTS = {
-  "Maguntia":          '"Maguntia", "Old English Text MT", serif',
-  "UnifrakturCook":    '"UnifrakturCook", "Old English Text MT", serif',
-  "Old Standard":      '"Old Standard", "Times New Roman", serif',
-  "PT Serif":          '"PT Serif", Georgia, serif',
-  "EB Garamond":       '"EB Garamond", Garamond, Georgia, serif',
-  "Libre Baskerville": '"Libre Baskerville", Baskerville, Georgia, serif',
-  "Playfair Display":  '"Playfair Display", "Times New Roman", serif'
-} %}
+{#
+  `FONTS` (family -> CSS stack) and `font_faces` (family -> the bundled
+  files behind it) come from render/fontlist.py, through render.py. The
+  Look tab's picker is served the same table at /fonts.css, so the sample
+  on the page is the face on the sheet.
+#}
 {# An unknown font name falls back to the default; it never fails the render. #}
 {% set masthead_family = FONTS.get(look.masthead_font, FONTS["Maguntia"]) %}
 {% set head_family     = FONTS.get(look.headline_font, FONTS["Old Standard"]) %}
@@ -141,22 +138,11 @@
   Sizes: US Letter, 0.4in top/bottom margin, 0.45in sides, black only.
 -->
 <style>
-  @font-face { font-family: "Maguntia"; src: url("{{ font_dir | default('fonts') }}/UnifrakturMaguntia-Book.ttf"); }
-  @font-face { font-family: "UnifrakturCook"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/UnifrakturCook-Bold.ttf"); }
-  @font-face { font-family: "Old Standard"; src: url("{{ font_dir | default('fonts') }}/OldStandard-Regular.ttf"); }
-  @font-face { font-family: "Old Standard"; font-weight: bold; src: url("{{ font_dir | default('fonts') }}/OldStandard-Bold.ttf"); }
-  @font-face { font-family: "Old Standard"; font-style: italic; src: url("{{ font_dir | default('fonts') }}/OldStandard-Italic.ttf"); }
-  @font-face { font-family: "PT Serif"; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Regular.ttf"); }
-  @font-face { font-family: "PT Serif"; font-weight: bold; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Bold.ttf"); }
-  @font-face { font-family: "PT Serif"; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-Italic.ttf"); }
-  @font-face { font-family: "PT Serif"; font-weight: bold; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PT_Serif-Web-BoldItalic.ttf"); }
-  /* Variable faces: one file covers the whole weight axis. */
-  @font-face { font-family: "EB Garamond"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/EBGaramond-var.ttf"); }
-  @font-face { font-family: "EB Garamond"; font-weight: 100 1000; font-style: italic; src: url("{{ font_dir | default('fonts') }}/EBGaramond-Italic-var.ttf"); }
-  @font-face { font-family: "Libre Baskerville"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/LibreBaskerville-var.ttf"); }
-  @font-face { font-family: "Libre Baskerville"; font-weight: 100 1000; font-style: italic; src: url("{{ font_dir | default('fonts') }}/LibreBaskerville-Italic-var.ttf"); }
-  @font-face { font-family: "Playfair Display"; font-weight: 100 1000; src: url("{{ font_dir | default('fonts') }}/PlayfairDisplay-var.ttf"); }
-  @font-face { font-family: "Playfair Display"; font-weight: 100 1000; font-style: italic; src: url("{{ font_dir | default('fonts') }}/PlayfairDisplay-Italic-var.ttf"); }
+  {#- Every bundled face, from the one table in render/fontlist.py.
+      A variable file carries the whole weight axis on its own. #}
+  {% for family, rules in font_faces.items() %}{% for file, weight, style in rules %}
+  @font-face { font-family: "{{ family }}"; font-weight: {{ weight }}; font-style: {{ style }}; src: url("{{ font_dir | default('fonts') }}/{{ file }}"); }
+  {%- endfor %}{% endfor %}
 
   @page { size: letter; margin: 0; }
 

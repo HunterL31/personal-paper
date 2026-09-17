@@ -64,6 +64,43 @@ input[readonly] { background: #f2f2f2; color: #333; }
 textarea { min-height: 4.5rem; }
 input.narrow, select.narrow { max-width: 9rem; }
 
+/* ------------------------------------------------ the font picker
+   One card per face, set in that face. `--face` is the CSS stack, put on
+   the card by the Look template from render/fontlist.py; /fonts.css
+   carries the same files the paper is printed with, so what is on the
+   card is what comes off the printer. No script: they are plain radios. */
+h3.sub { font-variant: small-caps; color: var(--grey); font-size: 0.9rem;
+  font-weight: normal; letter-spacing: 0.04em; margin: 1rem 0 0.4rem; }
+.fonts { display: grid; gap: 0.5rem; margin-bottom: 0.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+.fonts-masthead { grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
+.fontcard { display: block; border: var(--rule); padding: 0.35rem 0.5rem 0.45rem;
+  cursor: pointer; background: #fff; overflow: hidden; }
+.fontcard:hover { background: #f6f6f6; }
+.fontcard input { margin: 0 0.35rem 0 0; vertical-align: middle; }
+.fontcard .fontname { font-family: var(--face); font-size: 18pt; line-height: 1.15;
+  vertical-align: middle; }
+.fontcard .fontsample { display: block; font-family: var(--face);
+  font-size: 0.88rem; line-height: 1.3; margin-top: 0.15rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #222; }
+/* The line of real text is the point of the card, so it is set to fit
+   whole in the narrowest column the grid makes. */
+.fonts-headline .fontcard .fontsample, .fonts-body .fontcard .fontsample { font-size: 0.82rem; }
+.fonts-masthead .fontcard .fontname { font-size: 13pt; }
+.fonts-masthead .fontcard .fontsample { font-size: 26pt; line-height: 1.15; margin-top: 0.1rem; }
+/* The chosen card is outlined. `.on` is the face saved in the settings, for
+   a browser without :has(); where :has() works the outline follows the tick
+   as the reader tries the others, before anything is saved. */
+.fontcard.on { outline: 2px solid #000; outline-offset: -4px; }
+@supports selector(:has(*)) {
+  .fontcard.on { outline: none; }
+  .fontcard:has(input:checked) { outline: 2px solid #000; outline-offset: -4px; }
+}
+@media (max-width: 30rem) {
+  .fonts, .fonts-masthead { grid-template-columns: 1fr; }
+  .fonts-masthead .fontcard .fontsample { font-size: 21pt; }
+}
+
 .grid { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
 .grid > .field { flex: 1 1 14rem; }
 

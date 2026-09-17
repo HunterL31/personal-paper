@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{# The bundled faces themselves, so every card is set in the face it names.
+   /fonts.css is built from render/fontlist.py, the table the paper is set
+   from: the sample here is the face that comes off the printer. #}
+{% block head %}<link rel="stylesheet" href="/fonts.css">{% endblock %}
 {% block content %}
 <form method="post" action="/look">
 
@@ -27,26 +31,37 @@
   one to add; nothing writes it for you.</p>
 
   <h2>Type</h2>
-  <div class="grid">
-    <label class="field"><span>Masthead font</span>
-      <select name="masthead_font">
-        {% for font in fonts_masthead %}
-        <option value="{{ font }}" {{ "selected" if font == look.masthead_font else "" }}>{{ font }}</option>
-        {% endfor %}
-      </select></label>
-    <label class="field"><span>Headline font</span>
-      <select name="headline_font">
-        {% for font in fonts_head %}
-        <option value="{{ font }}" {{ "selected" if font == look.headline_font else "" }}>{{ font }}</option>
-        {% endfor %}
-      </select></label>
-    <label class="field"><span>Body font</span>
-      <select name="body_font">
-        {% for font in fonts_body %}
-        <option value="{{ font }}" {{ "selected" if font == look.body_font else "" }}>{{ font }}</option>
-        {% endfor %}
-      </select></label>
+  {#
+    One card per face, set in that face: the name, then a line of the kind
+    of text it will actually set. `font.stack` is the CSS stack from
+    render/fontlist.py -- our own constant, quotes and all, so it goes in
+    the attribute as it stands.
+  #}
+  {% macro picker(field, fonts, kind, sample) %}
+  <div class="fonts fonts-{{ kind }}" role="group" aria-label="{{ kind }} font">
+    {% for font in fonts %}
+    <label class="fontcard{{ ' on' if font.checked else '' }}" style='--face: {{ font.stack | safe }}'>
+      <input type="radio" name="{{ field }}" value="{{ font.name }}" {{ "checked" if font.checked else "" }}>
+      <span class="fontname">{{ font.name }}</span>
+      <span class="fontsample">{{ sample }}</span>
+    </label>
+    {% endfor %}
   </div>
+  {% endmacro %}
+
+  <h3 class="sub">Masthead</h3>
+  {{ picker("masthead_font", fonts_masthead, "masthead", look.paper_name) }}
+
+  <h3 class="sub">Headlines</h3>
+  {{ picker("headline_font", fonts_head, "headline", "Council votes to widen the river path") }}
+
+  <h3 class="sub">Body</h3>
+  {{ picker("body_font", fonts_body, "body", "The quick brown fox jumps over the lazy dog") }}
+
+  <p class="note">Preview: these cards are set in the printer's own files, at
+  screen size. The Preview tab shows the real sheet, at the real size, with
+  today's stories in it.</p>
+
   <div class="grid">
     <label class="field"><span>Body size (pt)</span>
       <select name="body_size_pt" class="narrow">

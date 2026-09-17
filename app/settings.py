@@ -20,9 +20,22 @@ from pydantic import BaseModel, Field, model_validator
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 SETTINGS_PATH_ENV = "SETTINGS_PATH"
 
-FONT_CHOICES_MASTHEAD = ["Maguntia", "UnifrakturCook"]
-FONT_CHOICES_HEAD = ["Old Standard", "Playfair Display", "PT Serif", "EB Garamond", "Libre Baskerville"]
-FONT_CHOICES_BODY = ["PT Serif", "EB Garamond", "Libre Baskerville", "Old Standard"]
+#: The faces the Look tab offers, in the order the picker shows them. Every
+#: name here is a family in `render.fontlist.FONT_FILES`, which is where the
+#: files behind it live; an unknown name in a settings file is ignored and
+#: the paper is set in the default (see `render/template.html`).
+FONT_CHOICES_MASTHEAD = [
+    "Maguntia", "UnifrakturCook", "Pirata One", "Grenze Gotisch",
+    "Cinzel Decorative", "Playfair Display",
+]
+FONT_CHOICES_HEAD = [
+    "Old Standard", "Playfair Display", "PT Serif", "EB Garamond", "Libre Baskerville",
+    "Bodoni Moda", "Cormorant Garamond", "Libre Caslon Text", "Oswald",
+]
+FONT_CHOICES_BODY = [
+    "PT Serif", "EB Garamond", "Libre Baskerville", "Old Standard",
+    "Merriweather", "Source Serif 4", "Crimson Pro", "Lora", "Literata",
+]
 
 #: The list every paper starts with, and the slug the phone has always
 #: posted to (`POST /tasks` is still an alias for it).
