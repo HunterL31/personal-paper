@@ -174,6 +174,10 @@
     height: var(--lead-body-height); overflow: hidden;
     column-count: 3; column-gap: var(--gutter); column-rule: 1px solid #000; column-fill: auto;
   }
+  /* A lone story on the front (no second row) takes the whole column of
+     page 1 instead of leaving the space under the fixed lead slot empty. */
+  .stories.solo .story.lead { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .stories.solo .lead .body { height: auto; flex: 1 1 auto; min-height: 0; }
 
   /* Second row: one to three single-column stories taking whatever height is
      left. The column count is set inline from the number of stories. */
@@ -560,6 +564,7 @@
       if (n) row.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)';
       else row.remove();
     }
+    fresh.classList.toggle('solo', k === 1);
     if (!k) fresh.appendChild(document.getElementById('no-stories').content.cloneNode(true));
     front().replaceWith(fresh);
     cols.textContent = '';

@@ -12,7 +12,7 @@ import copy
 import pytest
 
 from render.render import render
-from tests.verbatim import assert_verbatim
+from tests.verbatim import assert_verbatim, lengthen
 
 
 def _with(sample_data, **over):
@@ -196,3 +196,27 @@ def test_empty_paper(tmp_path):
     result = _render(data, tmp_path, "empty")
     assert result.printed == []
     assert 'id="page-2"' in result.laid_out_html      # the back of the sheet is still there
+
+
+def test_a_lone_lead_fills_the_front_page(tmp_path, sample_data):
+    """One unread post must not leave the front page half blank: with no
+    second row, the lead's body grows to the bottom of page 1 instead of
+    stopping at the fixed slot height."""
+    from bs4 import BeautifulSoup
+
+    def front_words(articles):
+        data = copy.deepcopy(sample_data)
+        data["articles"] = articles
+        result = render(data, None, tmp_path / str(len(articles)))
+        assert_verbatim(result, data["articles"])
+        body = BeautifulSoup(result.laid_out_html, "html.parser").select_one("#page-1 .story.lead .body")
+        return sum(
+            len(p.get_text().split())
+            for p in body.find_all("p")
+            if not ({"jump", "online"} & set(p.get("class") or []))
+        )
+
+    long = lengthen(sample_data["articles"][0], 6)
+    alone = front_words([long])
+    with_row = front_words(sample_data["articles"])   # the same lead, fixed slot, three stories under it
+    assert alone > with_row * 1.6, (alone, with_row)
