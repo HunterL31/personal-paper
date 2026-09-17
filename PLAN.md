@@ -111,7 +111,7 @@ volume is wiped nothing sensitive was in it.
 
 | Variable | Purpose |
 |---|---|
-| `WEB_PASSWORD` | HTTP basic auth on the web page. Required; the app refuses to start without it. |
+| `WEB_PASSWORD` | HTTP basic auth on the web page. Optional: unset means no login, and the page says so on every tab. |
 | `TASKS_TOKEN` | Bearer token the iPhone Shortcut sends to `POST /tasks`. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Outgoing mail for the email route (a Gmail app password works). |
 | `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD` | Only if a paid Substack needs the email route. |
@@ -138,7 +138,7 @@ password away from anyone on the LAN. Not worth it for four values.
 
 ## The web page
 
-Served by the same app on port 8080, behind `WEB_PASSWORD`. Plain
+Served by the same app on port 8080, behind `WEB_PASSWORD` when it is set. Plain
 server-rendered HTML with a little JavaScript for the preview; no build
 step. Four tabs.
 
@@ -378,7 +378,7 @@ which negotiates the format. Not built unless needed.
 - `tests/test_deliver.py`: email route against a local `aiosmtpd` server;
   printer route against a fake IPP responder (or `pyipp`'s test fixtures);
   one failed route does not block the other.
-- `tests/test_web.py`: the UI refuses requests without `WEB_PASSWORD`;
+- `tests/test_web.py`: the UI asks for `WEB_PASSWORD` when set and is open when unset;
   saving the Output tab reschedules the job; "Render example" produces
   PNGs.
 - One manual acceptance step per milestone: print the real thing and look at

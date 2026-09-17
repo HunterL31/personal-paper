@@ -21,7 +21,8 @@
     networking discovery finds nothing and the printer is entered as an IP
     on the Output tab.
 
-    Set WEB_PASSWORD before starting: the app refuses to start without it.
+    WEB_PASSWORD is optional: leave it empty and the page has no login
+    (anyone on your network can open it); set it to require a password.
     Everything else the reader changes (look, sources, routes, schedule)
     lives in the web page, not here.
   </Overview>
@@ -71,10 +72,10 @@
     Target="WEB_PASSWORD"
     Default=""
     Mode=""
-    Description="Required. HTTP basic auth password for the web page; the app refuses to start without it. Use a long random string."
+    Description="Optional. Password for the web page (any username). Leave empty for no login; then anyone on your network can open the page."
     Type="Variable"
     Display="always"
-    Required="true"
+    Required="false"
     Mask="true"/>
   <Config
     Name="TASKS_TOKEN"

@@ -34,13 +34,15 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
    `unraid-template.xml`, or add the repository `hunterl31/personal-paper:latest`
    by hand with host networking, port 8080, and `/data` mapped to
    `/mnt/user/appdata/personal-paper`.
-2. Fill in the variables. Only `WEB_PASSWORD` is required to start.
+2. Fill in the variables. None is required to start. `WEB_PASSWORD` puts a
+   login on the page; leave it empty and the page is open to anyone on
+   your network, which the page itself points out.
    `TASKS_TOKEN` is needed for the phone sync, the `SMTP_*` set for
    emailing the PDF, the `IMAP_*` set only if a paid Substack needs the
    email route. See `.env.example` for each one.
-3. Open `http://<unraid-ip>:8080/`. The browser shows a username and
-   password prompt: the username is ignored (type anything), the password
-   is `WEB_PASSWORD`. Then work through the tabs:
+3. Open `http://<unraid-ip>:8080/`. With `WEB_PASSWORD` set the browser
+   asks for a username and password: the username is ignored (type
+   anything), the password is `WEB_PASSWORD`. Then work through the tabs:
    - **Output**: pick the printer (Discover, or type its IP, then Test and
      Print test page), and/or enable email with the recipients; set the
      time and days.

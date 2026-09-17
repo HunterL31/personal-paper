@@ -64,10 +64,10 @@ ENV_ON_OUTPUT = [*Env.SMTP]
 # --------------------------------------------------------------- lifecycle
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not Env.get(Env.WEB_PASSWORD):
-        raise RuntimeError(
-            f"{Env.WEB_PASSWORD} is not set: the web page would be open to the "
-            "whole LAN. Set it in the container's variables and restart."
+    if not auth.enabled():
+        logging.getLogger(__name__).warning(
+            "%s is not set: the web page is open to anyone on the network",
+            Env.WEB_PASSWORD,
         )
     scheduler.start(Settings.load())
     try:
@@ -120,6 +120,7 @@ def _status() -> dict[str, Any]:
         "archive_url": f"/archive/{pdf_name}" if ARCHIVE_NAME.match(pdf_name) else "",
         "archive_name": pdf_name,
         "next_run": f"{when:%Y-%m-%d %H:%M %Z}".strip() if when else "",
+        "login_off": not auth.enabled(),
         "scheduler_on": when is not None,
     }
 
