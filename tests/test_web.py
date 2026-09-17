@@ -771,3 +771,10 @@ def test_tasks_endpoint_explains_angle_brackets_and_accepts_text_under_a_json_he
         content='{"tasks": [broken',
     )
     assert r.status_code == 400
+
+
+def test_footer_names_the_build(client, monkeypatch):
+    monkeypatch.setenv("APP_BUILD", "4f729dc8110eeb24c2da26c7eeadd70cb3b9deb3")
+    assert "Build 4f729dc8110e" in client.get("/look", auth=AUTH).text
+    monkeypatch.delenv("APP_BUILD")
+    assert "Build dev" in client.get("/look", auth=AUTH).text

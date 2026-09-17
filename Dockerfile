@@ -22,6 +22,11 @@ RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY . .
 
+# Stamped by the publish workflow so the page footer can say which build is
+# running; "dev" for a local build.
+ARG GIT_SHA=dev
+ENV APP_BUILD=$GIT_SHA
+
 # Settings, state, logs, the archive and the day's output all live here.
 RUN mkdir -p /data
 VOLUME ["/data"]
