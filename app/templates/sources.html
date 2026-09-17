@@ -24,17 +24,21 @@
         <td><label class="inline"><input type="checkbox" name="cal_remove_{{ cal.index }}"></label></td>
       </tr>
       {% endfor %}
-      <tr>
-        <td><input type="text" name="cal_new_url" id="cal_url_new" placeholder="https://calendar.google.com/…/basic.ics" autocomplete="off"></td>
-        <td><input type="text" name="cal_new_name" id="cal_name_new" value="" readonly></td>
+      <tr class="new-row" data-new="calendar" data-key="n0">
         <td>
-          <button type="button" data-check-calendar="new">Check</button>
-          <p class="result" id="cal_result_new"></p>
+          <input type="hidden" name="cal_new" value="n0">
+          <input type="text" name="cal_new_url_n0" id="cal_url_n0" placeholder="https://calendar.google.com/…/basic.ics" autocomplete="off">
+        </td>
+        <td><input type="text" name="cal_new_name_n0" id="cal_name_n0" value="" readonly></td>
+        <td>
+          <button type="button" data-check-calendar="n0">Check</button>
+          <p class="result" id="cal_result_n0"></p>
         </td>
         <td><em>add</em></td>
       </tr>
     </tbody>
   </table>
+  <p><button type="button" data-add-row="calendar">Add another calendar</button></p>
 
   <h2>Substacks</h2>
   <p class="note">The name in <code>&lt;name&gt;.substack.com</code>, or a full feed URL.
@@ -57,18 +61,22 @@
         <td><label class="inline"><input type="checkbox" name="sub_remove_{{ sub.index }}"></label></td>
       </tr>
       {% endfor %}
-      <tr>
-        <td><input type="number" class="narrow" name="sub_new_order" min="1" max="99" value="{{ substacks|length + 1 }}"></td>
-        <td><input type="text" name="sub_new_name" id="sub_name_new" placeholder="oneuseful"></td>
-        <td><label class="inline"><input type="checkbox" name="sub_new_paid"></label></td>
+      <tr class="new-row" data-new="substack" data-key="n0">
         <td>
-          <button type="button" data-check-substack="new">Check</button>
-          <p class="result" id="sub_result_new"></p>
+          <input type="hidden" name="sub_new" value="n0">
+          <input type="number" class="narrow" name="sub_new_order_n0" min="1" max="99" value="{{ substacks|length + 1 }}">
+        </td>
+        <td><input type="text" name="sub_new_name_n0" id="sub_name_n0" placeholder="oneuseful"></td>
+        <td><label class="inline"><input type="checkbox" name="sub_new_paid_n0"></label></td>
+        <td>
+          <button type="button" data-check-substack="n0">Check</button>
+          <p class="result" id="sub_result_n0"></p>
         </td>
         <td><em>add</em></td>
       </tr>
     </tbody>
   </table>
+  <p><button type="button" data-add-row="substack">Add another Substack</button></p>
 
   <h2>Weather</h2>
   <div class="grid">
@@ -105,6 +113,30 @@
       A plain-text body with one task per line works too.</p>
   </div>
 
+  <h2>Crossword</h2>
+  <p class="note">The New York Times daily puzzle, typeset into the paper. It needs a
+  Games subscription and the <code>NYT_S</code> cookie from a logged-in browser, set as a
+  container variable (<code>NYT_S</code> is {{ "set in container" if nyt_cookie_set else "not set" }}).
+  Answers are never fetched or printed. Press Check to see today's puzzle before the first morning.</p>
+  <p>
+    <label class="inline"><input type="checkbox" name="crossword_enabled"
+      {{ "checked" if crossword.enabled else "" }}> Print the crossword</label>
+  </p>
+  <div class="grid">
+    <div class="field"><span>Days</span>
+      <p>
+        {% for index, label in days %}
+        <label class="inline"><input type="checkbox" name="crossword_day_{{ index }}"
+          {{ "checked" if index in crossword.days else "" }}> {{ label }}</label>
+        {% endfor %}
+      </p>
+    </div>
+    <div class="field"><span>&nbsp;</span>
+      <button type="button" id="check-crossword">Check</button>
+      <p class="result" id="crossword_result"></p>
+    </div>
+  </div>
+
   <h2>Container variables</h2>
   <table class="env">
     <thead><tr><th style="width:16rem">Variable</th><th>Status</th></tr></thead>
@@ -122,9 +154,12 @@
 
 {% block scripts %}
 <script>
-document.querySelectorAll("[data-check-calendar]").forEach(function (button) {
-  const key = button.dataset.checkCalendar;
-  button.addEventListener("click", function () {
+// Check buttons are delegated so rows added with "Add another" work too.
+document.addEventListener("click", function (event) {
+  const button = event.target.closest("[data-check-calendar], [data-check-substack]");
+  if (!button) return;
+  if (button.dataset.checkCalendar !== undefined) {
+    const key = button.dataset.checkCalendar;
     const url = document.getElementById("cal_url_" + key).value.trim();
     const body = url ? { url: url } : { index: parseInt(key, 10) };
     withButton(button, document.getElementById("cal_result_" + key),
@@ -133,12 +168,8 @@ document.querySelectorAll("[data-check-calendar]").forEach(function (button) {
         document.getElementById("cal_name_" + key).value = result.name || "";
         return result.name + " — " + result.events_today + " event(s) today";
       });
-  });
-});
-
-document.querySelectorAll("[data-check-substack]").forEach(function (button) {
-  const key = button.dataset.checkSubstack;
-  button.addEventListener("click", function () {
+  } else {
+    const key = button.dataset.checkSubstack;
     const name = document.getElementById("sub_name_" + key).value.trim();
     withButton(button, document.getElementById("sub_result_" + key),
       function () { return postJSON("/sources/substack/check", { name: name }); },
@@ -146,6 +177,35 @@ document.querySelectorAll("[data-check-substack]").forEach(function (button) {
         return result.publication + " — latest: " + (result.latest_title || "none")
           + (result.paid_marker_seen ? " (paywalled)" : "");
       });
+  }
+});
+
+// "Add another": clone the last new row, renumber its key (n0, n1, ...),
+// clear the values. The server reads every `cal_new` / `sub_new` key.
+let newRowCounter = 0;
+document.querySelectorAll("[data-add-row]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    const kind = button.dataset.addRow;
+    const rows = document.querySelectorAll('tr.new-row[data-new="' + kind + '"]');
+    const last = rows[rows.length - 1];
+    const oldKey = last.dataset.key;
+    const key = "n" + (++newRowCounter);
+    const clone = last.cloneNode(true);
+    clone.dataset.key = key;
+    clone.querySelectorAll("[name], [id], [data-check-calendar], [data-check-substack]").forEach(function (el) {
+      ["name", "id", "data-check-calendar", "data-check-substack"].forEach(function (attr) {
+        const v = el.getAttribute(attr);
+        if (v !== null && v.endsWith(oldKey)) el.setAttribute(attr, v.slice(0, -oldKey.length) + key);
+      });
+      if (el.matches('input[type="hidden"]')) el.value = key;
+      else if (el.matches('input[type="checkbox"]')) el.checked = false;
+      else if (el.matches('input[type="number"]')) el.value = String(parseInt(el.value || "0", 10) + 1);
+      else if (el.matches("input")) el.value = "";
+      else if (el.matches("p.result")) el.textContent = "";
+    });
+    last.after(clone);
+    const first = clone.querySelector('input[type="text"]');
+    if (first) first.focus();
   });
 });
 
@@ -160,6 +220,16 @@ weatherButton.addEventListener("click", function () {
     },
     function (result) {
       return result.summary + " — high " + result.high + ", low " + result.low;
+    });
+});
+
+const crosswordButton = document.getElementById("check-crossword");
+crosswordButton.addEventListener("click", function () {
+  withButton(crosswordButton, document.getElementById("crossword_result"),
+    function () { return postJSON("/sources/crossword/check", {}); },
+    function (result) {
+      return result.title + " — " + (result.author || "unknown constructor")
+        + ", " + result.date + " (" + result.size + ", " + result.clues + " clues)";
     });
 });
 </script>

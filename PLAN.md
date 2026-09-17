@@ -10,7 +10,7 @@ fonts, `render.py`, sample data). This plan covers everything around it.
    reword an article, its title, subtitle, or byline. The only permitted
    operation is what the template's fitting script already does: break the
    text after the last word that fits the front-page slot and continue the
-   rest, unchanged, on an inside page.
+   rest, unchanged, on page 2.
 2. **There are no LLM calls anywhere in this pipeline.** Nothing is generated.
    The paper is assembled from data (calendar, tasks, weather) and from
    articles as published.
@@ -19,6 +19,14 @@ fonts, `render.py`, sample data). This plan covers everything around it.
    run.
 4. Traditional broadsheet style, black only, US Letter, duplex. The look is
    set in `template.html`; keep changes there deliberate.
+5. **The paper is one double-sided sheet: exactly two pages, always.**
+   Page 1 is the front page; page 2 carries the continuations and, when
+   enabled, the crossword. Because of rule 1, an article is printed only
+   when all of it fits: the layout tries the lead plus three stories and
+   drops the lowest-priority story until everything fits, down to none.
+   Dropped stories are not marked seen, so they print on a later morning
+   with room. Hyphenation at line ends (soft hyphens inserted at render
+   time, never into the stored text) is typesetting, not editing.
 
 ## Architecture
 
@@ -57,7 +65,7 @@ personal-paper/
     tasks.py
     weather.py
     substack.py
-    crossword.py        interface only in v1 (see below)
+    crossword.py        the day's NYT puzzle as data (see below)
   deliver/
     __init__.py         deliver(pdf, settings) -> runs every enabled route
     printer.py          IPP print via pyipp; discover(); test()
@@ -96,6 +104,13 @@ Read that file first; it is the contract. Notes per field:
   strings, in the author's order, untouched). Up to four are placed on the
   front page: index 0 is the lead, 1–3 the second row.
 
+- `crossword`: nullable. `null` on any morning without a puzzle (source off,
+  a day it is switched off for, no cookie, a failed fetch); otherwise the
+  object `gather/crossword.py` returns — `provider`, `date`, `title`,
+  `author`, `editor`, `width`, `height`, `grid` (rows of `null` for a black
+  square or `{"n": <clue number or null>}`), `across` and `down` (lists of
+  `{"n", "clue"}`). **Never the answers.**
+
 All text is plain; the template HTML-escapes it. Inline italics/links inside
 articles are flattened in v1 (see "Later").
 
@@ -115,6 +130,7 @@ volume is wiped nothing sensitive was in it.
 | `TASKS_TOKEN` | Bearer token the iPhone Shortcut sends to `POST /tasks`. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Outgoing mail for the email route (a Gmail app password works). |
 | `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD` | Only if a paid Substack needs the email route. |
+| `NYT_S` | The subscriber's `NYT-S` cookie from a logged-in nytimes.com browser, for the crossword. Needs a Games subscription; good for about a year. |
 | `TZ` | `America/Los_Angeles`. |
 
 Unraid's Docker tab already gives every variable a masked "password" field
@@ -181,7 +197,8 @@ change can be judged before it hits paper; "Render today" does the same
 with real data via a dry run. Rendering takes a few seconds in Chromium,
 so the button starts a background job and the page polls
 `/preview/<job>` until the PNGs are ready. Show the page count next to the
-images: a layout that pushes to five pages is the thing to catch here.
+images and which stories made it onto the sheet: a morning where a story
+was held over is the thing to notice here.
 
 **Status** (header strip on every tab): last run time and result, last
 error, issue number, tail of the log, link to the last PDF.
@@ -283,12 +300,31 @@ Depends on which app "Smart Tasks" is — **ask before building this module.**
 
 ### crossword.py
 
-v1 ships the interface only: `fetch(settings) -> Path | None`, always `None`.
-The NYT puzzle has no API and its print PDF sits behind her login; automating
-that is fragile and against their terms, so it is a decision for the owner,
-not for this implementation. If a PDF is returned it is appended as the back
-page(s) via `render.py --crossword`. Any failure here returns `None`; the
-paper never waits on it.
+The owner's decision, taken: fetch the day's New York Times puzzle with the
+subscriber's own `NYT-S` session cookie, copied out of a logged-in browser
+into the container variable `NYT_S`. No password is stored and no login is
+scripted. This is automated access their terms discourage, for one
+household's own copy of a puzzle it pays for; the owner accepts that.
+
+- `fetch(settings, *, today=None) -> dict | None`, the `crossword` object of
+  the data contract. `None` — with a log line, never an exception — when the
+  source is off, when today is not one of `settings.sources.crossword.days`,
+  when `NYT_S` is unset, or when the fetch fails.
+- Endpoints, as module constants so a change is a one-line fix:
+  `https://www.nytimes.com/svc/crosswords/v6/puzzle/daily/{YYYY-MM-DD}.json`
+  with `Cookie: NYT-S=<cookie>` and a browser User-Agent, falling back to
+  `.../v3/puzzle/daily-{YYYY-MM-DD}.json`. (Both verified against xword-dl's
+  NYT downloader, which reads the same endpoint with the same cookie.)
+- **The answers are dropped here.** The response carries the solution; only
+  the black squares, the clue numbers and the clues go on, so no answer ever
+  reaches `data.json` or the page. Clues are verbatim: entities unescaped,
+  tags flattened, nothing else touched.
+- The raw response is kept at `<DATA_DIR>/out/<date>/crossword.json` for
+  debugging a bad grid.
+- `check()` is the Sources tab's Check button: the same fetch with the
+  failures raised, reporting title, constructor, date, size and clue count,
+  and recording `crossword_check` in `state.json` for the status strip.
+- The template typesets the puzzle; `run.py` only puts it in the data.
 
 ## run.py
 
@@ -406,8 +442,7 @@ which negotiates the format. Not built unless needed.
    Status strip, tests green.
 8. **Later** (not v1): inline italics/links preserved through the extractor
    (paragraphs become restricted HTML, template stops escaping); extra posts
-   beyond four poured onto inside pages in full; the crossword decision;
-   custom font upload.
+   beyond four; custom font upload.
 
 ## Things to ask the owner before starting the relevant milestone
 
@@ -419,7 +454,6 @@ which negotiates the format. Not built unless needed.
 - Which routes on day one: print only, or print and email?
 - Wake-up time — when should the paper be sitting in the tray? (Changeable
   later from the Output tab.)
-- The crossword: manual for now, or revisit later.
 
 ## Notes on the existing render step
 
@@ -427,7 +461,7 @@ which negotiates the format. Not built unless needed.
   **print media** (so measurement matches the PDF), waits for
   `window.__layoutDone`, and prints with `prefer_css_page_size`.
 - The fitting script in `template.html` truncates by binary search on word
-  count against the slot's real box; inside pages are generated from
+  count against the slot's real box; page 2 is a fixed element built from
   `<template id="inside-page">`. `window.__pages` reports the count.
 - Fonts are local files under `render/fonts/` (all SIL Open Font License) and
   are referenced by relative path; keep them beside the output or pass

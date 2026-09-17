@@ -10,7 +10,9 @@ the paper's name is whatever its one reader types on the Look tab
 1. Articles are printed verbatim. Never summarize, paraphrase, shorten, or
    reword an article, title, deck, or byline. The only allowed operation is
    the template's fitting script breaking text after the last word that fits
-   and continuing the rest, unchanged, on an inside page.
+   and continuing the rest, unchanged, on page 2. The paper is always
+   exactly one double-sided sheet; a story that does not fit whole is held
+   for another day, never trimmed.
 2. No LLM calls anywhere in the pipeline.
 3. The paper is produced every morning even when a source fails: a failing
    gatherer yields an empty section and a log line, never an exception out
@@ -23,9 +25,13 @@ the paper's name is whatever its one reader types on the Look tab
 ## Contracts
 
 - `render/sample_data.json` is the shape `gather.run_all(settings)` returns.
+  `crossword` is nullable: the puzzle object `gather/crossword.py` returns, or
+  `null` on any morning without one. It never carries the answers.
 - `app/settings.py` is the settings contract. Extend it deliberately.
 - `DATA_DIR` env (default `/data`) is where state, settings, archive, logs live.
 - Each gatherer: `fetch(settings) -> <its part>` plus a `__main__` printing JSON.
+- Credentials for a source are container variables (`NYT_S` for the
+  crossword); what the reader switches on and off is `settings.sources`.
 
 ## Running
 

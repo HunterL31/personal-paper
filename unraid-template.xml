@@ -128,6 +128,16 @@
     Required="false"
     Mask="true"/>
   <Config
+    Name="NYT_S"
+    Target="NYT_S"
+    Default=""
+    Mode=""
+    Description="NYT-S cookie from nytimes.com (Developer tools &#8594; Application &#8594; Cookies). Needs a Games subscription. Valid about a year. Only needed for the crossword; leave empty and the paper prints without one."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="true"/>
+  <Config
     Name="IMAP_HOST"
     Target="IMAP_HOST"
     Default="imap.gmail.com"
@@ -177,16 +187,6 @@
     Display="advanced"
     Required="false"
     Mask="false"/>
-  <Config
-    Name="TZ"
-    Target="TZ"
-    Default="INBOX"
-    Mode=""
-    Description="Mailbox or Gmail label the Substack emails land in. Default INBOX."
-    Type="Variable"
-    Display="always"
-    Required="true"
-    Mask="false">America/Los_Angeles</Config>
   <Config
     Name="DATA_DIR"
     Target="DATA_DIR"

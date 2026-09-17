@@ -1,6 +1,6 @@
 """
-Layout edges: whatever the gather step hands over, the paper renders and
-does not explode into a pile of pages.
+Layout edges: whatever the gather step hands over, the paper is one sheet
+of two pages, and every article on it is there whole.
 """
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ import pytest
 from render.render import render
 from tests.verbatim import assert_verbatim
 
-MAX_PAGES = 6
-
 
 def _with(sample_data, **over):
     data = copy.deepcopy(sample_data)
@@ -22,43 +20,106 @@ def _with(sample_data, **over):
 
 def _render(data, tmp_path, name="out"):
     result = render(data, None, tmp_path / name)
-    assert 1 <= result.pages <= MAX_PAGES, f"{result.pages} pages"
+    assert result.pages == 2, f"{result.pages} pages"
+    assert_verbatim(result, data["articles"])
     return result
+
+
+def _long_article(sample_data, words=3000, word="word"):
+    """One article of `words` words, far more than a sheet can hold."""
+    article = copy.deepcopy(sample_data["articles"][0])
+    article["title"] = f"A very long piece about {word}s"
+    article["paragraphs"] = [" ".join(f"{word}{i}" for i in range(n, n + 500))
+                             for n in range(0, words, 500)]
+    return article
+
+
+def _short_article(sample_data, word="brief"):
+    article = copy.deepcopy(sample_data["articles"][3])
+    article["title"] = f"A {word} note on the weather"
+    article["paragraphs"] = [f"{word.capitalize()} enough to fit anywhere. " * 3]
+    return article
 
 
 @pytest.mark.parametrize("n", [0, 1, 2, 5])
 def test_article_counts(sample_data, tmp_path, n):
-    articles = sample_data["articles"]
+    articles = copy.deepcopy(sample_data["articles"])
     while len(articles) < n:                       # 5 = four plus a spare
-        extra = copy.deepcopy(sample_data["articles"][len(articles) % 4])
-        extra["title"] = f"{extra['title']} ({len(articles)})"
-        articles = articles + [extra]
+        spare = copy.deepcopy(articles[len(articles) % 4])
+        spare["title"] = f"A fifth story, number {len(articles)}"
+        spare["paragraphs"] = [f"Spare paragraph {i} of a story nobody has read yet, "
+                               "put here to fill a slot." for i in range(4)]
+        articles.append(spare)
     data = _with(sample_data, articles=articles[:n])
 
     result = _render(data, tmp_path, f"n{n}")
     if n == 0:
+        assert result.printed == []
         assert "No new stories this morning." in result.laid_out_html
     else:
-        assert_verbatim(result.laid_out_html, data["articles"], placed=min(n, 4))
-    # The second row is only there when there is a second story.
-    assert ('class="row"' in result.laid_out_html) == (n >= 2)
+        assert result.printed == list(range(len(result.printed)))   # always a prefix
+    # The second row is only there when a second story was printed.
+    assert ('class="row"' in result.laid_out_html) == (len(result.printed) >= 2)
 
 
-def test_second_row_column_count(sample_data, tmp_path):
+def test_the_second_row_counts_the_stories_that_printed(sample_data, tmp_path):
     for n in (2, 3, 4):
-        data = _with(sample_data, articles=sample_data["articles"][:n])
+        data = _with(sample_data, articles=copy.deepcopy(sample_data["articles"][:n]))
         result = _render(data, tmp_path, f"row{n}")
-        assert f"repeat({n - 1}, 1fr)" in result.laid_out_html
+        row = len(result.printed) - 1
+        if row >= 1:
+            assert f"repeat({row}, 1fr)" in result.laid_out_html
 
 
-def test_three_thousand_word_article(sample_data, tmp_path):
-    long_para = " ".join(f"word{i}" for i in range(500))
-    article = copy.deepcopy(sample_data["articles"][0])
-    article["paragraphs"] = [long_para] * 6                 # 3,000 words
-    data = _with(sample_data, articles=[article])
-
+def test_a_three_thousand_word_article_alone_is_not_printed(sample_data, tmp_path):
+    """It cannot fit whole, and half an article is not something we print."""
+    data = _with(sample_data, articles=[_long_article(sample_data)])
     result = _render(data, tmp_path, "long")
-    assert_verbatim(result.laid_out_html, data["articles"], placed=1)
+    assert result.printed == []
+    assert "No new stories this morning." in result.laid_out_html
+
+
+def test_the_lowest_priority_article_is_dropped_first(sample_data, tmp_path):
+    """[too long, short]: the short one goes first, then nothing fits at all."""
+    data = _with(sample_data, articles=[_long_article(sample_data), _short_article(sample_data)])
+    result = _render(data, tmp_path, "longfirst")
+    assert result.printed == []
+
+
+def test_a_short_lead_survives_an_impossible_second_story(sample_data, tmp_path):
+    data = _with(sample_data, articles=[_short_article(sample_data), _long_article(sample_data)])
+    result = _render(data, tmp_path, "shortfirst")
+    assert result.printed == [0]
+
+
+def test_a_sunday_size_crossword_still_leaves_room_for_the_lead(sample_data, tmp_path):
+    """21x21, 140 clues: the biggest puzzle the paper will ever carry."""
+    n = 21
+    grid = []
+    number = 0
+    for r in range(n):
+        row = []
+        for c in range(n):
+            if (r % 5 == 4 and c % 4 == 3) or (r % 7 == 3 and c % 6 == 2):
+                row.append(None)
+                continue
+            if (r + c) % 9 == 0:
+                number += 1
+                row.append({"n": number})
+            else:
+                row.append({"n": None})
+        grid.append(row)
+    data = _with(sample_data, crossword={
+        "provider": "nyt", "date": "2026-09-20", "title": "The Big One",
+        "author": "Dana Kestrel", "editor": "Margaret Ivey",
+        "width": n, "height": n, "grid": grid,
+        "across": [{"n": i + 1, "clue": f"Clue number {i + 1}, about something or other"}
+                   for i in range(70)],
+        "down": [{"n": i + 1, "clue": f"Another clue, the {i + 1}th, of moderate length"}
+                 for i in range(70)],
+    })
+    result = _render(data, tmp_path, "sunday")
+    assert 0 in result.printed, "the lead story must still be printed"
 
 
 def test_headings_blockquotes_and_lists_as_paragraphs(sample_data, tmp_path):
@@ -72,9 +133,9 @@ def test_headings_blockquotes_and_lists_as_paragraphs(sample_data, tmp_path):
         "Third list item, longer than the others so that it wraps at least once.",
         "A closing paragraph.",
     ]
-    data = _with(sample_data, articles=[article] + sample_data["articles"][1:])
+    data = _with(sample_data, articles=[article] + copy.deepcopy(sample_data["articles"][1:]))
     result = _render(data, tmp_path, "blocks")
-    assert_verbatim(result.laid_out_html, data["articles"])
+    assert 0 in result.printed
 
 
 @pytest.mark.parametrize("n", [0, 15])
@@ -97,11 +158,10 @@ def test_deck_may_be_null(sample_data, tmp_path):
     data = _with(sample_data, articles=articles)
     result = _render(data, tmp_path, "nodeck")
     assert 'class="deck"' not in result.laid_out_html
-    assert_verbatim(result.laid_out_html, data["articles"])
 
 
 def test_empty_paper(tmp_path):
-    """A total gather failure still prints a paper."""
+    """A total gather failure still prints the sheet, both sides of it."""
     data = {
         "paper": {"volume": "Vol. I, No. 9", "date": "Wednesday, September 16, 2026"},
         "weather": {"summary": "Forecast unavailable", "high": "—", "low": "—",
@@ -109,6 +169,8 @@ def test_empty_paper(tmp_path):
         "events": [],
         "tasks": [],
         "articles": [],
+        "crossword": None,
     }
     result = _render(data, tmp_path, "empty")
-    assert result.pages == 1
+    assert result.printed == []
+    assert 'id="page-2"' in result.laid_out_html      # the back of the sheet is still there

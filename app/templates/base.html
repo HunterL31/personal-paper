@@ -29,6 +29,12 @@
       {%- if status.scheduler_on %}Next run: {{ status.next_run }}
       {%- else %}Scheduler off{% endif %}
     </dd></div>
+    {%- if status.crossword_check %}
+    <div><dt>Crossword</dt><dd>
+      <span class="{{ 'good' if status.crossword_check.ok else 'bad' }}">{{ status.crossword_check.summary }}</span>
+      {%- if status.crossword_check.when %} (checked {{ status.crossword_check.when }}){% endif %}
+    </dd></div>
+    {%- endif %}
     {%- if status.printer_check %}
     <div><dt>Printer</dt><dd>
       <span class="{{ 'good' if status.printer_check.ok else 'bad' }}">{{ status.printer_check.summary }}</span>

@@ -32,11 +32,14 @@
      title, its subtitle, or its byline. The pipeline hands this template
      the author's own paragraphs, in order, and the template prints them.
 
-  2. The only thing the layout is allowed to do to an article is break the
-     text after the last word that fits the front-page slot, and carry the
-     rest, unchanged, to an inside page under "Continued from Page 1".
-     The script at the bottom of this file does that measurement; nothing
-     upstream should ever trim article text to "make it fit".
+  2. The paper is one sheet: page 1 and, on its back, page 2. The only
+     thing the layout is allowed to do to an article is break the text
+     after the last word that fits the front-page slot and carry the rest,
+     unchanged, to page 2 under "Continued from Page 1". An article that
+     does not fit whole across the two pages is not printed at all; the
+     script at the bottom of this file drops the lowest-priority article
+     and lays the paper out again. Nothing anywhere may trim an article's
+     text to "make it fit".
 
   3. Weather, the agenda, and the to-do list are the reader's own data and
      are laid out as data, not prose.
@@ -85,6 +88,14 @@
     --rail-small:  {{ (7.5  * s) | round(3) }}pt;
 
     --lead-body-height: {{ look.lead_body_height_in }}in;
+    /* Justified like a newspaper, or ragged right if the reader prefers.
+       The break points themselves are soft hyphens, put in by render.py:
+       headless Chromium has no dictionary of its own. */
+    --align: {{ 'justify' if look.justify else 'left' }};
+
+    /* The crossword clue size, shrunk by the script only if the section
+       would otherwise take more than its share of page 2. */
+    --xw-clue: 6.5pt;
   }
 
   html, body { margin: 0; padding: 0; }
@@ -138,7 +149,7 @@
   .byline .pub { font-style: italic; }
   .byline .when { font-family: var(--head); }
 
-  .body p { margin: 0; text-align: justify; text-indent: 0.14in; hyphens: auto; -webkit-hyphens: auto; }
+  .body p { margin: 0; text-align: var(--align); text-indent: 0.14in; hyphens: manual; -webkit-hyphens: manual; }
   .body p:first-child, .story-head + p, p.tail { text-indent: 0; }
   p.jump { text-indent: 0; text-align: right; font-style: italic; font-size: var(--byline); padding-top: 0.03in; break-inside: avoid; }
   p.no-stories { font-family: var(--head); font-style: italic; font-size: var(--row-head); margin: 0.3in 0 0; text-align: center; }
@@ -192,7 +203,7 @@
     display: flex; justify-content: space-between; font-size: 7.5pt; font-style: italic;
   }
 
-  /* ---------- Inside pages (continuations), built by the script ---------- */
+  /* ---------- Page 2: continuations above, the crossword below ---------- */
   .page.inside .folio { border-bottom: 1px solid #000; margin-top: 0; }
   .cols {
     flex: 1; min-height: 0; overflow: hidden; padding-top: 0.13in;
@@ -202,7 +213,46 @@
   .story-head { break-inside: avoid; }
   .cols h2 { font-size: var(--cols-head); }
   .cols .cont { font-size: var(--byline); font-style: italic; margin: 0.03in 0 0.07in; }
-  .cols p { margin: 0; text-align: justify; text-indent: 0.14in; hyphens: auto; -webkit-hyphens: auto; }
+  .cols p { margin: 0; text-align: var(--align); text-indent: 0.14in; hyphens: manual; -webkit-hyphens: manual; }
+
+  /* ---------- The crossword: grid at the left, clues in columns beside it ----------
+     Furniture, not prose: the clue size is the one thing the script may shrink,
+     and only to keep the section inside its share of the page. */
+  .xword { flex: 0 0 auto; margin-top: 0.16in; padding-top: 0.09in; border-top: 3px double #000; }
+  .xw-head { display: flex; align-items: baseline; column-gap: 0.12in; margin: 0 0 0.07in; }
+  .xw-head h3 { font-family: var(--head); font-weight: bold; font-size: var(--cols-head); line-height: 1; margin: 0; }
+  .xw-head .byline { margin: 0; }
+  .xw-head .byline .title { font-family: var(--head); font-style: italic; }
+  .xw-body { display: flex; align-items: flex-start; column-gap: 0.17in; }
+
+  .xw-grid { flex: 0 0 auto; border-collapse: collapse; table-layout: fixed; border: 1pt solid #000; }
+  .xw-grid td {
+    width: var(--cell); height: var(--cell); padding: 0; position: relative;
+    border: 0.5pt solid #000;
+  }
+  .xw-grid td.blk { background: #000; }
+  .xw-grid .n {
+    position: absolute; top: 0; left: 0.007in; font-family: var(--head);
+    font-size: var(--xw-num); line-height: 1.05; font-variant-numeric: tabular-nums;
+  }
+
+  /* The clues beside the grid; when there are more than that block holds,
+     the rest run on under it, in columns of about the same width. */
+  .xw-clues {
+    font-size: var(--xw-clue); line-height: 1.17;
+    column-gap: 0.13in; column-rule: 1px solid #000;
+  }
+  .xw-beside { flex: 1; min-width: 0; column-count: var(--xw-cols); column-fill: auto; overflow: hidden; }
+  .xw-under { margin-top: 0.09in; column-count: var(--xw-cols-under); }
+  .xw-under:empty { display: none; }
+  .xw-clues h4 {
+    font-family: var(--head); font-weight: bold; font-size: calc(var(--xw-clue) * 1.25);
+    margin: 0 0 0.03in; line-height: 1; break-after: avoid;
+  }
+  .xw-clues h4 + p { break-before: avoid; }
+  .xw-clues h4.down { margin-top: 0.07in; }
+  .xw-clues p { margin: 0; padding-left: 0.075in; text-indent: -0.075in; break-inside: avoid; }
+  .xw-clues p b { font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -229,16 +279,14 @@
 
   <main class="front-grid">
     <div class="stories">
-      {% if articles %}
       {% set a = articles[0] %}
+      {% if articles %}
       <article class="story lead" data-story="0">
         <h2>{{ a.title }}</h2>
-        {% if a.deck %}<p class="deck">{{ a.deck }}</p>{% endif %}
+        {% if a.deck %}<p class="deck">{{ a.deck | hyphenate }}</p>{% endif %}
         <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span>{% if a.published %}, <span class="when">{{ a.published }}</span>{% endif %}</p>
-        <div class="body">{% for p in a.paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
+        <div class="body">{% for p in a.paragraphs %}<p>{{ p | hyphenate }}</p>{% endfor %}</div>
       </article>
-      {% else %}
-      <p class="no-stories">No new stories this morning.</p>
       {% endif %}
 
       {% if row_articles %}
@@ -246,9 +294,9 @@
         {% for a in row_articles %}
         <article class="story" data-story="{{ loop.index }}">
           <h2>{{ a.title }}</h2>
-          {% if a.deck %}<p class="deck">{{ a.deck }}</p>{% endif %}
+          {% if a.deck %}<p class="deck">{{ a.deck | hyphenate }}</p>{% endif %}
           <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span></p>
-          <div class="body">{% for p in a.paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
+          <div class="body">{% for p in a.paragraphs %}<p>{{ p | hyphenate }}</p>{% endfor %}</div>
         </article>
         {% endfor %}
       </div>
@@ -296,33 +344,91 @@
   </footer>
 </section>
 
-<template id="inside-page">
-  <section class="page inside">
-    <div class="folio">
-      <span>{{ look.paper_name }}</span>
-      <span>{{ paper.date }}</span>
-      <span class="pageno"></span>
+<template id="no-stories"><p class="no-stories">No new stories this morning.</p></template>
+
+{# A puzzle with no grid is no puzzle: the section is left out rather than
+   risking the morning's paper over it. #}
+{% set puzzle = crossword if (crossword and crossword.grid and crossword.width) else None %}
+{% if puzzle %}
+{# The grid is square: 0.19in cells for a 15x15 (2.85in), shrunk so that a
+   21x21 Sunday is no wider than 3.6in. Clue numbers stay legible in print. #}
+{% set cell_in = [0.19, 3.6 / puzzle.width] | min %}
+{# The clue block beside the grid takes what the grid leaves of the 7.6in
+   text measure; the overflow block under the grid keeps the same column
+   width across the full measure. #}
+{% set beside_w = 7.6 - cell_in * puzzle.width - 0.17 %}
+{% set n_beside = 4 if cell_in * puzzle.width <= 3.1 else 3 %}
+{% set n_under = (7.6 * n_beside / beside_w) | round | int %}
+{% endif %}
+<section class="page inside" id="page-2">
+  <div class="folio">
+    <span>{{ look.paper_name }}</span>
+    <span>{{ paper.date }}</span>
+    <span>Page 2</span>
+  </div>
+  <div class="cols"></div>
+  {% if puzzle %}
+  <section class="xword" id="xword"
+           style="--cell: {{ cell_in | round(4) }}in; --xw-num: {{ 5 if puzzle.width <= 15 else 4 }}pt;
+                  --xw-cols: {{ n_beside }}; --xw-cols-under: {{ n_under }};">
+    <div class="xw-head">
+      <h3>The Crossword</h3>
+      <p class="byline">
+        {%- if puzzle.title %}<span class="title">{{ puzzle.title }}</span>. {% endif -%}
+        By <b>{{ puzzle.author }}</b>
+        {%- if puzzle.editor %}, edited by {{ puzzle.editor }}{% endif -%}
+      </p>
     </div>
-    <div class="cols"></div>
+    <div class="xw-body">
+      <table class="xw-grid">
+        {% for row in puzzle.grid %}<tr>{% for c in row %}{% if c is none %}<td class="blk"></td>{% else %}<td>{% if c.n %}<span class="n">{{ c.n }}</span>{% endif %}</td>{% endif %}{% endfor %}</tr>
+        {% endfor %}
+      </table>
+      <div class="xw-clues xw-beside" id="xw-clues">
+        <h4>Across</h4>
+        {% for c in puzzle.across %}<p><b>{{ c.n }}</b> {{ c.clue }}</p>{% endfor %}
+        <h4 class="down">Down</h4>
+        {% for c in puzzle.down %}<p><b>{{ c.n }}</b> {{ c.clue }}</p>{% endfor %}
+      </div>
+    </div>
+    <div class="xw-clues xw-under" id="xw-clues-under"></div>
   </section>
-</template>
+  {% endif %}
+</section>
 
 <script>
 /*
-  Fit-to-page, without touching the words.
+  Fit the paper to one sheet, without touching the words.
 
-  Step 1: for each front-page story, keep exactly as much of the author's
-          text as the slot holds, breaking after the last word that fits
-          (measured against the slot's real rendered box), and end with a
-          "Continued on Page N" line.
-  Step 2: pour everything that was cut, unchanged, into inside pages, adding
-          a page whenever the three columns are full.
+  The sheet is two pages and only two. Page 1 carries the front-page slots,
+  page 2 the continuations and, below them, the crossword. An article is
+  printed only if the whole of it fits across the two pages, so the layout
+  is a search: try the first N articles; if the continuations overrun page
+  2, drop the lowest-priority one (the last) and try again, down to one
+  article and then to none. The winning pass leaves the DOM as it printed,
+  and the dropped articles leave no trace on either page.
+
+  Within a pass:
+    Step 1: for each front-page story, keep exactly as much of the author's
+            text as the slot holds, breaking after the last word that fits
+            (measured against the slot's real rendered box), and end with a
+            "Continued on Page 2" line.
+    Step 2: pour everything that was cut, unchanged, into the three columns
+            of page 2. Anything that does not fit there fails the pass.
 */
 (function () {
   const rect = el => el.getBoundingClientRect();
   const spills  = (el, box) => { const r = rect(el), b = rect(box); return r.right > b.right + 0.5 || r.bottom > b.bottom + 0.5; };
   const outside = (el, box) => { const r = rect(el), b = rect(box); return r.left >= b.right - 0.5 || r.top >= b.bottom - 0.5; };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const PX_PER_IN = 96;
+
+  const front = () => document.querySelector('#page-1 .stories');
+  //: The articles as the server rendered them, kept out of the document so
+  //: that every pass is measured from the same untouched starting point.
+  const pristine = front().cloneNode(true);
+  const TOTAL = pristine.querySelectorAll('.story').length;
+  const cols = document.querySelector('#page-2 .cols');
 
   // Truncate p to the most words for which `ok()` still holds (binary search on a
   // monotone predicate). Returns the words that were cut, joined, or null if not
@@ -339,7 +445,58 @@
     return lo === 0 ? null : words.slice(lo).join(' ');
   }
 
-  // ---- Step 1 ----
+  // ---- The crossword ----
+  // The clues fill the block beside the grid, as a newspaper's do, and
+  // whatever is left of them runs on underneath it.
+  function spreadClues() {
+    const beside = document.getElementById('xw-clues');
+    const under = document.getElementById('xw-clues-under');
+    const grid = document.querySelector('.xw-grid');
+    while (under.firstChild) beside.appendChild(under.firstChild);
+    beside.style.height = rect(grid).height + 'px';
+
+    const items = Array.from(beside.children);
+    let split = items.findIndex(it => spills(it, beside));
+    if (split < 0) return;                            // they all fit beside it
+    if (split && items[split - 1].tagName === 'H4') split--;   // no head left hanging
+    for (const it of items.slice(split)) under.appendChild(it);
+  }
+
+  // The section takes its own height and no more: the grid is fixed, and the
+  // clues are set as small as they need to be for the crossword to keep to
+  // its share of the sheet. What is left over is the continuations'.
+  function fitCrossword() {
+    const xw = document.getElementById('xword');
+    if (!xw) return;
+    const cap = 0.55 * 11 * PX_PER_IN;
+    for (const size of [6.5, 6.25, 6, 5.75, 5.5, 5.25, 5, 4.75, 4.5]) {
+      xw.style.setProperty('--xw-clue', size + 'pt');
+      spreadClues();
+      if (rect(xw).height <= cap) break;
+    }
+    window.__crosswordHeightIn = rect(xw).height / PX_PER_IN;
+  }
+
+  // ---- A pass ----
+  // Rebuild page 1 from the untouched copy with the first `k` articles.
+  function setFront(k) {
+    const fresh = pristine.cloneNode(true);
+    for (const story of Array.from(fresh.querySelectorAll('.story')))
+      if (+story.dataset.story >= k) story.remove();
+    const row = fresh.querySelector('.row');
+    if (row) {
+      const n = row.querySelectorAll('.story').length;
+      if (n) row.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)';
+      else row.remove();
+    }
+    if (!k) fresh.appendChild(document.getElementById('no-stories').content.cloneNode(true));
+    front().replaceWith(fresh);
+    cols.textContent = '';
+  }
+
+  // Step 1, for one story. Returns null when the whole story fits the slot,
+  // false when the slot cannot hold even the jump line, otherwise the
+  // remainder to be continued on page 2.
   function fitStory(story) {
     const body = story.querySelector('.body');
     const ps = Array.from(body.querySelectorAll('p'));
@@ -360,69 +517,59 @@
       if (cut) rem.unshift({ text: cut, tail: true });
       break;
     }
+    if (spills(jump, body)) return false;             // no room to say where it goes
     return { jump, title: story.querySelector('h2').textContent, rem };
   }
 
-  // ---- Step 2 ----
-  function run() {
+  const head = title => {
+    const art = el('article');
+    const h = el('div', 'story-head');
+    h.append(el('h2', null, title), el('p', 'cont', 'Continued from Page 1'));
+    art.appendChild(h);
+    return art;
+  };
+
+  // Step 2. True when every remainder fitted page 2 whole.
+  function pour(remainders) {
+    for (const r of remainders) {
+      const art = head(r.title);
+      cols.appendChild(art);
+      if (spills(art, cols)) return false;
+      for (const it of r.rem) {
+        const p = el('p', it.tail ? 'tail' : null, it.text);
+        art.appendChild(p);
+        if (spills(p, cols)) return false;
+      }
+    }
+    return true;
+  }
+
+  function attempt(k) {
+    setFront(k);
     const remainders = [];
     for (const story of document.querySelectorAll('#page-1 .story')) {
       const r = fitStory(story);
+      if (r === false) return false;
       if (r) remainders.push(r);
+    }
+    return pour(remainders);
+  }
+
+  function run() {
+    fitCrossword();
+
+    let printed = 0;
+    for (let k = TOTAL; k >= 0; k--) {
+      if (attempt(k)) { printed = k; break; }
     }
 
     // Ruled lines for the notes box: as many whole lines as the leftover rail space holds.
     const lines = document.querySelector('.rail .lines');
     if (lines) for (let i = 0; i < 80; i++) { const d = el('div'); lines.appendChild(d); if (spills(d, lines)) { d.remove(); break; } }
 
-    const tpl = document.getElementById('inside-page');
-    let pageNo = 1, cols = null;
-    const newPage = () => {
-      pageNo++;
-      const frag = tpl.content.cloneNode(true);
-      frag.querySelector('.pageno').textContent = 'Page ' + pageNo;
-      cols = frag.querySelector('.cols');
-      document.body.appendChild(frag);
-    };
-    const head = (title, from) => {
-      const art = el('article');
-      const h = el('div', 'story-head');
-      h.append(el('h2', null, title), el('p', 'cont', 'Continued from Page ' + from));
-      art.appendChild(h);
-      return art;
-    };
-
-    if (remainders.length) newPage();
-    for (const r of remainders) {
-      let art = head(r.title, 1);
-      cols.appendChild(art);
-      if (spills(art, cols)) { art.remove(); newPage(); cols.appendChild(art); }
-      r.jump.textContent = 'Continued on Page ' + pageNo;
-
-      const queue = r.rem.slice();
-      while (queue.length) {
-        const it = queue.shift();
-        const p = el('p', it.tail ? 'tail' : null, it.text);
-        art.appendChild(p);
-        if (!spills(p, cols)) continue;
-
-        if (outside(p, cols)) { p.remove(); queue.unshift(it); }
-        else {
-          const cut = truncate(p, () => !spills(p, cols));
-          if (cut === null) { p.remove(); queue.unshift(it); }
-          else if (cut) queue.unshift({ text: cut, tail: true });
-          else continue;
-        }
-        if (!art.querySelector('p:not(.cont)')) {
-          // Heading would sit alone at the foot of a column: carry the story over whole.
-          art.remove(); newPage(); cols.appendChild(art);
-          r.jump.textContent = 'Continued on Page ' + pageNo;
-        } else {
-          const from = pageNo; newPage(); art = head(r.title, from); cols.appendChild(art);
-        }
-      }
-    }
-
+    //: The articles that were printed, by their index in `articles`. The
+    //: rest were dropped whole and are nowhere on the sheet.
+    window.__printed = Array.from({ length: printed }, (_, i) => i);
     window.__pages = document.querySelectorAll('.page').length;
     window.__layoutDone = true;
   }

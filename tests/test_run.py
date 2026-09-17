@@ -17,6 +17,7 @@ import pytest
 import run as run_module
 import state as state_module
 from app.settings import Settings
+from gather import submit as real_submit
 from run import RunResult, run
 
 SAMPLE = Path(__file__).resolve().parent.parent / "render" / "sample_data.json"
@@ -148,7 +149,7 @@ def test_a_missing_gather_module_still_prints(data_dir, fake_deliver, monkeypatc
     result = run(Settings(), dry_run=True)
     assert result.ok
     assert "gather" in result.gather_errors
-    assert result.pages == 1                              # an empty paper is still a paper
+    assert result.pages == 2                              # an empty paper is still a paper
 
 
 def test_sample_mode_does_not_gather(data_dir, fake_deliver, monkeypatch):
@@ -212,12 +213,41 @@ def fake_substack(monkeypatch, fake_gather):
     return seen
 
 
-def test_real_run_marks_posts_seen_and_strips_guid(data_dir, fake_substack, fake_deliver):
-    result = run(Settings())
-    assert result.ok
-    assert fake_substack == [["post-0", "post-1", "post-2", "post-3"]]
+def test_real_run_marks_only_printed_posts_seen(data_dir, fake_substack, fake_deliver, monkeypatch):
+    """With the crossword on, the sample sheet has room for three of its four
+    stories; the fourth stays unseen so it can print another morning."""
+    puzzle = json.loads(SAMPLE.read_text())["crossword"]
+    xw = types.ModuleType("gather.crossword")
+    xw.fetch = lambda settings, **kw: puzzle
+    monkeypatch.setitem(sys.modules, "gather.crossword", xw)
+    sys.modules["gather"].submit = lambda name, fn, *a: _Done(fn(*a))
+    s = Settings()
+    s.sources.crossword.enabled = True
+
+    result = run(s)
+    assert result.ok and result.crossword
+    assert result.printed == [0, 1, 2]
+    assert fake_substack == [["post-0", "post-1", "post-2"]]
     written = json.loads((data_dir / "out" / result.date / "data.json").read_text())
     assert all("guid" not in a for a in written["articles"])
+    assert written["crossword"]["title"] == puzzle["title"]
+
+
+class _Done:
+    """A resolved future, for the crossword's submit() seam."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def result(self, timeout=None):
+        return self._value
+
+
+def test_without_a_crossword_every_sample_story_prints(data_dir, fake_substack, fake_deliver):
+    result = run(Settings())            # crossword source is off by default
+    assert not result.crossword
+    assert result.printed == [0, 1, 2, 3]
+    assert fake_substack == [["post-0", "post-1", "post-2", "post-3"]]
 
 
 def test_dry_run_does_not_mark_posts_seen(data_dir, fake_substack, fake_deliver):
@@ -234,3 +264,96 @@ def test_failed_run_does_not_mark_posts_seen(data_dir, fake_substack, fake_deliv
     result = run(s)
     assert not result.ok
     assert fake_substack == []
+
+
+# ----------------------------------------------------------------- crossword
+SAMPLE_PUZZLE = {
+    "provider": "nyt",
+    "date": "2026-09-17",
+    "title": "Cross Purposes",
+    "author": "Robyn Weintraub",
+    "editor": "Will Shortz",
+    "width": 3,
+    "height": 3,
+    "grid": [[{"n": 1}, {"n": 2}, None], [{"n": 3}, {"n": None}, {"n": 4}], [None, {"n": 5}, {"n": None}]],
+    "across": [{"n": 1, "clue": "Word after fire or fly"}],
+    "down": [{"n": 1, "clue": "Quaint \u201cthank you\u201d"}],
+}
+
+
+@pytest.fixture
+def fake_crossword(monkeypatch, fake_gather):
+    """`gather.crossword.fetch` is ours; the real daemon-thread helper is not."""
+    calls: dict[str, object] = {"count": 0, "puzzle": SAMPLE_PUZZLE, "raises": None}
+
+    def fetch(settings, **kwargs):
+        calls["count"] += 1
+        if calls["raises"]:
+            raise calls["raises"]
+        return calls["puzzle"]
+
+    module = types.ModuleType("gather.crossword")
+    module.fetch = fetch
+    monkeypatch.setitem(sys.modules, "gather.crossword", module)
+    sys.modules["gather"].crossword = module
+    sys.modules["gather"].submit = real_submit
+    return calls
+
+
+def _crossword_in(data_dir, result) -> object:
+    data = json.loads((data_dir / "out" / result.date / "data.json").read_text())
+    assert "crossword" in data, "the key is always there, nullable"
+    return data["crossword"]
+
+
+def test_an_enabled_crossword_lands_in_the_data(data_dir, fake_crossword, fake_deliver):
+    settings = Settings()
+    settings.sources.crossword.enabled = True
+
+    result = run(settings, dry_run=True)
+
+    assert result.ok and result.crossword is True
+    assert fake_crossword["count"] == 1
+    assert _crossword_in(data_dir, result) == SAMPLE_PUZZLE
+
+
+def test_no_crossword_when_the_source_is_off(data_dir, fake_crossword, fake_deliver):
+    result = run(Settings(), dry_run=True)
+
+    assert result.ok and result.crossword is False
+    assert fake_crossword["count"] == 0, "a source that is off is not fetched from"
+    assert _crossword_in(data_dir, result) is None
+
+
+def test_a_crossword_that_raises_still_prints_the_paper(data_dir, fake_crossword, fake_deliver):
+    fake_crossword["raises"] = RuntimeError("NYT-S cookie expired or invalid")
+    settings = Settings()
+    settings.sources.crossword.enabled = True
+
+    result = run(settings, dry_run=True)
+
+    assert result.ok and result.pages == 2           # the paper is the paper
+    assert result.crossword is False
+    assert _crossword_in(data_dir, result) is None
+
+
+def test_a_crossword_that_finds_nothing_is_not_an_error(data_dir, fake_crossword, fake_deliver):
+    fake_crossword["puzzle"] = None                  # e.g. today is not one of its days
+    settings = Settings()
+    settings.sources.crossword.enabled = True
+
+    result = run(settings, dry_run=True)
+    assert result.ok and result.crossword is False
+    assert _crossword_in(data_dir, result) is None
+
+
+def test_a_replay_keeps_the_archived_puzzle_without_refetching(data_dir, fake_crossword, fake_deliver):
+    settings = Settings()
+    settings.sources.crossword.enabled = True
+    first = run(settings, dry_run=True)
+
+    replay = run(settings, date=first.date)
+
+    assert replay.ok and replay.crossword is True
+    assert fake_crossword["count"] == 1              # the replay did not fetch
+    assert _crossword_in(data_dir, replay) == SAMPLE_PUZZLE

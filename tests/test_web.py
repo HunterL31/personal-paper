@@ -177,11 +177,13 @@ def test_saving_sources_keeps_masked_urls_and_adds_rows(client):
             "cal_index": "0",
             "cal_url_0": "",                      # masked on the page: keep what is stored
             "cal_name_0": "Home",
-            "cal_new_url": "https://example.com/other/basic.ics",
-            "cal_new_name": "",
-            "sub_new_name": "oneuseful",
-            "sub_new_paid": "on",
-            "sub_new_order": "1",
+            "cal_new": "n0",
+            "cal_new_url_n0": "https://example.com/other/basic.ics",
+            "cal_new_name_n0": "",
+            "sub_new": "n0",
+            "sub_new_name_n0": "oneuseful",
+            "sub_new_paid_n0": "on",
+            "sub_new_order_n0": "1",
             "lat": "37.87",
             "lon": "-122.27",
             "tasks_max_age_hours": "12",
@@ -195,6 +197,30 @@ def test_saving_sources_keeps_masked_urls_and_adds_rows(client):
     assert [(s.name, s.paid) for s in sources.substacks] == [("oneuseful", True)]
     assert sources.weather.lat == 37.87
     assert sources.tasks_max_age_hours == 12
+
+
+def test_several_new_rows_save_at_once(client):
+    """"Add another" clones rows client-side; the server reads every key."""
+    client.post(
+        "/sources",
+        auth=AUTH,
+        data={
+            "cal_new": ["n0", "n1", "n2", "bogus"],
+            "cal_new_url_n0": "https://example.com/a/basic.ics", "cal_new_name_n0": "A",
+            "cal_new_url_n1": "",                                    # left blank: ignored
+            "cal_new_url_n2": "https://example.com/c/basic.ics", "cal_new_name_n2": "C",
+            "sub_new": ["n0", "n1", "bogus"],
+            "sub_new_name_n0": "second", "sub_new_order_n0": "2",
+            "sub_new_name_n1": "first", "sub_new_order_n1": "1", "sub_new_paid_n1": "on",
+            "sub_new_name_bogus": "ignored",
+        },
+    )
+    sources = Settings.load().sources
+    assert [(c.url, c.name) for c in sources.calendars] == [
+        ("https://example.com/a/basic.ics", "A"),
+        ("https://example.com/c/basic.ics", "C"),
+    ]
+    assert [(s.name, s.paid) for s in sources.substacks] == [("first", True), ("second", False)]
 
 
 def test_sources_page_shows_masked_url_and_shortcut_instructions(client):
@@ -251,6 +277,79 @@ def test_substack_check_reports_errors(client, monkeypatch):
     monkeypatch.setattr("gather.substack.check", boom)
     body = client.post("/sources/substack/check", auth=AUTH, json={"name": "nope"}).json()
     assert body["ok"] is False and "no such feed" in body["error"]
+
+
+def test_crossword_check_reports_errors(client, monkeypatch):
+    def boom(today=None):
+        raise RuntimeError("NYT-S cookie rejected (got a login page)")
+
+    monkeypatch.setattr("gather.crossword.check", boom)
+    body = client.post("/sources/crossword/check", auth=AUTH).json()
+    assert body["ok"] is False
+    assert "cookie rejected (got a login page)" in body["error"]
+
+
+def test_crossword_check_ok(client, monkeypatch):
+    monkeypatch.setattr(
+        "gather.crossword.check",
+        lambda today=None: {"ok": True, "date": "2026-09-17", "title": "Cross Purposes",
+                            "author": "Robyn Weintraub", "editor": "Will Shortz",
+                            "size": "15x15", "clues": 72, "error": ""},
+    )
+    body = client.post("/sources/crossword/check", auth=AUTH).json()
+    assert body["ok"] is True
+    assert body["result"]["size"] == "15x15" and body["result"]["clues"] == 72
+
+
+def test_sources_page_shows_the_crossword_section(client):
+    body = client.get("/sources", auth=AUTH).text
+    assert "<h2>Crossword</h2>" in body
+    assert "NYT_S" in body                     # named in the note and in the env table
+    assert "crossword_day_0" in body
+
+
+def test_saving_the_crossword_persists_the_days(client):
+    client.post(
+        "/sources",
+        auth=AUTH,
+        data={
+            "lat": "37.87", "lon": "-122.27", "tasks_max_age_hours": "24",
+            "crossword_enabled": "on",
+            "crossword_day_0": "on", "crossword_day_2": "on", "crossword_day_6": "on",
+        },
+    )
+    crossword = Settings.load().sources.crossword
+    assert crossword.enabled is True
+    assert crossword.days == [0, 2, 6]
+    assert crossword.provider == "nyt"
+
+    # Unticking the box turns it off again and leaves the days alone.
+    client.post("/sources", auth=AUTH,
+                data={"lat": "37.87", "lon": "-122.27", "tasks_max_age_hours": "24",
+                      "crossword_day_0": "on"})
+    assert Settings.load().sources.crossword.enabled is False
+    assert Settings.load().sources.crossword.days == [0]
+
+
+def test_status_strip_shows_the_last_crossword_check(client, monkeypatch):
+    import state
+
+    state.update_state(crossword_check={
+        "ok": True, "when": "2026-09-17T05:58:00-07:00",
+        "summary": "Cross Purposes by Robyn Weintraub, 2026-09-17 (15x15, 72 clues)",
+    })
+
+    # Switched off on the Sources tab: the strip says nothing about it.
+    assert "<dt>Crossword</dt>" not in client.get("/sources", auth=AUTH).text
+
+    settings = Settings()
+    settings.sources.crossword.enabled = True
+    settings.save()
+
+    text = client.get("/sources", auth=AUTH).text
+    assert "<dt>Crossword</dt>" in text
+    assert "Cross Purposes by Robyn Weintraub" in text
+    assert "(checked 05:58)" in text
 
 
 def _diagnosis(ok: bool):

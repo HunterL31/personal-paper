@@ -2,7 +2,8 @@
 {% block content %}
 <h2>Preview</h2>
 <p class="note">Rendering runs Chromium and takes a few seconds. A paper that spills
-onto a fifth page is the thing to catch here.</p>
+off the sheet is the thing to catch here: the paper is always two pages,
+and a story that does not fit whole is held for another morning.</p>
 
 <div class="actions">
   <form method="post" action="/preview?source=sample">
@@ -25,6 +26,7 @@ onto a fifth page is the thing to catch here.</p>
 {% block scripts %}
 {% if job %}
 <script>
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 const job = {{ job | tojson }};
 const statusLine = document.getElementById("preview_status");
 const pages = document.getElementById("pages");
@@ -41,8 +43,11 @@ function renderJob(job) {
   const result = job.result;
   statusLine.innerHTML = '<span class="pagecount">' + result.pages + ' page'
     + (result.pages === 1 ? '' : 's') + '</span>'
-    + (result.pages > 4 ? ' <span class="warn">— more than four pages; the paper is getting long.</span>' : '')
-    + ' &middot; <a href="' + result.html + '">inspect the HTML</a>';
+    + (result.crossword ? ' with the crossword' : '')
+    + ' &middot; <a href="' + result.html + '">inspect the HTML</a>'
+    + (result.held && result.held.length
+        ? '<br><span class="warn">Held for another morning (did not fit whole): ' + result.held.map(escapeHtml).join('; ') + '</span>'
+        : '');
   pages.innerHTML = "";
   result.pngs.forEach(function (src, index) {
     const figure = document.createElement("figure");

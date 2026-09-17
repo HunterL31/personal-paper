@@ -41,6 +41,9 @@ class Look(BaseModel):
     body_font: str = "PT Serif"
     body_size_pt: float = Field(9.0, ge=8.0, le=11.0)      # half-point steps in the UI
     lead_body_height_in: float = Field(2.7, ge=1.5, le=5.0)
+    #: Justified columns, as a newspaper sets them. Off gives a ragged
+    #: right edge, which some readers find easier in narrow measures.
+    justify: bool = True
     show_todo: bool = True
     show_hourly: bool = True
     show_notes: bool = True
@@ -62,10 +65,23 @@ class WeatherSource(BaseModel):
     lon: float = -122.4194
 
 
+class CrosswordSource(BaseModel):
+    """The day's puzzle, appended as the back page(s).
+
+    The subscriber's `NYT_S` cookie is a credential, so it lives in the
+    container's variables, never here. `days` is which weekdays get a
+    puzzle (0 = Monday), for a reader who skips, say, Saturday.
+    """
+    enabled: bool = False
+    provider: Literal["nyt"] = "nyt"
+    days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
+
+
 class Sources(BaseModel):
     calendars: list[CalendarSource] = Field(default_factory=list)
     substacks: list[SubstackSource] = Field(default_factory=list)
     weather: WeatherSource = Field(default_factory=WeatherSource)
+    crossword: CrosswordSource = Field(default_factory=CrosswordSource)
     tasks_max_age_hours: int = 24
 
 
@@ -136,6 +152,8 @@ class Env:
 
     WEB_PASSWORD = "WEB_PASSWORD"
     TASKS_TOKEN = "TASKS_TOKEN"
+    #: The subscriber's NYT-S session cookie, for the crossword PDF.
+    NYT_S = "NYT_S"
     SMTP = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD")
     IMAP = ("IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD")
     TZ = "TZ"
@@ -163,5 +181,5 @@ class Env:
     @classmethod
     def status(cls) -> dict[str, bool]:
         """What the web page shows: each variable, set or not. Never the value."""
-        names = [cls.WEB_PASSWORD, cls.TASKS_TOKEN, *cls.SMTP, *cls.IMAP, cls.TZ]
+        names = [cls.WEB_PASSWORD, cls.TASKS_TOKEN, cls.NYT_S, *cls.SMTP, *cls.IMAP, cls.TZ]
         return {n: cls.is_set(n) for n in names}
