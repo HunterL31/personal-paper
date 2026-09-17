@@ -263,7 +263,8 @@ def run(
         update_state(**fields)
     else:
         update_state(last_error=result.error or "unknown error")
-        _notify_failure(settings, f"The Molly Ledger failed on {day}: {result.error}")
+        paper_name = settings.look.paper_name or "Personal Paper"
+        _notify_failure(settings, f"{paper_name} failed on {day}: {result.error}")
     return result
 
 

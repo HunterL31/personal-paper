@@ -1,11 +1,11 @@
 services:
-  molly-ledger:
+  personal-paper:
     # Published by .github/workflows/docker.yml. Change the namespace if your
     # Docker Hub username is not hunterl31. To build locally instead,
     # comment out `image:` and uncomment `build:`.
-    image: hunterl31/molly-ledger:latest
+    image: hunterl31/personal-paper:latest
     # build: .
-    container_name: molly-ledger
+    container_name: personal-paper
     # Host networking is what lets mDNS printer discovery see the LAN
     # broadcast domain. Port 8080 must then be free on the box.
     network_mode: host

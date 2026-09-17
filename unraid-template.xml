@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>molly-ledger</Name>
-  <Repository>hunterl31/molly-ledger:latest</Repository>
+  <Name>personal-paper</Name>
+  <Repository>hunterl31/personal-paper:latest</Repository>
   <Registry/>
   <Network>host</Network>
   <MyIP/>
@@ -10,10 +10,11 @@
   <Support/>
   <Project/>
   <Overview>
-    The Molly Ledger: a one-reader morning newspaper. It gathers the day's
-    calendar, tasks, weather and Substack posts, renders a black-and-white
-    US Letter broadsheet as a PDF, and prints it over IPP and/or emails it,
-    on a schedule set from its own web page.
+    Personal Paper: a one-reader morning newspaper, called whatever its
+    reader types on the Look tab. It gathers the day's calendar, tasks,
+    weather and Substack posts, renders a black-and-white US Letter
+    broadsheet as a PDF, and prints it over IPP and/or emails it, on a
+    schedule set from its own web page.
 
     Host networking is the default because mDNS printer discovery only works
     when the container shares the host's broadcast domain. On bridge
@@ -48,13 +49,13 @@
   <Config
     Name="Data"
     Target="/data"
-    Default="/mnt/user/appdata/molly-ledger"
+    Default="/mnt/user/appdata/personal-paper"
     Mode="rw"
     Description="settings.json, state.json, tasks.json, logs/, out/ and the PDF archive. Nothing secret is kept here."
     Type="Path"
     Display="always"
     Required="true"
-    Mask="false">/mnt/user/appdata/molly-ledger</Config>
+    Mask="false">/mnt/user/appdata/personal-paper</Config>
   <Config
     Name="Unraid notify script"
     Target="/usr/local/emhttp/webGui/scripts/notify"

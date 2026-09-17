@@ -1,7 +1,9 @@
-# The Molly Ledger
+# Personal Paper
 
 A one-reader morning newspaper, generated daily in a Docker container and
-printed or emailed. Read `PLAN.md` first; it is the design.
+printed or emailed. The project, the image and the container are generic;
+the paper's name is whatever its one reader types on the Look tab
+(`settings.look.paper_name`). Read `PLAN.md` first; it is the design.
 
 ## House rules (never break these)
 

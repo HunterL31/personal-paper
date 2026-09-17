@@ -32,7 +32,7 @@ from deliver import printer as printer_route
 def pdf(tmp_path: Path) -> Path:
     """A file that is a PDF as far as any of this cares."""
     p = tmp_path / "2026-09-16.pdf"
-    p.write_bytes(b"%PDF-1.7\n% The Molly Ledger\n%%EOF\n")
+    p.write_bytes(b"%PDF-1.7\n% Personal Paper\n%%EOF\n")
     return p
 
 
@@ -210,9 +210,15 @@ def fake_printer():
 # --------------------------------------------------------------- email route
 def test_send_pdf_attachment_name_and_recipients(pdf, smtp_server):
     sink, smtp = smtp_server
-    to = ["molly@example.com", "second@example.com"]
+    to = ["reader@example.com", "second@example.com"]
 
-    email_route.send_pdf(pdf, to, "The Molly Ledger, 2026-09-16", smtp)
+    email_route.send_pdf(
+        pdf,
+        to,
+        "The Evening Ledger, 2026-09-16",
+        smtp,
+        paper_name="The Evening Ledger",
+    )
 
     assert len(sink.messages) == 1
     mail_from, rcpt_tos, _ = sink.messages[0]
@@ -220,12 +226,12 @@ def test_send_pdf_attachment_name_and_recipients(pdf, smtp_server):
     assert rcpt_tos == to
 
     message = sink.parsed()
-    assert message["Subject"] == "The Molly Ledger, 2026-09-16"
+    assert message["Subject"] == "The Evening Ledger, 2026-09-16"
     assert message["To"] == ", ".join(to)
 
     attachments = [p for p in message.walk() if p.get_filename()]
     assert len(attachments) == 1
-    assert attachments[0].get_filename() == "Molly Ledger 2026-09-16.pdf"
+    assert attachments[0].get_filename() == "The Evening Ledger 2026-09-16.pdf"
     assert attachments[0].get_content_type() == "application/pdf"
     assert attachments[0].get_payload(decode=True) == pdf.read_bytes()
 
@@ -233,16 +239,16 @@ def test_send_pdf_attachment_name_and_recipients(pdf, smtp_server):
 def test_send_test_reaches_the_recipient(smtp_server):
     sink, smtp = smtp_server
 
-    email_route.send_test(["molly@example.com"], smtp)
+    email_route.send_test(["reader@example.com"], smtp)
 
     assert len(sink.messages) == 1
-    assert sink.messages[0][1] == ["molly@example.com"]
+    assert sink.messages[0][1] == ["reader@example.com"]
     assert "test" in sink.parsed()["Subject"].lower()
 
 
 def test_send_pdf_without_smtp_configuration_says_so(pdf):
     with pytest.raises(RuntimeError, match="SMTP not configured in container variables"):
-        email_route.send_pdf(pdf, ["molly@example.com"], "subject", None)
+        email_route.send_pdf(pdf, ["reader@example.com"], "subject", None)
 
 
 def test_attachment_name_falls_back_to_today(tmp_path):
@@ -250,7 +256,16 @@ def test_attachment_name_falls_back_to_today(tmp_path):
 
     other = tmp_path / "paper.pdf"
     other.write_bytes(b"%PDF-1.7\n")
-    assert email_route.attachment_name(other) == f"Molly Ledger {date.today()}.pdf"
+    assert email_route.attachment_name(other) == f"Personal Paper {date.today()}.pdf"
+
+
+def test_attachment_name_makes_the_paper_name_safe(pdf):
+    # Spaces stay; the characters a filesystem would choke on do not.
+    assert (
+        email_route.attachment_name(pdf, 'The  Evening/Gull: "Extra"')
+        == "The Evening Gull Extra 2026-09-16.pdf"
+    )
+    assert email_route.attachment_name(pdf, "   ") == "Personal Paper 2026-09-16.pdf"
 
 
 # --------------------------------------------------------------- print route
@@ -271,13 +286,21 @@ def test_print_pdf_sends_the_document_duplex(pdf, fake_printer):
 
     operation = request["operation-attributes"]
     assert operation["document-format"] == "application/pdf"
-    assert operation["job-name"] == "Molly Ledger 2026-09-16"
+    assert operation["job-name"] == "Personal Paper 2026-09-16"
 
     job = request["jobs"][0]
     assert job["sides"] == "two-sided-long-edge"
     assert job["media"] == "na_letter_8.5x11in"
 
     assert request["data"] == pdf.read_bytes()
+
+
+def test_print_pdf_job_name_uses_the_configured_paper_name(pdf, fake_printer):
+    printer_route.print_pdf(pdf, fake_printer.host, paper_name="The Evening Ledger")
+
+    _, body = fake_printer.requests[0]
+    operation = _parse_request(body)["operation-attributes"]
+    assert operation["job-name"] == "The Evening Ledger 2026-09-16"
 
 
 def test_print_pdf_single_sided(pdf, fake_printer):
@@ -567,7 +590,7 @@ def test_deliver_runs_only_enabled_routes(pdf, smtp_server, monkeypatch):
 
     settings = Settings()
     settings.output.email.enabled = True
-    settings.output.email.to = ["molly@example.com"]
+    settings.output.email.to = ["reader@example.com"]
 
     results = deliver(pdf, settings)
 
@@ -581,7 +604,7 @@ def test_deliver_reports_one_failed_and_one_succeeded_route(pdf, smtp_server, mo
 
     settings = Settings()
     settings.output.email.enabled = True
-    settings.output.email.to = ["molly@example.com"]
+    settings.output.email.to = ["reader@example.com"]
     settings.output.print.enabled = True
     settings.output.print.printer_host = "127.0.0.1:9"  # nothing is listening
 
@@ -599,10 +622,10 @@ def test_deliver_never_raises_and_marks_the_test_subject(pdf, smtp_server, monke
 
     settings = Settings()
     settings.output.email.enabled = True
-    settings.output.email.to = ["molly@example.com"]
+    settings.output.email.to = ["reader@example.com"]
 
     assert deliver(pdf, settings, test=True) == {"email": None}
-    assert sink.parsed()["Subject"] == "[test] The Molly Ledger, 2026-09-16"
+    assert sink.parsed()["Subject"] == "[test] Personal Paper, 2026-09-16"
 
 
 def test_deliver_with_no_routes_enabled_is_empty(pdf):
@@ -625,7 +648,7 @@ def test_notify_failure_email(smtp_server, monkeypatch):
 
     settings = Settings()
     settings.output.notify = "email"
-    settings.output.notify_email = "molly@example.com"
+    settings.output.notify_email = "reader@example.com"
 
     notify.notify_failure(settings, "the printer was off")
 
@@ -640,7 +663,7 @@ def test_notify_failure_swallows_errors(monkeypatch):
 
     settings = Settings()
     settings.output.notify = "email"
-    settings.output.notify_email = "molly@example.com"
+    settings.output.notify_email = "reader@example.com"
 
     notify.notify_failure(settings, "no smtp anywhere")  # must not raise
 
@@ -661,7 +684,7 @@ def test_notify_failure_unraid_runs_the_script(monkeypatch, tmp_path):
     args = (tmp_path / "notify.args").read_text().splitlines()
     assert args == [
         "-e",
-        "Molly Ledger",
+        "Personal Paper",
         "-s",
         "Paper failed",
         "-d",

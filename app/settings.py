@@ -27,12 +27,12 @@ FONT_CHOICES_BODY = ["PT Serif", "EB Garamond", "Libre Baskerville", "Old Standa
 # ---------------------------------------------------------------- Look
 class Ear(BaseModel):
     """Text in the boxes either side of the masthead."""
-    initials: str = "M. L."
+    initials: str = ""            # the reader's monogram; empty means no line
     lines: list[str] = Field(default_factory=lambda: ["Continued stories inside."])
 
 
 class Look(BaseModel):
-    paper_name: str = "The Molly Ledger"
+    paper_name: str = "Personal Paper"
     imprint: str = "Printed at home before sunrise"
     price: str = "Single copy, free"
     ear: Ear = Field(default_factory=Ear)
@@ -80,7 +80,7 @@ class PrintRoute(BaseModel):
 class EmailRoute(BaseModel):
     enabled: bool = False
     to: list[str] = Field(default_factory=list)
-    subject: str = "The Molly Ledger, {date}"
+    subject: str = "Personal Paper, {date}"
 
 
 class Schedule(BaseModel):

@@ -1,8 +1,12 @@
-# The Molly Ledger
+# Personal Paper
 
-A one-reader morning newspaper: her calendar, to-do list and weather in the
-rail, and the newest posts from the Substacks she reads on the front page,
-printed exactly as their authors wrote them. Rendered every morning in a
+The paper's name, its fonts and its whole look are set per deployment on the
+Look tab; the sample issue calls itself "Personal Paper" only until you type
+your own name for it there.
+
+A one-reader morning newspaper: the reader's calendar, to-do list and weather
+in the rail, and the newest posts from the Substacks they read on the front
+page, printed exactly as their authors wrote them. Rendered every morning in a
 Docker container on the Unraid box, then printed on the Brother and/or
 emailed as a PDF.
 
@@ -27,9 +31,9 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
 ## Install on Unraid
 
 1. Docker tab → Add Container → Template: paste the contents of
-   `unraid-template.xml`, or add the repository `hunterl31/molly-ledger:latest`
+   `unraid-template.xml`, or add the repository `hunterl31/personal-paper:latest`
    by hand with host networking, port 8080, and `/data` mapped to
-   `/mnt/user/appdata/molly-ledger`.
+   `/mnt/user/appdata/personal-paper`.
 2. Fill in the variables. Only `WEB_PASSWORD` is required to start.
    `TASKS_TOKEN` is needed for the phone sync, the `SMTP_*` set for
    emailing the PDF, the `IMAP_*` set only if a paid Substack needs the
@@ -76,7 +80,7 @@ GitHub (Settings → Secrets and variables → Actions):
 
 | Secret | Value |
 |---|---|
-| `DOCKERHUB_USERNAME` | the Docker Hub account; the image is `<this>/molly-ledger` |
+| `DOCKERHUB_USERNAME` | the Docker Hub account; the image is `<this>/personal-paper` |
 | `DOCKERHUB_TOKEN` | a Docker Hub access token with read/write scope |
 
 If the Docker Hub account is not `hunterl31`, change the image name in

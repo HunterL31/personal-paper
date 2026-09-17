@@ -1,10 +1,10 @@
 {
   "look": {
-    "paper_name": "The Molly Ledger",
+    "paper_name": "Personal Paper",
     "imprint": "Printed at home before sunrise",
     "price": "Single copy, free",
     "ear": {
-      "initials": "M. L.",
+      "initials": "",
       "lines": [
         "Continued stories inside."
       ]
@@ -37,7 +37,7 @@
     "email": {
       "enabled": false,
       "to": [],
-      "subject": "The Molly Ledger, {date}"
+      "subject": "Personal Paper, {date}"
     },
     "schedule": {
       "time": "06:00",

@@ -106,5 +106,5 @@ def test_unknown_font_falls_back_to_the_default(sample_data, tmp_path):
 
 
 def test_render_accepts_a_plain_dict_or_none(sample_data):
-    assert "The Molly Ledger" in build_html(sample_data, None)
+    assert "Personal Paper" in build_html(sample_data, None)
     assert "The Tide Table" in build_html(sample_data, {"paper_name": "The Tide Table"})

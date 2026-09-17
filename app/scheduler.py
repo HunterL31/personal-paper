@@ -73,14 +73,14 @@ def run_daily() -> None:
 
 # --------------------------------------------------------------- scheduler
 def disabled() -> bool:
-    return os.environ.get("MOLLY_NO_SCHEDULER") == "1"
+    return os.environ.get("PAPER_NO_SCHEDULER") == "1"
 
 
 def start(settings: Settings) -> Optional[BackgroundScheduler]:
-    """Start the scheduler and install the job. No-op under MOLLY_NO_SCHEDULER."""
+    """Start the scheduler and install the job. No-op under PAPER_NO_SCHEDULER."""
     global _scheduler
     if disabled():
-        log.info("scheduler disabled (MOLLY_NO_SCHEDULER=1)")
+        log.info("scheduler disabled (PAPER_NO_SCHEDULER=1)")
         return None
     if _scheduler is None:
         _scheduler = BackgroundScheduler(timezone=Env.tz())
