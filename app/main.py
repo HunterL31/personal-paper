@@ -52,11 +52,16 @@ from app.settings import (  # noqa: E402
     SubstackSource,
     slugify,
 )
+from render.fontlist import face_css, stack  # noqa: E402
 from state import data_dir, load_state  # noqa: E402
 
 log = logging.getLogger(__name__)
 
 SAMPLE_DATA = REPO / "render" / "sample_data.json"
+#: The bundled faces, served to the browser at /fonts so the Look tab's
+#: picker can show each family in itself. Behind the password like the
+#: rest of the page.
+FONT_DIR = REPO / "render" / "fonts"
 TEMPLATES = Jinja2Templates(directory=str(HERE / "templates"))
 ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}\.pdf$")
 PREVIEW_FILE = re.compile(r"^(page-\d+\.png|paper\.html)$")
@@ -98,6 +103,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Personal Paper", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.middleware("http")(auth.middleware)
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+app.mount("/fonts", StaticFiles(directory=str(FONT_DIR)), name="fonts")
 
 
 # ----------------------------------------------------------------- helpers
@@ -339,7 +345,25 @@ def healthz() -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/fonts.css")
+def fonts_css() -> Response:
+    """Every bundled face, for the Look tab's picker.
+
+    Built from `render/fontlist.py`, the table the sheet itself is set
+    from, so the sample under a card is the face that comes off the
+    printer and the two can never disagree.
+    """
+    return Response(face_css("/fonts"), media_type="text/css")
+
+
 # --------------------------------------------------------------- Look tab
+def font_cards(choices: list[str], current: str) -> list[dict[str, Any]]:
+    """One card per choice: its name, the stack it is set in, and whether
+    it is the face the paper is set in now."""
+    return [{"name": name, "stack": stack(name), "checked": name == current}
+            for name in choices]
+
+
 @app.get("/look")
 def look_get(request: Request) -> Response:
     settings = Settings.load()
@@ -351,9 +375,9 @@ def look_get(request: Request) -> Response:
         # with the reader's own list names as labels.
         sections=settings.known_sections(),
         places=PLACE_CHOICES,
-        fonts_masthead=FONT_CHOICES_MASTHEAD,
-        fonts_head=FONT_CHOICES_HEAD,
-        fonts_body=FONT_CHOICES_BODY,
+        fonts_masthead=font_cards(FONT_CHOICES_MASTHEAD, settings.look.masthead_font),
+        fonts_head=font_cards(FONT_CHOICES_HEAD, settings.look.headline_font),
+        fonts_body=font_cards(FONT_CHOICES_BODY, settings.look.body_font),
         body_sizes=BODY_SIZES,
     )
 

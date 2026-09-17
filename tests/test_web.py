@@ -17,7 +17,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import jobs, scheduler
-from app.settings import CalendarSource, ListSource, Schedule, Settings, SubstackSource
+from app.settings import (
+    FONT_CHOICES_BODY,
+    FONT_CHOICES_HEAD,
+    FONT_CHOICES_MASTHEAD,
+    CalendarSource,
+    ListSource,
+    Schedule,
+    Settings,
+    SubstackSource,
+)
 
 AUTH = ("reader", "pw")
 
@@ -129,6 +138,78 @@ def test_look_ignores_an_unknown_font_and_clamps_the_size(client):
     look = Settings.load().look
     assert look.body_font == "PT Serif"
     assert look.body_size_pt == 11.0
+
+
+# ------------------------------------------------------------ the fonts
+def test_the_fonts_stylesheet_carries_every_face(client):
+    """One table behind both: what /fonts.css declares is what the sheet
+    is set from (render/fontlist.py)."""
+    from render import fontlist
+
+    response = client.get("/fonts.css", auth=AUTH)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+    faces = response.text
+    assert faces.count("@font-face") == sum(len(r) for r in fontlist.FONT_FILES.values())
+    for name in (*FONT_CHOICES_BODY, *FONT_CHOICES_HEAD, *FONT_CHOICES_MASTHEAD):
+        assert f'font-family: "{name}"' in faces, name
+    for family, rules in fontlist.FONT_FILES.items():
+        for file, _, _ in rules:
+            assert f'url("/fonts/{file}")' in faces
+
+
+def test_the_fonts_stylesheet_needs_the_password(client):
+    assert client.get("/fonts.css").status_code == 401
+
+
+def test_a_bundled_font_is_served_behind_the_password(client):
+    assert client.get("/fonts/Lora-var.ttf").status_code == 401
+    response = client.get("/fonts/Lora-var.ttf", auth=AUTH)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "font/ttf"
+    assert response.content[:4] == b"\x00\x01\x00\x00"          # a TrueType file, not a 404 page
+
+
+def test_a_font_that_is_not_bundled_is_a_404(client):
+    assert client.get("/fonts/Nonesuch-var.ttf", auth=AUTH).status_code == 404
+
+
+def test_the_look_tab_shows_a_card_for_every_face(client):
+    """The picker: a radio per choice, set in that face, the saved one ticked."""
+    from render import fontlist
+
+    settings = Settings()
+    settings.look.masthead_font = "Pirata One"
+    settings.look.headline_font = "Bodoni Moda"
+    settings.look.body_font = "Literata"
+    settings.save()
+
+    body = client.get("/look", auth=AUTH).text
+    assert '<link rel="stylesheet" href="/fonts.css">' in body
+    groups = [("masthead_font", FONT_CHOICES_MASTHEAD, "Pirata One"),
+              ("headline_font", FONT_CHOICES_HEAD, "Bodoni Moda"),
+              ("body_font", FONT_CHOICES_BODY, "Literata")]
+    for field, choices, chosen in groups:
+        for name in choices:
+            assert f'name="{field}" value="{name}"' in body, (field, name)
+            # the card is set in the face it names
+            assert f"--face: {fontlist.stack(name)}" in body, name
+        assert f'name="{field}" value="{chosen}" checked' in body, field
+        # exactly one of the group is ticked
+        ticked = [n for n in choices if f'name="{field}" value="{n}" checked' in body]
+        assert ticked == [chosen]
+
+
+def test_the_look_tab_saves_a_newly_offered_face(client):
+    client.post("/look", auth=AUTH, data={
+        "paper_name": "The Evening Gull",
+        "masthead_font": "Grenze Gotisch",
+        "headline_font": "Oswald",
+        "body_font": "Merriweather",
+    })
+    look = Settings.load().look
+    assert (look.masthead_font, look.headline_font, look.body_font) == \
+        ("Grenze Gotisch", "Oswald", "Merriweather")
 
 
 def test_the_look_tab_saves_the_layout(client):
