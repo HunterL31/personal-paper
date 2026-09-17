@@ -70,10 +70,14 @@ def _call(module_name: str, func_name: str, settings) -> Any:
     return fn(settings)
 
 
-def _submit(section: str, fn: Callable, *args) -> Future:
+def submit(section: str, fn: Callable, *args) -> Future:
     """
     Run `fn` on a daemon thread and report through a `concurrent.futures`
     Future, so the caller can wait with `future.result(timeout=...)`.
+
+    Public because run.py fetches the crossword the same way: outside
+    `run_all`, but under the same rule that a hang is abandoned rather than
+    waited on.
 
     Not a ThreadPoolExecutor: its workers are non-daemon, and the interpreter
     joins every non-daemon thread on the way out, so one wedged gatherer would
@@ -115,12 +119,15 @@ def run_all(settings) -> dict:
         "events": [],
         "tasks": [],
         "articles": [],
+        # The puzzle is fetched by run.py, outside the gather step, but the
+        # key belongs to the contract, so it is here and nullable.
+        "crossword": None,
         "errors": {},
     }
     errors: dict[str, str] = data["errors"]
 
     futures = {
-        section: _submit(section, _call, module_name, func_name, settings)
+        section: submit(section, _call, module_name, func_name, settings)
         for section, (module_name, func_name) in GATHERERS.items()
     }
 

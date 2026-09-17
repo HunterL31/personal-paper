@@ -22,6 +22,9 @@
     <label class="field"><span>Ear lines (one per line)</span>
       <textarea name="ear_lines">{{ look.ear.lines | join("\n") }}</textarea></label>
   </div>
+  <p class="note">The ear says whatever you type. With the crossword switched on
+  (Sources tab), a line like &ldquo;The crossword is on the back page.&rdquo; is the
+  one to add; nothing writes it for you.</p>
 
   <h2>Type</h2>
   <div class="grid">
@@ -61,6 +64,12 @@
     <label class="inline"><input type="checkbox" name="show_todo" {{ "checked" if look.show_todo else "" }}> To do</label>
     <label class="inline"><input type="checkbox" name="show_hourly" {{ "checked" if look.show_hourly else "" }}> Hour by hour</label>
     <label class="inline"><input type="checkbox" name="show_notes" {{ "checked" if look.show_notes else "" }}> Notes</label>
+  </p>
+
+  <h2>Columns</h2>
+  <p>
+    <label class="inline"><input type="checkbox" name="justify" {{ "checked" if look.justify else "" }}> Justify article columns</label>
+    <span class="note">Newspaper style, with hyphenation at line ends. Untick for ragged-right columns.</span>
   </p>
 
   <div class="actions">

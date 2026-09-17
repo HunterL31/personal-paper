@@ -1,0 +1,2286 @@
+{
+  "body": [
+    {
+      "board": "RNJL.JFYYS.WIDAHMNI.RKVWM.ESBEGEYS.SWGKS.DYVCJNCRPVU.EWNRKAN...LTBL.BPLT...AMHDSG.HRLBICIGUSSS.EIWJL.KFKDTTIK.ABLAO.IPVBGJIC.YPAUT.RWEMPTMFGIEW.DGBSJK...KBFN.CYJI...WMPCSCS.VHHSITFJBPT.MPHSN.RVOCOGHP.KGLUA.TTRNBKTF.SHUKL.FGJN",
+      "cells": [
+        {
+          "answer": "R",
+          "type": 1,
+          "label": "1"
+        },
+        {
+          "answer": "N",
+          "type": 1,
+          "label": "2"
+        },
+        {
+          "answer": "J",
+          "type": 1,
+          "label": "3"
+        },
+        {
+          "answer": "L",
+          "type": 1,
+          "label": "4"
+        },
+        {},
+        {
+          "answer": "J",
+          "type": 1,
+          "label": "5"
+        },
+        {
+          "answer": "F",
+          "type": 1,
+          "label": "6"
+        },
+        {
+          "answer": "Y",
+          "type": 1,
+          "label": "7"
+        },
+        {
+          "answer": "Y",
+          "type": 1,
+          "label": "8"
+        },
+        {
+          "answer": "S",
+          "type": 1,
+          "label": "9"
+        },
+        {},
+        {
+          "answer": "W",
+          "type": 1,
+          "label": "10"
+        },
+        {
+          "answer": "I",
+          "type": 1,
+          "label": "11"
+        },
+        {
+          "answer": "D",
+          "type": 1,
+          "label": "12"
+        },
+        {
+          "answer": "A",
+          "type": 1,
+          "label": "13"
+        },
+        {
+          "answer": "H",
+          "type": 1,
+          "label": "14"
+        },
+        {
+          "answer": "M",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1
+        },
+        {
+          "answer": "I",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "R",
+          "type": 1,
+          "label": "15"
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {
+          "answer": "V",
+          "type": 1
+        },
+        {
+          "answer": "W",
+          "type": 1
+        },
+        {
+          "answer": "M",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "E",
+          "type": 1,
+          "label": "16"
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "E",
+          "type": 1
+        },
+        {
+          "answer": "G",
+          "type": 1,
+          "label": "17"
+        },
+        {
+          "answer": "E",
+          "type": 1
+        },
+        {
+          "answer": "Y",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "S",
+          "type": 1,
+          "label": "18"
+        },
+        {
+          "answer": "W",
+          "type": 1
+        },
+        {
+          "answer": "G",
+          "type": 1
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "D",
+          "type": 1,
+          "label": "19"
+        },
+        {
+          "answer": "Y",
+          "type": 1
+        },
+        {
+          "answer": "V",
+          "type": 1
+        },
+        {
+          "answer": "C",
+          "type": 1
+        },
+        {
+          "answer": "J",
+          "type": 1,
+          "label": "20"
+        },
+        {
+          "answer": "N",
+          "type": 1
+        },
+        {
+          "answer": "C",
+          "type": 1
+        },
+        {
+          "answer": "R",
+          "type": 1
+        },
+        {
+          "answer": "P",
+          "type": 1,
+          "label": "21"
+        },
+        {
+          "answer": "V",
+          "type": 1
+        },
+        {
+          "answer": "U",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "E",
+          "type": 1,
+          "label": "22"
+        },
+        {
+          "answer": "W",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1,
+          "label": "23"
+        },
+        {
+          "answer": "R",
+          "type": 1
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {
+          "answer": "A",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1
+        },
+        {},
+        {},
+        {},
+        {
+          "answer": "L",
+          "type": 1,
+          "label": "24"
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "B",
+          "type": 1,
+          "label": "25"
+        },
+        {
+          "answer": "P",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {},
+        {},
+        {},
+        {
+          "answer": "A",
+          "type": 1,
+          "label": "26"
+        },
+        {
+          "answer": "M",
+          "type": 1,
+          "label": "27"
+        },
+        {
+          "answer": "H",
+          "type": 1,
+          "label": "28"
+        },
+        {
+          "answer": "D",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "G",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "H",
+          "type": 1,
+          "label": "29"
+        },
+        {
+          "answer": "R",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "I",
+          "type": 1
+        },
+        {
+          "answer": "C",
+          "type": 1,
+          "label": "30"
+        },
+        {
+          "answer": "I",
+          "type": 1,
+          "label": "31"
+        },
+        {
+          "answer": "G",
+          "type": 1,
+          "label": "32"
+        },
+        {
+          "answer": "U",
+          "type": 1,
+          "label": "33"
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "E",
+          "type": 1,
+          "label": "34"
+        },
+        {
+          "answer": "I",
+          "type": 1,
+          "label": "35"
+        },
+        {
+          "answer": "W",
+          "type": 1
+        },
+        {
+          "answer": "J",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "K",
+          "type": 1,
+          "label": "36"
+        },
+        {
+          "answer": "F",
+          "type": 1
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {
+          "answer": "D",
+          "type": 1
+        },
+        {
+          "answer": "T",
+          "type": 1,
+          "label": "37"
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {
+          "answer": "I",
+          "type": 1
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "A",
+          "type": 1,
+          "label": "38"
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {
+          "answer": "A",
+          "type": 1
+        },
+        {
+          "answer": "O",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "I",
+          "type": 1,
+          "label": "39"
+        },
+        {
+          "answer": "P",
+          "type": 1
+        },
+        {
+          "answer": "V",
+          "type": 1
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "G",
+          "type": 1,
+          "label": "40"
+        },
+        {
+          "answer": "J",
+          "type": 1
+        },
+        {
+          "answer": "I",
+          "type": 1
+        },
+        {
+          "answer": "C",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "Y",
+          "type": 1,
+          "label": "41"
+        },
+        {
+          "answer": "P",
+          "type": 1
+        },
+        {
+          "answer": "A",
+          "type": 1
+        },
+        {
+          "answer": "U",
+          "type": 1
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "R",
+          "type": 1,
+          "label": "42"
+        },
+        {
+          "answer": "W",
+          "type": 1
+        },
+        {
+          "answer": "E",
+          "type": 1
+        },
+        {
+          "answer": "M",
+          "type": 1
+        },
+        {
+          "answer": "P",
+          "type": 1,
+          "label": "43"
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {
+          "answer": "M",
+          "type": 1
+        },
+        {
+          "answer": "F",
+          "type": 1
+        },
+        {
+          "answer": "G",
+          "type": 1,
+          "label": "44"
+        },
+        {
+          "answer": "I",
+          "type": 1
+        },
+        {
+          "answer": "E",
+          "type": 1
+        },
+        {
+          "answer": "W",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "D",
+          "type": 1,
+          "label": "45"
+        },
+        {
+          "answer": "G",
+          "type": 1,
+          "label": "46"
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "J",
+          "type": 1
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {},
+        {},
+        {},
+        {
+          "answer": "K",
+          "type": 1,
+          "label": "47"
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "F",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "C",
+          "type": 1,
+          "label": "48"
+        },
+        {
+          "answer": "Y",
+          "type": 1
+        },
+        {
+          "answer": "J",
+          "type": 1
+        },
+        {
+          "answer": "I",
+          "type": 1
+        },
+        {},
+        {},
+        {},
+        {
+          "answer": "W",
+          "type": 1,
+          "label": "49"
+        },
+        {
+          "answer": "M",
+          "type": 1,
+          "label": "50"
+        },
+        {
+          "answer": "P",
+          "type": 1,
+          "label": "51"
+        },
+        {
+          "answer": "C",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "C",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "V",
+          "type": 1,
+          "label": "52"
+        },
+        {
+          "answer": "H",
+          "type": 1
+        },
+        {
+          "answer": "H",
+          "type": 1
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "I",
+          "type": 1,
+          "label": "53"
+        },
+        {
+          "answer": "T",
+          "type": 1,
+          "label": "54"
+        },
+        {
+          "answer": "F",
+          "type": 1,
+          "label": "55"
+        },
+        {
+          "answer": "J",
+          "type": 1,
+          "label": "56"
+        },
+        {
+          "answer": "B",
+          "type": 1
+        },
+        {
+          "answer": "P",
+          "type": 1
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "M",
+          "type": 1,
+          "label": "57"
+        },
+        {
+          "answer": "P",
+          "type": 1
+        },
+        {
+          "answer": "H",
+          "type": 1,
+          "label": "58"
+        },
+        {
+          "answer": "S",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "R",
+          "type": 1,
+          "label": "59"
+        },
+        {
+          "answer": "V",
+          "type": 1
+        },
+        {
+          "answer": "O",
+          "type": 1
+        },
+        {
+          "answer": "C",
+          "type": 1
+        },
+        {
+          "answer": "O",
+          "type": 1,
+          "label": "60"
+        },
+        {
+          "answer": "G",
+          "type": 1
+        },
+        {
+          "answer": "H",
+          "type": 1
+        },
+        {
+          "answer": "P",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "K",
+          "type": 1,
+          "label": "61"
+        },
+        {
+          "answer": "G",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {
+          "answer": "U",
+          "type": 1
+        },
+        {
+          "answer": "A",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "T",
+          "type": 1,
+          "label": "62"
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {
+          "answer": "R",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1
+        },
+        {
+          "answer": "B",
+          "type": 1,
+          "label": "63"
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {
+          "answer": "T",
+          "type": 1
+        },
+        {
+          "answer": "F",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "S",
+          "type": 1,
+          "label": "64"
+        },
+        {
+          "answer": "H",
+          "type": 1
+        },
+        {
+          "answer": "U",
+          "type": 1
+        },
+        {
+          "answer": "K",
+          "type": 1
+        },
+        {
+          "answer": "L",
+          "type": 1
+        },
+        {},
+        {
+          "answer": "F",
+          "type": 1,
+          "label": "65"
+        },
+        {
+          "answer": "G",
+          "type": 1
+        },
+        {
+          "answer": "J",
+          "type": 1
+        },
+        {
+          "answer": "N",
+          "type": 1
+        }
+      ],
+      "clueLists": [
+        {
+          "clues": [
+            0,
+            5,
+            11,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            24,
+            26,
+            27,
+            28,
+            32,
+            37,
+            38,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            49,
+            51,
+            52,
+            54,
+            58,
+            62,
+            63,
+            65,
+            66,
+            67,
+            68,
+            69,
+            70,
+            71
+          ],
+          "name": "Across"
+        },
+        {
+          "clues": [
+            1,
+            2,
+            3,
+            4,
+            6,
+            7,
+            8,
+            9,
+            10,
+            12,
+            13,
+            14,
+            15,
+            23,
+            25,
+            29,
+            30,
+            31,
+            33,
+            34,
+            35,
+            36,
+            39,
+            48,
+            50,
+            53,
+            55,
+            56,
+            57,
+            59,
+            60,
+            61,
+            64
+          ],
+          "name": "Down"
+        }
+      ],
+      "clues": [
+        {
+          "cells": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "direction": "Across",
+          "label": "1",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "formatted": "Cleopatra's undoing, in <i>Antony &amp; Cleopatra</i>",
+              "plain": "Cleopatra's undoing, in Antony & Cleopatra"
+            }
+          ]
+        },
+        {
+          "cells": [
+            0,
+            15,
+            30,
+            45
+          ],
+          "direction": "Down",
+          "label": "1",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "formatted": "Quaint &ldquo;thank you&rdquo;"
+            }
+          ]
+        },
+        {
+          "cells": [
+            1,
+            16,
+            31,
+            46
+          ],
+          "direction": "Down",
+          "label": "2",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for a pit stop"
+            }
+          ]
+        },
+        {
+          "cells": [
+            2,
+            17,
+            32,
+            47
+          ],
+          "direction": "Down",
+          "label": "3",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Kind of code"
+            }
+          ]
+        },
+        {
+          "cells": [
+            3,
+            18,
+            33,
+            48,
+            63,
+            78,
+            93,
+            108,
+            123,
+            138,
+            153,
+            168,
+            183,
+            198,
+            213
+          ],
+          "direction": "Down",
+          "label": "4",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "It may be pitched"
+            }
+          ]
+        },
+        {
+          "cells": [
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "direction": "Across",
+          "label": "5",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Like a well-worn path"
+            }
+          ]
+        },
+        {
+          "cells": [
+            5,
+            20,
+            35,
+            50,
+            65,
+            80,
+            95,
+            110,
+            125,
+            140,
+            155,
+            170,
+            185,
+            200,
+            215
+          ],
+          "direction": "Down",
+          "label": "5",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a hardship"
+            }
+          ]
+        },
+        {
+          "cells": [
+            6,
+            21,
+            36,
+            51,
+            66
+          ],
+          "direction": "Down",
+          "label": "6",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sign of a long winter"
+            }
+          ]
+        },
+        {
+          "cells": [
+            7,
+            22,
+            37
+          ],
+          "direction": "Down",
+          "label": "7",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Half of a famous duo"
+            }
+          ]
+        },
+        {
+          "cells": [
+            8,
+            23,
+            38,
+            53,
+            68,
+            83,
+            98,
+            113,
+            128
+          ],
+          "direction": "Down",
+          "label": "8",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Start of a countdown"
+            }
+          ]
+        },
+        {
+          "cells": [
+            9,
+            24,
+            39,
+            54,
+            69,
+            84,
+            99,
+            114,
+            129,
+            144,
+            159,
+            174,
+            189,
+            204,
+            219
+          ],
+          "direction": "Down",
+          "label": "9",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Tiny criticism"
+            }
+          ]
+        },
+        {
+          "cells": [
+            11,
+            12,
+            13,
+            14
+          ],
+          "direction": "Across",
+          "label": "10",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Org. with a noted fold"
+            }
+          ]
+        },
+        {
+          "cells": [
+            11,
+            26,
+            41,
+            56,
+            71,
+            86,
+            101,
+            116,
+            131,
+            146,
+            161,
+            176,
+            191,
+            206,
+            221
+          ],
+          "direction": "Down",
+          "label": "10",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Where lines meet"
+            }
+          ]
+        },
+        {
+          "cells": [
+            12,
+            27,
+            42,
+            57
+          ],
+          "direction": "Down",
+          "label": "11",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for an alarm"
+            }
+          ]
+        },
+        {
+          "cells": [
+            13,
+            28,
+            43,
+            58
+          ],
+          "direction": "Down",
+          "label": "12",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Word after fire or fly"
+            }
+          ]
+        },
+        {
+          "cells": [
+            14,
+            29,
+            44,
+            59
+          ],
+          "direction": "Down",
+          "label": "13",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Like a well-worn path"
+            }
+          ]
+        },
+        {
+          "cells": [
+            15,
+            16,
+            17,
+            18
+          ],
+          "direction": "Across",
+          "label": "14",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "One way to serve tea"
+            }
+          ]
+        },
+        {
+          "cells": [
+            20,
+            21,
+            22,
+            23,
+            24
+          ],
+          "direction": "Across",
+          "label": "15",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Place for a nightcap"
+            }
+          ]
+        },
+        {
+          "cells": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "direction": "Across",
+          "label": "16",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Bit of gym equipment"
+            }
+          ]
+        },
+        {
+          "cells": [
+            30,
+            31,
+            32,
+            33
+          ],
+          "direction": "Across",
+          "label": "17",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sound from a hayloft"
+            }
+          ]
+        },
+        {
+          "cells": [
+            35,
+            36,
+            37,
+            38,
+            39
+          ],
+          "direction": "Across",
+          "label": "18",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a pushover"
+            }
+          ]
+        },
+        {
+          "cells": [
+            41,
+            42,
+            43,
+            44
+          ],
+          "direction": "Across",
+          "label": "19",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Poet's contraction"
+            }
+          ]
+        },
+        {
+          "cells": [
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51
+          ],
+          "direction": "Across",
+          "label": "20",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Something to sleep on"
+            }
+          ]
+        },
+        {
+          "cells": [
+            49,
+            64,
+            79
+          ],
+          "direction": "Down",
+          "label": "21",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Org. with a noted fold"
+            }
+          ]
+        },
+        {
+          "cells": [
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59
+          ],
+          "direction": "Across",
+          "label": "22",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for a pit stop"
+            }
+          ]
+        },
+        {
+          "cells": [
+            55,
+            70,
+            85
+          ],
+          "direction": "Down",
+          "label": "23",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "One way to serve tea"
+            }
+          ]
+        },
+        {
+          "cells": [
+            63,
+            64,
+            65,
+            66
+          ],
+          "direction": "Across",
+          "label": "24",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Kind of code"
+            }
+          ]
+        },
+        {
+          "cells": [
+            68,
+            69,
+            70,
+            71
+          ],
+          "direction": "Across",
+          "label": "25",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "It may be pitched"
+            }
+          ]
+        },
+        {
+          "cells": [
+            75,
+            76,
+            77,
+            78,
+            79,
+            80
+          ],
+          "direction": "Across",
+          "label": "26",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a hardship"
+            }
+          ]
+        },
+        {
+          "cells": [
+            75,
+            90,
+            105,
+            120,
+            135
+          ],
+          "direction": "Down",
+          "label": "26",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Place for a nightcap"
+            }
+          ]
+        },
+        {
+          "cells": [
+            76,
+            91,
+            106,
+            121,
+            136
+          ],
+          "direction": "Down",
+          "label": "27",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Bit of gym equipment"
+            }
+          ]
+        },
+        {
+          "cells": [
+            77,
+            92,
+            107,
+            122,
+            137
+          ],
+          "direction": "Down",
+          "label": "28",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sound from a hayloft"
+            }
+          ]
+        },
+        {
+          "cells": [
+            82,
+            83,
+            84,
+            85,
+            86,
+            87,
+            88,
+            89
+          ],
+          "direction": "Across",
+          "label": "29",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sign of a long winter"
+            }
+          ]
+        },
+        {
+          "cells": [
+            82,
+            97,
+            112,
+            127,
+            142
+          ],
+          "direction": "Down",
+          "label": "29",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a pushover"
+            }
+          ]
+        },
+        {
+          "cells": [
+            87,
+            102,
+            117,
+            132,
+            147
+          ],
+          "direction": "Down",
+          "label": "30",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Poet's contraction"
+            }
+          ]
+        },
+        {
+          "cells": [
+            88,
+            103,
+            118,
+            133,
+            148
+          ],
+          "direction": "Down",
+          "label": "31",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Something to sleep on"
+            }
+          ]
+        },
+        {
+          "cells": [
+            89,
+            104,
+            119,
+            134,
+            149
+          ],
+          "direction": "Down",
+          "label": "32",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for a pit stop"
+            }
+          ]
+        },
+        {
+          "cells": [
+            90,
+            91,
+            92,
+            93
+          ],
+          "direction": "Across",
+          "label": "33",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Half of a famous duo"
+            }
+          ]
+        },
+        {
+          "cells": [
+            95,
+            96,
+            97,
+            98,
+            99
+          ],
+          "direction": "Across",
+          "label": "34",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Start of a countdown"
+            }
+          ]
+        },
+        {
+          "cells": [
+            96,
+            111,
+            126,
+            141,
+            156,
+            171,
+            186,
+            201,
+            216
+          ],
+          "direction": "Down",
+          "label": "35",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Kind of code"
+            }
+          ]
+        },
+        {
+          "cells": [
+            101,
+            102,
+            103,
+            104
+          ],
+          "direction": "Across",
+          "label": "36",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Tiny criticism"
+            }
+          ]
+        },
+        {
+          "cells": [
+            105,
+            106,
+            107,
+            108
+          ],
+          "direction": "Across",
+          "label": "37",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Where lines meet"
+            }
+          ]
+        },
+        {
+          "cells": [
+            110,
+            111,
+            112,
+            113,
+            114
+          ],
+          "direction": "Across",
+          "label": "38",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for an alarm"
+            }
+          ]
+        },
+        {
+          "cells": [
+            116,
+            117,
+            118,
+            119
+          ],
+          "direction": "Across",
+          "label": "39",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Word after fire or fly"
+            }
+          ]
+        },
+        {
+          "cells": [
+            120,
+            121,
+            122,
+            123
+          ],
+          "direction": "Across",
+          "label": "40",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Like a well-worn path"
+            }
+          ]
+        },
+        {
+          "cells": [
+            125,
+            126,
+            127,
+            128,
+            129
+          ],
+          "direction": "Across",
+          "label": "41",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Org. with a noted fold"
+            }
+          ]
+        },
+        {
+          "cells": [
+            131,
+            132,
+            133,
+            134
+          ],
+          "direction": "Across",
+          "label": "42",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "One way to serve tea"
+            }
+          ]
+        },
+        {
+          "cells": [
+            135,
+            136,
+            137,
+            138,
+            139,
+            140,
+            141,
+            142
+          ],
+          "direction": "Across",
+          "label": "43",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Place for a nightcap"
+            }
+          ]
+        },
+        {
+          "cells": [
+            139,
+            154,
+            169
+          ],
+          "direction": "Down",
+          "label": "44",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "It may be pitched"
+            }
+          ]
+        },
+        {
+          "cells": [
+            144,
+            145,
+            146,
+            147,
+            148,
+            149
+          ],
+          "direction": "Across",
+          "label": "45",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Bit of gym equipment"
+            }
+          ]
+        },
+        {
+          "cells": [
+            145,
+            160,
+            175
+          ],
+          "direction": "Down",
+          "label": "46",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a hardship"
+            }
+          ]
+        },
+        {
+          "cells": [
+            153,
+            154,
+            155,
+            156
+          ],
+          "direction": "Across",
+          "label": "47",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sound from a hayloft"
+            }
+          ]
+        },
+        {
+          "cells": [
+            158,
+            159,
+            160,
+            161
+          ],
+          "direction": "Across",
+          "label": "48",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a pushover"
+            }
+          ]
+        },
+        {
+          "cells": [
+            158,
+            173,
+            188,
+            203,
+            218
+          ],
+          "direction": "Down",
+          "label": "48",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sign of a long winter"
+            }
+          ]
+        },
+        {
+          "cells": [
+            165,
+            166,
+            167,
+            168,
+            169,
+            170,
+            171
+          ],
+          "direction": "Across",
+          "label": "49",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Poet's contraction"
+            }
+          ]
+        },
+        {
+          "cells": [
+            165,
+            180,
+            195,
+            210
+          ],
+          "direction": "Down",
+          "label": "49",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Half of a famous duo"
+            }
+          ]
+        },
+        {
+          "cells": [
+            166,
+            181,
+            196,
+            211
+          ],
+          "direction": "Down",
+          "label": "50",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Start of a countdown"
+            }
+          ]
+        },
+        {
+          "cells": [
+            167,
+            182,
+            197,
+            212
+          ],
+          "direction": "Down",
+          "label": "51",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Tiny criticism"
+            }
+          ]
+        },
+        {
+          "cells": [
+            173,
+            174,
+            175,
+            176,
+            177,
+            178,
+            179
+          ],
+          "direction": "Across",
+          "label": "52",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Something to sleep on"
+            }
+          ]
+        },
+        {
+          "cells": [
+            177,
+            192,
+            207,
+            222
+          ],
+          "direction": "Down",
+          "label": "53",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Where lines meet"
+            }
+          ]
+        },
+        {
+          "cells": [
+            178,
+            193,
+            208,
+            223
+          ],
+          "direction": "Down",
+          "label": "54",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for an alarm"
+            }
+          ]
+        },
+        {
+          "cells": [
+            179,
+            194,
+            209,
+            224
+          ],
+          "direction": "Down",
+          "label": "55",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Word after fire or fly"
+            }
+          ]
+        },
+        {
+          "cells": [
+            180,
+            181,
+            182,
+            183
+          ],
+          "direction": "Across",
+          "label": "56",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Cause for a pit stop"
+            }
+          ]
+        },
+        {
+          "cells": [
+            185,
+            186,
+            187,
+            188,
+            189
+          ],
+          "direction": "Across",
+          "label": "57",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Kind of code"
+            }
+          ]
+        },
+        {
+          "cells": [
+            187,
+            202,
+            217
+          ],
+          "direction": "Down",
+          "label": "58",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Like a well-worn path"
+            }
+          ]
+        },
+        {
+          "cells": [
+            191,
+            192,
+            193,
+            194
+          ],
+          "direction": "Across",
+          "label": "59",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "It may be pitched"
+            }
+          ]
+        },
+        {
+          "cells": [
+            195,
+            196,
+            197,
+            198
+          ],
+          "direction": "Across",
+          "label": "60",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Hardly a hardship"
+            }
+          ]
+        },
+        {
+          "cells": [
+            200,
+            201,
+            202,
+            203,
+            204
+          ],
+          "direction": "Across",
+          "label": "61",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Sign of a long winter"
+            }
+          ]
+        },
+        {
+          "cells": [
+            206,
+            207,
+            208,
+            209
+          ],
+          "direction": "Across",
+          "label": "62",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Half of a famous duo"
+            }
+          ]
+        },
+        {
+          "cells": [
+            210,
+            211,
+            212,
+            213
+          ],
+          "direction": "Across",
+          "label": "63",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Start of a countdown"
+            }
+          ]
+        },
+        {
+          "cells": [
+            215,
+            216,
+            217,
+            218,
+            219
+          ],
+          "direction": "Across",
+          "label": "64",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Tiny criticism"
+            }
+          ]
+        },
+        {
+          "cells": [
+            221,
+            222,
+            223,
+            224
+          ],
+          "direction": "Across",
+          "label": "65",
+          "list": [],
+          "relatives": [],
+          "text": [
+            {
+              "plain": "Where lines meet"
+            }
+          ]
+        }
+      ],
+      "dimensions": {
+        "height": 15,
+        "width": 15
+      },
+      "SVG": null
+    }
+  ],
+  "constructors": [
+    "Robyn Weintraub",
+    "Brad Wiegmann"
+  ],
+  "copyright": "2026, The New York Times",
+  "editor": "Will Shortz",
+  "id": 22861,
+  "lastUpdated": "2026-09-16 22:04:11",
+  "publicationDate": "2026-09-17",
+  "relatedContent": {
+    "text": "Wordplay",
+    "url": "https://www.nytimes.com/2026/09/16/crosswords/daily-puzzle-2026-09-17.html"
+  },
+  "title": "Cross Purposes"
+}

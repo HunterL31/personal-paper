@@ -25,6 +25,19 @@
       "lat": 37.7749,
       "lon": -122.4194
     },
+    "crossword": {
+      "enabled": false,
+      "provider": "nyt",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
     "tasks_max_age_hours": 24
   },
   "output": {

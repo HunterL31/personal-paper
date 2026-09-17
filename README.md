@@ -38,8 +38,9 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
    login on the page; leave it empty and the page is open to anyone on
    your network, which the page itself points out.
    `TASKS_TOKEN` is needed for the phone sync, the `SMTP_*` set for
-   emailing the PDF, the `IMAP_*` set only if a paid Substack needs the
-   email route. See `.env.example` for each one.
+   emailing the PDF, `NYT_S` for the crossword, and the `IMAP_*` set only
+   if a paid Substack needs the email route. See `.env.example` for each
+   one.
 3. Open `http://<unraid-ip>:8080/`. With `WEB_PASSWORD` set the browser
    asks for a username and password: the username is ignored (type
    anything), the password is `WEB_PASSWORD`. Then work through the tabs:
@@ -47,8 +48,9 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
      Print test page), and/or enable email with the recipients; set the
      time and days.
    - **Sources**: paste the calendar's secret iCal address, list the
-     Substacks in priority order, set the weather location, and follow the
-     Shortcut instructions for tasks.
+     Substacks in priority order, set the weather location, switch the
+     crossword on if you want one, and follow the Shortcut instructions
+     for tasks.
    - **Look**: fonts, size, name, ear text. Check it on **Preview**.
 
 With `docker compose` instead: copy `.env.example` to `.env`, fill it in,
@@ -177,6 +179,46 @@ once. The first morning prints whatever is new that week, not the archive.
 The gatherer matches the email by the post's title within the last 24
 hours and strips only email chrome (headers, footers, unsubscribe
 links); the author's text is untouched.
+
+### Crossword (NYT)
+
+The New York Times daily puzzle, typeset into the paper from the Times'
+own puzzle data: the grid and the clues, never the answers. It needs a
+Games subscription and the session cookie from a browser you are already
+logged in with.
+
+1. In Chrome or Edge on a computer, sign in at `nytimes.com` with the
+   account that has the Games subscription, and open today's crossword
+   once so the session is live.
+2. Open Developer tools (F12, or ⌥⌘I on a Mac), go to **Application**,
+   then **Storage → Cookies → https://www.nytimes.com**.
+3. Find the cookie named **`NYT-S`** and copy its **Value** — the whole
+   string, which is long and looks like nonsense. In Safari the same
+   thing is under Develop → Show Web Inspector → Storage → Cookies.
+4. Set the container variable **`NYT_S`** to that value and apply, which
+   restarts the container. The Sources tab then shows `NYT_S` as "set in
+   container". The cookie is good for about a year; when it expires the
+   Check button says so and you repeat steps 1–3.
+5. On the **Sources** tab, tick **Print the crossword**, untick any day
+   you would rather not have one (Saturday's is the hard one), and Save.
+6. Press **Check**. It fetches today's puzzle and shows the title, the
+   constructor, the date, the grid size and the clue count — for example
+   "Cross Purposes — Robyn Weintraub, 2026-09-17 (15x15, 72 clues)". If
+   something is wrong it says which: `NYT_S is not set in the container`,
+   `NYT-S cookie rejected (got a login page)` (the cookie was copied
+   wrong, or it is not the subscriber's), `NYT-S cookie expired or
+   invalid` (copy a fresh one), or `no puzzle for <date> at <url>`.
+
+Treat the cookie like a password: anyone with it is signed in as you.
+It lives only in the container's variables, never in `settings.json` and
+never in the browser.
+
+**On the Times' terms.** This is automated access to a subscription, which
+their terms discourage; it is one household's own copy of a puzzle it pays
+for, and the owner of this paper has accepted that trade. No password is
+stored and no login is scripted — the cookie is copied by hand from a
+browser that is already signed in. If the fetch fails for any reason the
+paper prints without a puzzle; nothing here can stop the morning's paper.
 
 ### Tasks (from the phone)
 

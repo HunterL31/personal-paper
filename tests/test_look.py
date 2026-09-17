@@ -1,6 +1,7 @@
 """
 The Look tab may change every size, font and toggle in the paper; it may
-never change a word of an article, and it may not blow the page count out.
+never change a word of an article, and it may never change the sheet: two
+pages, always, with whole articles on them.
 """
 from __future__ import annotations
 
@@ -15,13 +16,11 @@ from app.settings import (
 from render.render import build_html, render
 from tests.verbatim import assert_verbatim
 
-MAX_PAGES = 5
-
 
 def _check(data, look, tmp_path, name):
     result = render(data, look, tmp_path / name)
-    assert result.pages <= MAX_PAGES, f"{name}: {result.pages} pages"
-    assert_verbatim(result.laid_out_html, data["articles"])
+    assert result.pages == 2, f"{name}: {result.pages} pages"
+    assert_verbatim(result, data["articles"])
     return result
 
 
@@ -45,6 +44,25 @@ def test_masthead_fonts(sample_data, tmp_path, masthead_font):
     assert f'--masthead: "{masthead_font}"' in result.laid_out_html
 
 
+def test_bigger_type_prints_fewer_articles(sample_data, tmp_path):
+    """The sheet does not grow, so the type has to be paid for in stories."""
+    counts = {}
+    for size in (8.0, 9.0, 10.0, 11.0):
+        result = _check(sample_data, Look(body_size_pt=size), tmp_path, f"size{size}")
+        counts[size] = len(result.printed)
+    ordered = [counts[s] for s in (8.0, 9.0, 10.0, 11.0)]
+    assert ordered == sorted(ordered, reverse=True), counts
+    assert counts[11.0] < counts[9.0], counts
+
+
+@pytest.mark.parametrize("justify, align", [(True, "justify"), (False, "left")])
+def test_justified_or_ragged_right(sample_data, tmp_path, justify, align):
+    result = _check(sample_data, Look(justify=justify), tmp_path, f"align-{align}")
+    assert f"--align: {align};" in result.laid_out_html
+    # Both settings leave the words alone, marks and all.
+    assert "hyphens: manual" in result.laid_out_html
+
+
 def test_default_look_matches_the_original_sizes(sample_data):
     """9pt is the baseline: the scale must reproduce the original type sizes."""
     html = build_html(sample_data, Look())
@@ -58,6 +76,15 @@ def test_sizes_scale_with_the_body(sample_data):
     assert "--body-size:   10.5pt" in html
     assert "--lead-head:   31.5pt" in html      # 27 * 10.5/9
     assert "--rail-text:   9.917pt" in html
+
+
+def test_the_crossword_is_furniture_not_type(sample_data, tmp_path):
+    """Clue size is the script's to set; the Look does not scale it."""
+    small = render(sample_data, Look(body_size_pt=8.0), tmp_path / "xw8")
+    big = render(sample_data, Look(body_size_pt=11.0), tmp_path / "xw11")
+    for result in (small, big):
+        assert "The Crossword" in result.laid_out_html
+        assert "--xw-clue: 6.5pt" in result.laid_out_html
 
 
 def test_look_supplies_name_imprint_price_and_ears(sample_data, tmp_path):
@@ -79,6 +106,8 @@ def test_look_supplies_name_imprint_price_and_ears(sample_data, tmp_path):
     assert "The crossword is on the back page." not in html
     # The left ear stays the weather.
     assert sample_data["weather"]["summary"] in html
+    # Page 2 is headed by the name the reader chose.
+    assert html.index("The Evening Gull", html.index('id="page-2"')) > 0
 
 
 def test_section_toggles_hide_rail_sections(sample_data, tmp_path):
@@ -89,20 +118,20 @@ def test_section_toggles_hide_rail_sections(sample_data, tmp_path):
     assert "<h3>Hour by hour</h3>" not in html
     assert "<h3>Notes</h3>" not in html
     assert "<h3>Today</h3>" in html              # the agenda is not a toggle
-    assert result.pages <= MAX_PAGES
-    assert_verbatim(html, sample_data["articles"])
+    assert result.pages == 2
+    assert_verbatim(result, sample_data["articles"])
 
 
 def test_unknown_font_falls_back_to_the_default(sample_data, tmp_path):
     look = Look(body_font="Comic Sans MS", headline_font="Nonesuch", masthead_font="Nope")
     result = render(sample_data, look, tmp_path / "unknown")
-    assert result.pages <= MAX_PAGES
+    assert result.pages == 2
     html = result.laid_out_html
     assert "Comic Sans MS" not in html and "Nonesuch" not in html
     assert '--body: "PT Serif"' in html
     assert '--head: "Old Standard"' in html
     assert '--masthead: "Maguntia"' in html
-    assert_verbatim(html, sample_data["articles"])
+    assert_verbatim(result, sample_data["articles"])
 
 
 def test_render_accepts_a_plain_dict_or_none(sample_data):

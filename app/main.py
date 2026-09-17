@@ -57,7 +57,7 @@ DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 BODY_SIZES = [8.0 + 0.5 * i for i in range(7)]
 TABS = [("look", "Look"), ("sources", "Sources"), ("output", "Output"), ("preview", "Preview")]
 #: Which container variables each tab shows as "set in container / not set".
-ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.TZ]
+ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.NYT_S, Env.TZ]
 ENV_ON_OUTPUT = [*Env.SMTP]
 
 
@@ -105,6 +105,20 @@ def _printer_check(st: dict[str, Any]) -> dict[str, Any] | None:
     return {"ok": bool(check.get("ok")), "summary": str(check["summary"]), "when": stamp}
 
 
+def _crossword_check(st: dict[str, Any]) -> dict[str, Any] | None:
+    """The last crossword check, for the strip; None when it is switched off."""
+    check = st.get("crossword_check")
+    if not isinstance(check, dict) or not check.get("summary"):
+        return None
+    if not Settings.load().sources.crossword.enabled:
+        return None
+    try:
+        stamp = f"{datetime.fromisoformat(str(check.get('when'))):%H:%M}"
+    except (TypeError, ValueError):
+        stamp = ""
+    return {"ok": bool(check.get("ok")), "summary": str(check["summary"]), "when": stamp}
+
+
 def _status() -> dict[str, Any]:
     """The strip at the top of every tab."""
     st = load_state()
@@ -112,6 +126,7 @@ def _status() -> dict[str, Any]:
     when = scheduler.next_run_time()
     return {
         "printer_check": _printer_check(st),
+        "crossword_check": _crossword_check(st),
         "last_run": _stamp(st.get("last_run") or ""),
         "last_success": _stamp(st.get("last_success") or ""),
         "last_error": st.get("last_error") or "",
@@ -175,6 +190,18 @@ def form_flag(form: FormData, name: str) -> bool:
     return form.get(name) is not None
 
 
+_NEW_KEY = re.compile(r"^n\d{1,4}$")
+
+
+def _new_row_keys(form: FormData, field: str) -> list[str]:
+    """Keys of the "add" rows the page submitted (n0, n1, ...), in order."""
+    seen: list[str] = []
+    for raw in form.getlist(field):
+        if isinstance(raw, str) and _NEW_KEY.match(raw) and raw not in seen:
+            seen.append(raw)
+    return seen
+
+
 def form_number(form: FormData, name: str, fallback: float, lo: float, hi: float) -> float:
     try:
         return min(hi, max(lo, float(form_text(form, name))))
@@ -235,6 +262,7 @@ async def look_post(request: Request) -> RedirectResponse:
     look.show_todo = form_flag(form, "show_todo")
     look.show_hourly = form_flag(form, "show_hourly")
     look.show_notes = form_flag(form, "show_notes")
+    look.justify = form_flag(form, "justify")
 
     settings.save()
     return saved("/look")
@@ -262,6 +290,9 @@ def sources_get(request: Request) -> Response:
         tasks_status=tasks_gather.status(),
         tasks_host=host,
         tasks_token_set=Env.is_set(Env.TASKS_TOKEN),
+        crossword=settings.sources.crossword,
+        days=list(enumerate(DAY_LABELS)),
+        nyt_cookie_set=Env.is_set(Env.NYT_S),
         env_rows=env_rows(ENV_ON_SOURCES),
     )
 
@@ -284,9 +315,10 @@ async def sources_post(request: Request) -> RedirectResponse:
         # An empty box means "keep the URL you already have" — it is masked
         # on the page, so there is nothing to type back.
         calendars.append(CalendarSource(url=url or existing.url, name=name))
-    new_url = form_text(form, "cal_new_url")
-    if new_url:
-        calendars.append(CalendarSource(url=new_url, name=form_text(form, "cal_new_name")))
+    for key in _new_row_keys(form, "cal_new"):
+        new_url = form_text(form, f"cal_new_url_{key}")
+        if new_url:
+            calendars.append(CalendarSource(url=new_url, name=form_text(form, f"cal_new_name_{key}")))
 
     rows: list[tuple[float, SubstackSource]] = []
     for raw in form.getlist("sub_index"):
@@ -296,10 +328,11 @@ async def sources_post(request: Request) -> RedirectResponse:
         name = form_text(form, f"sub_name_{i}") or old_substacks[i].name
         order = form_number(form, f"sub_order_{i}", float(i + 1), 1.0, 99.0)
         rows.append((order, SubstackSource(name=name, paid=form_flag(form, f"sub_paid_{i}"))))
-    new_name = form_text(form, "sub_new_name")
-    if new_name:
-        order = form_number(form, "sub_new_order", float(len(rows) + 1), 1.0, 99.0)
-        rows.append((order, SubstackSource(name=new_name, paid=form_flag(form, "sub_new_paid"))))
+    for key in _new_row_keys(form, "sub_new"):
+        new_name = form_text(form, f"sub_new_name_{key}")
+        if new_name:
+            order = form_number(form, f"sub_new_order_{key}", float(len(rows) + 1), 1.0, 99.0)
+            rows.append((order, SubstackSource(name=new_name, paid=form_flag(form, f"sub_new_paid_{key}"))))
 
     settings.sources.calendars = calendars
     settings.sources.substacks = [s for _, s in sorted(rows, key=lambda r: r[0])]
@@ -308,6 +341,8 @@ async def sources_post(request: Request) -> RedirectResponse:
     settings.sources.tasks_max_age_hours = int(
         form_number(form, "tasks_max_age_hours", float(settings.sources.tasks_max_age_hours), 1.0, 168.0)
     )
+    settings.sources.crossword.enabled = form_flag(form, "crossword_enabled")
+    settings.sources.crossword.days = [d for d in range(7) if form_flag(form, f"crossword_day_{d}")]
     settings.save()
     return saved("/sources")
 
@@ -338,6 +373,13 @@ async def substack_check(request: Request) -> JSONResponse:
     from gather import substack as substack_gather
 
     return await check_json(lambda: substack_gather.check(name))
+
+
+@app.post("/sources/crossword/check")
+async def crossword_check() -> JSONResponse:
+    from gather import crossword as crossword_gather
+
+    return await check_json(crossword_gather.check)
 
 
 @app.post("/sources/weather/check")
@@ -533,14 +575,21 @@ def preview_post(source: str = "sample") -> RedirectResponse:
             source_data = data_dir() / "out" / result.date / "data.json"
             if not source_data.exists():
                 raise RuntimeError(result.error or f"no data for {result.date}")
+            # data.json carries today's puzzle under "crossword" when the
+            # source is on; the template typesets it. The sample issue has
+            # a made-up puzzle so "Render example" shows the layout.
             data = json.loads(source_data.read_text())
         else:
             data = json.loads(SAMPLE_DATA.read_text())
         rendered = render(data, settings.look, out, png=True)
         jobs.prune_previews()
+        titles = [str((a or {}).get("title", "")) for a in (data.get("articles") or [])]
         return {
             "source": which,
             "pages": rendered.pages,
+            "crossword": bool(data.get("crossword")),
+            "printed": [titles[i] for i in rendered.printed if i < len(titles)],
+            "held": [t for i, t in enumerate(titles) if i not in rendered.printed],
             "pngs": [f"/preview/{job.id}/{p.name}" for p in rendered.pngs],
             "html": f"/preview/{job.id}/paper.html",
         }

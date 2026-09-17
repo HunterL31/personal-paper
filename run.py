@@ -20,6 +20,7 @@ import os
 import shutil
 import sys
 import traceback
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,10 @@ log = logging.getLogger("run")
 
 SAMPLE_DATA = HERE / "render" / "sample_data.json"
 
+#: The crossword gets the same wall-clock budget as a gatherer: the puzzle
+#: is a nice-to-have and the paper is not waiting on it (house rule 3).
+CROSSWORD_TIMEOUT = 30.0
+
 
 @dataclass
 class RunResult:
@@ -46,6 +51,11 @@ class RunResult:
     pdf: Optional[Path] = None
     pages: int = 0
     gather_errors: dict[str, str] = field(default_factory=dict)
+    #: True when today's puzzle was fetched and typeset on page 2
+    crossword: bool = False
+    #: indices into the gathered articles that were printed in full; the
+    #: rest did not fit the sheet and stay unseen so they print another day
+    printed: list[int] = field(default_factory=list)
     #: route name -> error message, or None when that route succeeded
     delivery: dict[str, Optional[str]] = field(default_factory=dict)
     ok: bool = False
@@ -83,6 +93,7 @@ def empty_data() -> dict[str, Any]:
         "events": [],
         "tasks": [],
         "articles": [],
+        "crossword": None,
     }
 
 
@@ -120,6 +131,38 @@ def _gather(settings: Settings) -> tuple[dict[str, Any], dict[str, str]]:
     merged = empty_data()
     merged.update({k: v for k, v in data.items() if v is not None})
     return merged, errors
+
+
+def _crossword(settings: Settings) -> Optional[dict[str, Any]]:
+    """Today's puzzle for the render contract, or None.
+
+    Never raises, and never hangs the run.
+
+    `gather.crossword.fetch` already swallows its own failures, so this is
+    about the two things it cannot: an import that fails, and a request that
+    never comes back. It runs on the same abandoned-on-timeout daemon thread
+    as the gatherers.
+    """
+    source = getattr(getattr(settings, "sources", None), "crossword", None)
+    if source is None or not source.enabled:
+        return None
+    try:
+        from gather import submit
+        from gather import crossword as crossword_gather
+    except Exception as exc:
+        log.warning("crossword unavailable: %s", exc)
+        return None
+
+    future = submit("crossword", crossword_gather.fetch, settings)
+    try:
+        puzzle = future.result(timeout=CROSSWORD_TIMEOUT)
+    except FutureTimeout:
+        log.error("crossword: timed out after %.0fs", CROSSWORD_TIMEOUT)
+        return None
+    except Exception as exc:
+        log.error("crossword failed: %s\n%s", exc, traceback.format_exc())
+        return None
+    return puzzle or None
 
 
 def _deliver(pdf: Path, settings: Settings) -> dict[str, Optional[str]]:
@@ -214,16 +257,33 @@ def run(
                 "price": look.price,
             })
         data["paper"] = paper
+        # The puzzle is part of the day's data, not a separate document: the
+        # template typesets it, so it is written to data.json with everything
+        # else and a replay re-renders exactly the same paper.
+        if not (replay or sample):
+            data["crossword"] = _crossword(settings)
+        data.setdefault("crossword", None)   # the key is always there, nullable
+        result.crossword = bool(data.get("crossword"))
         # Substack hands back a `guid` per article so the run can mark the
         # posts seen once the issue is actually delivered; it is not part
         # of the render contract, so keep it out of data.json.
-        guids = [a.pop("guid") for a in data.get("articles") or [] if isinstance(a, dict) and "guid" in a]
+        # One guid per article, positionally, so the printed indices reported
+        # by the layout can be mapped back to the posts that actually appeared.
+        articles = data.get("articles") or []
+        guids = [a.pop("guid", None) if isinstance(a, dict) else None for a in articles]
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "data.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
         # 4. render
         rendered = render_paper(data, look, out_dir)
         result.pdf, result.pages = rendered.pdf, rendered.pages
+        result.printed = list(getattr(rendered, "printed", []) or [])
+        dropped = [i for i in range(len(articles)) if i not in result.printed]
+        if dropped:
+            log.info(
+                "did not fit the sheet, held for another day: %s",
+                "; ".join(str((articles[i] or {}).get("title", i)) for i in dropped),
+            )
         log.info("rendered %s page(s) -> %s", rendered.pages, rendered.pdf)
 
         # 5. archive (always, before any route runs)
@@ -259,7 +319,7 @@ def run(
             issue = bump_issue()
             fields["last_success"] = now.isoformat(timespec="seconds")
             log.info("issue %s printed", issue)
-            _mark_seen(guids)
+            _mark_seen([g for i, g in enumerate(guids) if g and i in result.printed])
         update_state(**fields)
     else:
         update_state(last_error=result.error or "unknown error")
