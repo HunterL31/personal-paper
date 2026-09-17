@@ -1179,3 +1179,14 @@ def test_footer_names_the_build(client, monkeypatch):
     assert "Build 4f729dc8110e" in client.get("/look", auth=AUTH).text
     monkeypatch.delenv("APP_BUILD")
     assert "Build dev" in client.get("/look", auth=AUTH).text
+
+
+def test_the_post_url_honours_a_tls_proxy(client):
+    """Tailscale Serve or a reverse proxy: the phone uses the public name."""
+    body = client.get(
+        "/sources", auth=AUTH,
+        headers={"host": "127.0.0.1:8080", "x-forwarded-host": "paper.tail1234.ts.net",
+                 "x-forwarded-proto": "https"},
+    ).text
+    assert 'href="https://paper.tail1234.ts.net/lists/tasks"' in body
+    assert "127.0.0.1" not in body.split("Address the phone posts to")[0]

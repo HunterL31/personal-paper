@@ -287,10 +287,17 @@ def derived_post_url(request: Request) -> str:
     itself (`localhost`), so in that case the container's own LAN address
     stands in, with the port the browser used.
     """
-    raw = (request.headers.get("host") or "").strip()
+    # Behind a proxy that terminates TLS (Tailscale Serve, a reverse proxy)
+    # the public scheme and host arrive in X-Forwarded-* headers; the phone
+    # must use those, not the container's plain-http view of itself.
+    scheme = (request.headers.get("x-forwarded-proto") or "http").split(",")[0].strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "http"
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    raw = forwarded_host or (request.headers.get("host") or "").strip()
     hostname, port = _host_and_port(raw)
     if hostname.lower() not in LOOPBACK_HOSTS:
-        return f"http://{raw}"
+        return f"{scheme}://{raw}"
     ip = lan_ip()
     if not ip:
         return f"http://{TASKS_FALLBACK_HOST}"
