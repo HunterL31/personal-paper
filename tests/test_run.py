@@ -196,7 +196,7 @@ def test_cli_exits_non_zero_on_failure(data_dir, monkeypatch):
 # ---------------------------------------------------------------- seen posts
 @pytest.fixture
 def fake_substack(monkeypatch, fake_gather):
-    """Articles carry a `guid`; `gather.substack.mark_seen` records calls."""
+    """Articles carry a `guid` and a `url`; `mark_seen` records its calls."""
     seen: list[list[str]] = []
     orig = sys.modules["gather"].run_all
 
@@ -204,6 +204,7 @@ def fake_substack(monkeypatch, fake_gather):
         data = orig(settings)
         for i, a in enumerate(data["articles"]):
             a["guid"] = f"post-{i}"
+            a["url"] = f"https://example.com/p/post-{i}"
         return data
 
     sys.modules["gather"].run_all = run_all
@@ -230,6 +231,8 @@ def test_real_run_marks_only_printed_posts_seen(data_dir, fake_substack, fake_de
     assert fake_substack == [["post-0", "post-1", "post-2"]]
     written = json.loads((data_dir / "out" / result.date / "data.json").read_text())
     assert all("guid" not in a for a in written["articles"])
+    # `url` is the contract's, not the run's bookkeeping: it stays.
+    assert written["articles"][0]["url"] == "https://example.com/p/post-0"
     assert written["crossword"]["title"] == puzzle["title"]
 
 
@@ -264,6 +267,92 @@ def test_failed_run_does_not_mark_posts_seen(data_dir, fake_substack, fake_deliv
     result = run(s)
     assert not result.ok
     assert fake_substack == []
+
+
+# ------------------------------------------------------------ partial stories
+class _Rendered:
+    """What `render.render()` hands back, for the runs that fake it."""
+
+    def __init__(self, pdf, pages, printed, partial):
+        self.pdf = pdf
+        self.html = pdf.with_suffix(".html")
+        self.pages = pages
+        self.printed = list(printed)
+        self.partial = dict(partial)
+        self.pngs: list = []
+
+
+@pytest.fixture
+def fake_render(monkeypatch):
+    """A render that reports what it printed without starting Chromium."""
+    report: dict[str, object] = {"printed": [0, 1], "partial": {1: 2}}
+
+    def render_paper(data, look, out_dir, **kwargs):
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf = out_dir / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4 not a real paper\n")
+        return _Rendered(pdf, 2, report["printed"], report["partial"])
+
+    monkeypatch.setattr(run_module, "render_paper", render_paper)
+    return report
+
+
+def test_a_partly_printed_story_counts_as_used(data_dir, fake_substack, fake_deliver,
+                                               fake_render, caplog):
+    """The reader has its beginning on paper and the address of the rest, so
+    the post is used up: its guid is marked seen with the whole ones."""
+    with caplog.at_level("INFO", logger="run"):
+        result = run(Settings())
+
+    assert result.ok
+    assert result.printed == [0, 1]
+    assert result.partial == {1: 2}
+    assert fake_substack == [["post-0", "post-1"]]
+
+    titles = [a["title"] for a in json.loads(SAMPLE.read_text())["articles"]]
+    assert f"printed the first 2 paragraphs of {titles[1]}; the rest is online" in caplog.text
+    # the ones that did not fit at all are held, by title
+    assert "held for another day" in caplog.text
+    assert titles[2] in caplog.text
+
+    written = json.loads((data_dir / "out" / result.date / "data.json").read_text())
+    assert written["articles"][1]["url"] == "https://example.com/p/post-1"
+    assert all("guid" not in a for a in written["articles"])
+
+
+def test_a_partial_index_the_layout_left_out_still_counts(data_dir, fake_substack,
+                                                          fake_deliver, fake_render):
+    """`printed` is whole + partial, even if the layout only lists the whole."""
+    fake_render["printed"] = [0]
+    fake_render["partial"] = {2: 1}
+    result = run(Settings())
+    assert result.printed == [0, 2]
+    assert fake_substack == [["post-0", "post-2"]]
+
+
+def test_no_partial_is_an_empty_dict(data_dir, fake_substack, fake_deliver, fake_render, caplog):
+    fake_render["partial"] = {}
+    with caplog.at_level("INFO", logger="run"):
+        result = run(Settings())
+    assert result.partial == {}
+    assert "the rest is online" not in caplog.text
+
+
+def test_a_render_without_partial_still_runs(data_dir, fake_substack, fake_deliver, monkeypatch):
+    """Until the render side lands, `partial` may simply not be there."""
+    def render_paper(data, look, out_dir, **kwargs):
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf = out_dir / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4 not a real paper\n")
+        rendered = _Rendered(pdf, 2, [0, 1], {})
+        del rendered.partial
+        return rendered
+
+    monkeypatch.setattr(run_module, "render_paper", render_paper)
+    result = run(Settings())
+    assert result.ok and result.partial == {} and result.printed == [0, 1]
 
 
 # ----------------------------------------------------------------- crossword

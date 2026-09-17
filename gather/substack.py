@@ -8,10 +8,25 @@ and collapsing whitespace runs that only exist because the HTML was indented.
 Nothing is summarized, shortened or reworded, and no character is added to a
 paragraph (no bullet glyphs, no quotation marks).
 
-`fetch(settings)` returns article dicts in the render contract's shape plus an
-extra `guid` key. It deliberately does **not** record what it has seen: the run
-is not successful until the paper is delivered, so run.py calls `mark_seen()`
-with those guids once it is.
+`fetch(settings)` returns article dicts in the render contract's shape (the
+printable `url` among them) plus an extra `guid` key. It deliberately does
+**not** record what it has seen: the run is not successful until the paper is
+delivered, so run.py calls `mark_seen()` with those guids once it is.
+
+The queue
+---------
+Posts are a queue, not a news feed. Everything inside the window
+(`settings.sources.article_max_age_days`, default a week) that has not been
+printed yet waits its turn: publications in the order of the Sources tab, and
+within a publication the **oldest unread post first**. That is the deliberate
+choice — a newsletter is read in the order it was written, and nothing is
+skipped while newer posts jump ahead of it. A post that falls out of the
+window before its turn comes is never printed; that is the price of the
+window, and it keeps a first run from printing a year of archive.
+
+`fetch` returns up to `QUEUE_LIMIT` candidates even though the sheet holds at
+most four, so the layout can fall through to the next one when a story does
+not fit. Anything still waiting is logged, not lost.
 """
 from __future__ import annotations
 
@@ -27,8 +42,11 @@ from typing import Any, Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-MAX_ARTICLES = 4
-MAX_AGE_DAYS = 7
+#: How many candidates `fetch` hands to the layout. The sheet prints at most
+#: four; the extras let it fall through when a story does not fit whole.
+QUEUE_LIMIT = 8
+#: The window, when the settings do not carry one.
+DEFAULT_MAX_AGE_DAYS = 7
 FEED_TIMEOUT_S = 20
 DECK_MAX_CHARS = 200
 SEEN_HISTORY = 500        # guids kept in state.json
@@ -311,6 +329,23 @@ def _guid(entry) -> str:
     return entry.get("id") or entry.get("link") or entry.get("title") or ""
 
 
+def _url(entry) -> str:
+    """
+    The post's own page, for the "the rest of this story is online" line.
+
+    The feed's `link`, without the tracking query Substack appends to some of
+    them: it is printed on paper, where a `?utm_source=` tail is unreadable
+    and unusable. Nothing else about the address is touched.
+    """
+    link = _clean(entry.get("link") or "")
+    if not link:
+        guid = _clean(_guid(entry))
+        link = guid if guid.startswith(("http://", "https://")) else ""
+    if not link:
+        return ""
+    return link.split("?", 1)[0].split("#", 1)[0]
+
+
 # --------------------------------------------------------------- IMAP
 def _imap_config() -> Optional[dict]:
     import os
@@ -433,15 +468,18 @@ def _article(entry, publication: str, paragraphs: list[str], dt: datetime) -> di
         "publication": publication,
         "published": _format_published(dt),
         "paragraphs": paragraphs,
+        #: part of the render contract: the template prints it under a story
+        #: that only partly fit the sheet.
+        "url": _url(entry),
         "guid": _guid(entry),
     }
 
 
-def _articles_for_source(source, seen: set[str]) -> list[dict]:
+def _articles_for_source(source, seen: set[str], max_age_days: int) -> list[dict]:
     url = feed_url(source.name)
     parsed = _parse_feed(_get(url))
     publication = _clean((parsed.feed or {}).get("title") or source.name)
-    cutoff = _now() - timedelta(days=MAX_AGE_DAYS)
+    cutoff = _now() - timedelta(days=max_age_days)
     out: list[tuple[datetime, dict]] = []
 
     for entry in parsed.entries or []:
@@ -455,7 +493,10 @@ def _articles_for_source(source, seen: set[str]) -> list[dict]:
             logger.warning("%s: %r has no usable date; skipped", publication, title)
             continue
         if dt < cutoff:
-            logger.debug("%s: %r is older than %d days", publication, title, MAX_AGE_DAYS)
+            logger.debug(
+                "%s: %r is older than %d days; it will never print",
+                publication, title, max_age_days,
+            )
             continue
 
         html = _entry_html(entry)
@@ -479,16 +520,31 @@ def _articles_for_source(source, seen: set[str]) -> list[dict]:
             continue
         out.append((dt, _article(entry, publication, paragraphs, dt)))
 
-    out.sort(key=lambda pair: pair[0], reverse=True)   # newest first within a source
+    # A queue, not a feed: the oldest unread post is the one whose turn it is.
+    out.sort(key=lambda pair: pair[0])
     return [article for _, article in out]
+
+
+def _max_age_days(settings) -> int:
+    """The window, from the Sources tab, clamped to the field's range."""
+    try:
+        days = int(getattr(settings.sources, "article_max_age_days", DEFAULT_MAX_AGE_DAYS))
+    except (AttributeError, TypeError, ValueError):
+        return DEFAULT_MAX_AGE_DAYS
+    return max(1, min(60, days))
 
 
 def fetch(settings) -> list[dict]:
     """
-    New posts from the configured publications, front-page priority order:
-    the order of `settings.sources.substacks` first, newest first within a
-    publication. At most four; anything older than a week is skipped so the
-    first run does not print a year of archive.
+    The queue of unprinted posts, in the order they should be printed:
+    publications in the order of `settings.sources.substacks`, and within a
+    publication the oldest unread post first. Anything published longer ago
+    than `settings.sources.article_max_age_days` is out of the window and
+    never prints.
+
+    At most `QUEUE_LIMIT` candidates come back — more than the four the sheet
+    holds, so the layout has something to fall through to when a story does
+    not fit. Whatever is still waiting is logged.
 
     Each article carries an extra `guid`; run.py passes those to `mark_seen()`
     once the issue has actually been delivered.
@@ -498,24 +554,26 @@ def fetch(settings) -> list[dict]:
         logger.info("no Substack sources configured")
         return []
 
+    max_age_days = _max_age_days(settings)
     seen = _seen_guids()
     articles: list[dict] = []
     for source in sources:
         try:
-            found = _articles_for_source(source, seen)
+            found = _articles_for_source(source, seen, max_age_days)
         except Exception:
             logger.error("substack source %r failed", source.name, exc_info=True)
             continue
-        logger.info("%s: %d new post(s)", source.name, len(found))
+        logger.info("%s: %d post(s) waiting", source.name, len(found))
         articles.extend(found)
 
-    if len(articles) > MAX_ARTICLES:
-        for extra in articles[MAX_ARTICLES:]:
-            logger.info(
-                "held over (more than %d new posts): %r — %s",
-                MAX_ARTICLES, extra["title"], extra["publication"],
-            )
-    return articles[:MAX_ARTICLES]
+    waiting = len(articles) - QUEUE_LIMIT
+    if waiting > 0:
+        logger.info(
+            "%d post(s) still in the queue beyond the %d offered to the layout: %s",
+            waiting, QUEUE_LIMIT,
+            "; ".join(f"{a['title']!r} — {a['publication']}" for a in articles[QUEUE_LIMIT:]),
+        )
+    return articles[:QUEUE_LIMIT]
 
 
 def check(name: str) -> dict:

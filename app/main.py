@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import secrets
+import socket
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -59,6 +60,12 @@ TABS = [("look", "Look"), ("sources", "Sources"), ("output", "Output"), ("previe
 #: Which container variables each tab shows as "set in container / not set".
 ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.NYT_S, Env.TZ]
 ENV_ON_OUTPUT = [*Env.SMTP]
+#: Host headers that tell the phone nothing: the page was opened on the box
+#: itself, or through something that did not pass a real name through.
+LOOPBACK_HOSTS = {"", "localhost", "127.0.0.1", "0.0.0.0", "::1"}
+#: When even the socket trick fails, the address the Unraid box answers to.
+TASKS_FALLBACK_HOST = "unraid.local:8080"
+DEFAULT_PORT = "8080"
 
 
 # --------------------------------------------------------------- lifecycle
@@ -219,6 +226,64 @@ def mask(url: str) -> str:
     return f"••••{url[-6:]}" if len(url) > 6 else ("••••" if url else "")
 
 
+def lan_ip() -> str:
+    """
+    The address this container answers to on the LAN, or "".
+
+    No packet is sent: a UDP socket "connected" to an address off the local
+    network makes the kernel pick the outbound interface, and its name is the
+    address the phone has to post to. A seam for the tests, too.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("10.255.255.255", 1))
+        return str(sock.getsockname()[0])
+    except Exception:
+        log.debug("could not work out the LAN address", exc_info=True)
+        return ""
+    finally:
+        sock.close()
+
+
+def _host_and_port(raw: str) -> tuple[str, str]:
+    """Split a Host header into hostname and port ("" when it carries none)."""
+    raw = (raw or "").strip()
+    if raw.startswith("["):                       # [::1]:8080
+        host, _, rest = raw.partition("]")
+        return host[1:], rest.lstrip(":")
+    if raw.count(":") == 1:
+        host, _, port = raw.partition(":")
+        return host, port
+    return raw, ""
+
+
+def derived_tasks_url(request: Request) -> str:
+    """
+    The address the phone should post to, worked out from the request.
+
+    The Host header is what the browser typed, and usually that is exactly
+    what the phone needs. It is useless when the page was opened on the box
+    itself (`localhost`), so in that case the container's own LAN address
+    stands in, with the port the browser used.
+    """
+    raw = (request.headers.get("host") or "").strip()
+    hostname, port = _host_and_port(raw)
+    if hostname.lower() not in LOOPBACK_HOSTS:
+        return f"http://{raw}"
+    ip = lan_ip()
+    if not ip:
+        return f"http://{TASKS_FALLBACK_HOST}"
+    return f"http://{ip}:{port or request.url.port or DEFAULT_PORT}"
+
+
+def tasks_token_hint() -> str:
+    """Which token the container is holding, without revealing it."""
+    token = Env.get(Env.TASKS_TOKEN)
+    if not token:
+        return f"<{Env.TASKS_TOKEN} — not set in the container>"
+    return f"Bearer {token[:4]}…"
+
+
 # ------------------------------------------------------------------- pages
 @app.get("/")
 def index() -> RedirectResponse:
@@ -281,15 +346,30 @@ def sources_get(request: Request) -> Response:
     substacks = [
         {"index": i, "name": s.name, "paid": s.paid} for i, s in enumerate(settings.sources.substacks)
     ]
-    host = request.headers.get("host") or "unraid.local:8080"
+    derived = derived_tasks_url(request)
+    override = (settings.sources.tasks_post_url or "").strip()
     return page(
         request, "sources", "sources.html",
         sources=settings.sources,
         calendars=calendars,
         substacks=substacks,
         tasks_status=tasks_gather.status(),
-        tasks_host=host,
+        # The box shows the address the phone must use: the reader's own
+        # override when there is one, otherwise the one we worked out.
+        tasks_url=(override.rstrip("/") or derived),
+        tasks_url_derived=derived,
+        tasks_token_hint=tasks_token_hint(),
         tasks_token_set=Env.is_set(Env.TASKS_TOKEN),
+        # The "Copy Authorization header" button carries the real token only
+        # when the page itself is behind WEB_PASSWORD; on an open page it
+        # copies a placeholder, so the token never sits in HTML anyone on
+        # the network can load.
+        tasks_auth_copy=(
+            f"Bearer {Env.get(Env.TASKS_TOKEN)}"
+            if Env.is_set(Env.TASKS_TOKEN) and auth.enabled()
+            else "Bearer <TASKS_TOKEN>"
+        ),
+        tasks_auth_locked=Env.is_set(Env.TASKS_TOKEN) and not auth.enabled(),
         crossword=settings.sources.crossword,
         days=list(enumerate(DAY_LABELS)),
         nyt_cookie_set=Env.is_set(Env.NYT_S),
@@ -338,9 +418,15 @@ async def sources_post(request: Request) -> RedirectResponse:
     settings.sources.substacks = [s for _, s in sorted(rows, key=lambda r: r[0])]
     settings.sources.weather.lat = form_number(form, "lat", settings.sources.weather.lat, -90.0, 90.0)
     settings.sources.weather.lon = form_number(form, "lon", settings.sources.weather.lon, -180.0, 180.0)
+    settings.sources.article_max_age_days = int(
+        form_number(form, "article_max_age_days", float(settings.sources.article_max_age_days), 1.0, 60.0)
+    )
     settings.sources.tasks_max_age_hours = int(
         form_number(form, "tasks_max_age_hours", float(settings.sources.tasks_max_age_hours), 1.0, 168.0)
     )
+    settings.sources.tasks_post_url = form_text(
+        form, "tasks_post_url", settings.sources.tasks_post_url
+    ).rstrip("/")
     settings.sources.crossword.enabled = form_flag(form, "crossword_enabled")
     settings.sources.crossword.days = [d for d in range(7) if form_flag(form, f"crossword_day_{d}")]
     settings.save()
@@ -649,20 +735,33 @@ async def post_tasks(request: Request) -> JSONResponse:
             status_code=503,
         )
     scheme, _, given = (request.headers.get("authorization") or "").partition(" ")
-    if scheme.lower() != "bearer" or not secrets.compare_digest(given.strip().encode(), token.encode()):
-        return JSONResponse({"ok": False, "detail": "bad token"}, status_code=401)
+    given = given.strip()
+    if scheme.lower() != "bearer" or not secrets.compare_digest(given.encode(), token.encode()):
+        # The docs write the header as `Bearer <TASKS_TOKEN>`; a reader who
+        # keeps the angle brackets gets told so rather than just "bad token".
+        hint = ""
+        if given.startswith("<") and given.endswith(">"):
+            hint = " (drop the angle brackets: the header is Bearer followed by the token itself)"
+        elif scheme.lower() != "bearer":
+            hint = " (the Authorization header must start with Bearer)"
+        return JSONResponse({"ok": False, "detail": "bad token" + hint}, status_code=401)
 
     raw = await request.body()
+    text = raw.decode("utf-8", "replace")
     content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
-    if content_type == "application/json":
-        try:
-            payload = json.loads(raw or b"{}")
-        except ValueError:
-            return JSONResponse({"ok": False, "detail": "body is not JSON"}, status_code=400)
+    tasks: Any
+    try:
+        # JSON when it parses, whatever the header says: Shortcuts users
+        # often leave Content-Type on application/json while sending text.
+        payload = json.loads(text) if text.strip() else {}
         tasks = payload.get("tasks") if isinstance(payload, dict) else payload
-    else:
-        # iOS Shortcuts sometimes sends text/plain: one task per line.
-        tasks = raw.decode("utf-8", "replace").splitlines()
+        if not isinstance(tasks, list):
+            raise ValueError("no tasks list")
+    except ValueError:
+        if content_type == "application/json" and text.lstrip().startswith(("{", "[")):
+            return JSONResponse({"ok": False, "detail": "body is not valid JSON"}, status_code=400)
+        # Plain text: one task per line.
+        tasks = text.splitlines()
 
     from gather import tasks as tasks_gather
 

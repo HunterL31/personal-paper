@@ -186,7 +186,9 @@ def test_saving_sources_keeps_masked_urls_and_adds_rows(client):
             "sub_new_order_n0": "1",
             "lat": "37.87",
             "lon": "-122.27",
+            "article_max_age_days": "14",
             "tasks_max_age_hours": "12",
+            "tasks_post_url": "http://paper.lan:9000/",
         },
     )
     sources = Settings.load().sources
@@ -196,7 +198,9 @@ def test_saving_sources_keeps_masked_urls_and_adds_rows(client):
     ]
     assert [(s.name, s.paid) for s in sources.substacks] == [("oneuseful", True)]
     assert sources.weather.lat == 37.87
+    assert sources.article_max_age_days == 14
     assert sources.tasks_max_age_hours == 12
+    assert sources.tasks_post_url == "http://paper.lan:9000"   # the slash is dropped
 
 
 def test_several_new_rows_save_at_once(client):
@@ -233,6 +237,78 @@ def test_sources_page_shows_masked_url_and_shortcut_instructions(client):
     assert "••••123456" in body
     assert "/tasks" in body and "Bearer" in body
     assert "TASKS_TOKEN" in body
+
+
+# ------------------------------------------------------------- the tasks box
+def test_the_window_field_is_on_the_page(client):
+    settings = Settings()
+    settings.sources.article_max_age_days = 21
+    settings.save()
+
+    body = client.get("/sources", auth=AUTH).text
+    assert 'name="article_max_age_days"' in body
+    assert 'value="21"' in body
+    assert "Articles older than N days are skipped" in body
+
+
+def test_an_out_of_range_window_is_clamped(client):
+    client.post("/sources", auth=AUTH, data={"article_max_age_days": "900"})
+    assert Settings.load().sources.article_max_age_days == 60
+
+
+def test_the_tasks_box_uses_the_host_the_browser_used(client):
+    body = client.get("/sources", auth=AUTH, headers={"Host": "unraid.local:8080"}).text
+    assert 'href="http://unraid.local:8080/tasks"' in body
+
+
+def test_the_tasks_box_falls_back_to_the_lan_address(client, monkeypatch):
+    """A Host of 127.0.0.1 tells the phone nothing, so it is never shown."""
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "lan_ip", lambda: "192.168.1.50")
+    body = client.get("/sources", auth=AUTH, headers={"Host": "127.0.0.1:8080"}).text
+    assert 'href="http://192.168.1.50:8080/tasks"' in body
+    assert "127.0.0.1:8080" not in body
+
+
+def test_the_tasks_box_falls_back_again_when_there_is_no_lan_address(client, monkeypatch):
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "lan_ip", lambda: "")
+    body = client.get("/sources", auth=AUTH, headers={"Host": "localhost:8080"}).text
+    assert 'href="http://unraid.local:8080/tasks"' in body
+
+
+def test_the_tasks_box_shows_the_override_when_it_is_set(client, monkeypatch):
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "lan_ip", lambda: "192.168.1.50")
+    settings = Settings()
+    settings.sources.tasks_post_url = "http://paper.example.com"
+    settings.save()
+
+    body = client.get("/sources", auth=AUTH, headers={"Host": "127.0.0.1:8080"}).text
+    assert 'href="http://paper.example.com/tasks"' in body
+    assert 'href="http://192.168.1.50:8080/tasks"' not in body   # the override wins; the derived one stays as the placeholder
+    # the worked-out address is still offered, as the field's placeholder
+    assert 'placeholder="http://192.168.1.50:8080"' in body
+
+
+def test_the_tasks_box_names_the_token_without_revealing_it(client, monkeypatch):
+    monkeypatch.setenv("TASKS_TOKEN", "tok3n-of-my-esteem")
+    body = client.get("/sources", auth=AUTH).text
+    assert "Bearer tok3…" in body
+    # The token is never printed as text: only the copy button carries it,
+    # and only because this client is behind WEB_PASSWORD.
+    assert body.count("tok3n-of-my-esteem") == 1
+    assert 'data-copy="Bearer tok3n-of-my-esteem"' in body
+
+
+def test_the_tasks_box_says_when_no_token_is_set(client, monkeypatch):
+    monkeypatch.delenv("TASKS_TOKEN", raising=False)
+    body = client.get("/sources", auth=AUTH).text
+    assert "not set in the container" in body
+    assert "Bearer tok" not in body
 
 
 # --------------------------------------------------------- check endpoints
@@ -641,3 +717,57 @@ def test_setting_a_password_turns_login_on(monkeypatch):
     with TestClient(app) as c:
         assert c.get("/look").status_code == 401
         assert "WEB_PASSWORD is not set" not in c.get("/look", auth=("x", "pw")).text
+
+
+def test_tasks_box_copy_buttons_reveal_the_token_only_behind_a_password(client, monkeypatch):
+    monkeypatch.setenv("TASKS_TOKEN", "tok3n-secret-value")
+    html = client.get("/sources", auth=AUTH).text
+    assert 'data-copy="Bearer tok3n-secret-value"' in html      # WEB_PASSWORD is set in this client
+    assert "Copy URL" in html and "Copy example body" in html
+    assert html.count("tok3n-secret-value") == 1                  # only inside the copy button
+
+
+def test_tasks_box_copy_button_is_a_placeholder_on_an_open_page(monkeypatch):
+    monkeypatch.delenv("WEB_PASSWORD")
+    monkeypatch.setenv("TASKS_TOKEN", "tok3n-secret-value")
+    from app.main import app
+
+    with TestClient(app) as c:
+        html = c.get("/sources").text
+    assert "tok3n-secret-value" not in html
+    assert 'data-copy="Bearer <TASKS_TOKEN>"' in html or "data-copy=\"Bearer &lt;TASKS_TOKEN&gt;\"" in html
+    assert "Set <code>WEB_PASSWORD</code>" in html
+
+
+def test_tasks_box_has_no_header_copy_button_without_a_token(client, monkeypatch):
+    monkeypatch.delenv("TASKS_TOKEN", raising=False)
+    html = client.get("/sources", auth=AUTH).text
+    assert "Copy Authorization header" not in html
+    assert "Copy URL" in html
+
+
+def test_tasks_endpoint_explains_angle_brackets_and_accepts_text_under_a_json_header(client, monkeypatch):
+    monkeypatch.setenv("TASKS_TOKEN", "test")
+    r = client.post("/tasks", headers={"Authorization": "Bearer <test>"}, content="x")
+    assert r.status_code == 401 and "angle brackets" in r.json()["detail"]
+
+    r = client.post(
+        "/tasks",
+        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
+        content="Water the fig tree\nCall the vet",
+    )
+    assert r.status_code == 200 and r.json()["count"] == 2
+
+    r = client.post(
+        "/tasks",
+        headers={"Authorization": "Bearer test", "Content-Type": "text/plain"},
+        content='{"tasks": ["one", "two", "three"]}',
+    )
+    assert r.status_code == 200 and r.json()["count"] == 3
+
+    r = client.post(
+        "/tasks",
+        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
+        content='{"tasks": [broken',
+    )
+    assert r.status_code == 400

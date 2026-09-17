@@ -1,4 +1,8 @@
-"""The sample issue renders on one sheet, and every word of it is the author's."""
+"""The sample issue renders on one sheet, and every word of it is the author's.
+
+The sheet is filled: whole articles first, and the last of them may stop at
+a paragraph boundary with a line saying where the rest of the story is.
+"""
 from __future__ import annotations
 
 import copy
@@ -12,9 +16,14 @@ from tests.verbatim import assert_verbatim, reconstruct
 
 SAMPLE = Path(__file__).resolve().parent.parent / "render" / "sample_data.json"
 
-#: What the default Look fits on the sheet: the lead and the next two, with
-#: the fourth story dropped whole to make room for the crossword.
+#: What the default Look fits on the sheet: the lead and the next two, whole.
+#: The fourth story is held for another day -- with four stories on the front
+#: the first three overrun page 2, so not even its first paragraph can be
+#: printed beside the crossword.
 SAMPLE_PRINTED = [0, 1, 2]
+
+#: The sample at 11pt: only the lead, and only its first eight paragraphs.
+BIG_TYPE_PARTIAL = {0: 8}
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +62,13 @@ def test_articles_are_printed_verbatim(rendered):
 def test_the_whole_stories_that_fit_are_the_ones_printed(rendered):
     data, result = rendered
     assert result.printed == SAMPLE_PRINTED
-    assert len(data["articles"]) == 4          # the fourth did not fit and was dropped
+    assert result.partial == {}                # all three are printed whole
+    assert len(data["articles"]) == 4          # the fourth did not fit and was held back
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert soup.select("p.online") == []        # nothing on the sheet is half a story
 
 
 def test_every_printed_article_is_continued_on_page_two(rendered):
@@ -217,3 +232,86 @@ def test_a_crossword_alone_still_prints_a_paper(sample_data, tmp_path):
     assert result.pages == 2 and result.printed == []
     assert "No new stories this morning." in result.laid_out_html
     assert "The Crossword" in result.laid_out_html
+
+
+# ------------------------------------------- the last story, printed partially
+#: Big type, so the lead alone is more than the sheet holds.
+BIG_TYPE = {"body_size_pt": 11.0}
+
+
+@pytest.fixture(scope="module")
+def partial_issue(tmp_path_factory):
+    data = json.loads(SAMPLE.read_text())
+    return data, render(data, BIG_TYPE, tmp_path_factory.mktemp("partial"))
+
+
+def test_a_story_that_cannot_fit_whole_is_printed_as_far_as_it_fits(partial_issue):
+    data, result = partial_issue
+    assert result.printed == [0]
+    assert result.partial == BIG_TYPE_PARTIAL
+    assert len(data["articles"][0]["paragraphs"]) == 10      # eight of the ten printed
+    assert_verbatim(result, data["articles"])
+
+
+def test_the_printed_paragraphs_are_the_author_s_first_ones(partial_issue):
+    data, result = partial_issue
+    n = result.partial[0]
+    assert reconstruct(result.laid_out_html, data["articles"][0]["title"]) == \
+        data["articles"][0]["paragraphs"][:n]
+
+
+def test_the_online_line_ends_the_partial_story(partial_issue):
+    """One line, after the last paragraph printed, in a wrapper with it."""
+    from bs4 import BeautifulSoup
+
+    from tests.verbatim import pieces
+
+    data, result = partial_issue
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    lines = soup.select("p.online")
+    assert len(lines) == 1
+    line = lines[0]
+
+    wrapper = line.parent
+    assert "ending" in (wrapper.get("class") or []), "the line must travel with its paragraph"
+    assert wrapper.find("p") is not line, "the paragraph it follows comes first"
+
+    parts = pieces(result.laid_out_html, data["articles"][0]["title"])
+    assert [kind for _page, kind, _text in parts][-1] == "online"
+
+
+def test_the_online_line_carries_the_url_without_its_scheme(partial_issue):
+    from bs4 import BeautifulSoup
+
+    data, result = partial_issue
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    line = soup.select_one("p.online")
+    url = data["articles"][0]["url"]
+    assert line.get_text() == f"\u2003The rest of this story is online: {url.removeprefix('https://')}"
+    assert "https://" not in line.get_text()
+    assert line.select_one(".u").get_text() == url.removeprefix("https://")
+
+
+def test_without_a_url_the_line_just_says_it_is_online(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    data = copy.deepcopy(sample_data)
+    for article in data["articles"]:
+        article.pop("url")
+    result = render(data, BIG_TYPE, tmp_path / "nourl")
+    assert result.partial, "the lead is still printed partially"
+    line = BeautifulSoup(result.laid_out_html, "html.parser").select_one("p.online")
+    assert line.get_text() == "\u2003The rest of this story is online."
+    assert_verbatim(result, data["articles"])
+
+
+def test_the_online_line_is_set_like_the_jump_line(rendered):
+    """Italic, right-aligned, at the byline size, and never left on its own."""
+    _, result = rendered
+    css = result.laid_out_html[result.laid_out_html.index("p.online"):]
+    css = css[:css.index("}")]
+    for rule in ("text-align: right", "font-style: italic", "font-size: var(--byline)",
+                 "break-inside: avoid"):
+        assert rule in css, rule
+    assert ".ending { break-inside: avoid; }" in result.laid_out_html
+    assert ".page p.online .u { overflow-wrap: break-word; }" in result.laid_out_html

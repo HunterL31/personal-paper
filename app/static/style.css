@@ -115,3 +115,6 @@ pre.log { border: var(--rule); padding: 0.6rem; overflow-x: auto; max-height: 34
 .pages img { width: 100%; max-width: 40rem; border: var(--rule); display: block; }
 
 footer { border-top: var(--rule); margin-top: 2.5rem; padding-top: 0.4rem; font-size: 0.8rem; color: var(--grey); text-align: center; }
+
+/* copy-to-clipboard buttons beside values worth pasting elsewhere */
+button.copy { font-size: 0.8em; padding: 0.1em 0.5em; margin-left: 0.6em; vertical-align: baseline; }

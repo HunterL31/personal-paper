@@ -82,7 +82,14 @@ class Sources(BaseModel):
     substacks: list[SubstackSource] = Field(default_factory=list)
     weather: WeatherSource = Field(default_factory=WeatherSource)
     crossword: CrosswordSource = Field(default_factory=CrosswordSource)
+    #: How far back the article queue looks. A post older than this is never
+    #: printed, so switching on a publication does not print its archive.
+    article_max_age_days: int = Field(7, ge=1, le=60)
     tasks_max_age_hours: int = 24
+    #: What the Sources tab tells the phone to post to, when the address the
+    #: browser used is not the address the phone can reach (a reverse proxy,
+    #: or the page opened on the box itself). Empty means "work it out".
+    tasks_post_url: str = ""
 
 
 # -------------------------------------------------------------- Output

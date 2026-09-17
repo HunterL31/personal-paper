@@ -38,7 +38,9 @@
         6
       ]
     },
-    "tasks_max_age_hours": 24
+    "article_max_age_days": 7,
+    "tasks_max_age_hours": 24,
+    "tasks_post_url": ""
   },
   "output": {
     "print": {

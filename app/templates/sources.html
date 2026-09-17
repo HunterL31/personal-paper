@@ -77,6 +77,14 @@
     </tbody>
   </table>
   <p><button type="button" data-add-row="substack">Add another Substack</button></p>
+  <div class="grid">
+    <label class="field"><span>Articles older than N days are skipped</span>
+      <input type="number" class="narrow" name="article_max_age_days" min="1" max="60"
+             value="{{ sources.article_max_age_days }}"></label>
+  </div>
+  <p class="note">Posts are a queue: the oldest unprinted post of the first
+  publication goes first, and nothing jumps ahead of it. A post still waiting
+  when it passes that age is never printed.</p>
 
   <h2>Weather</h2>
   <div class="grid">
@@ -95,7 +103,12 @@
     <label class="field"><span>Ignore the sync when older than (hours)</span>
       <input type="number" class="narrow" name="tasks_max_age_hours" min="1" max="168"
              value="{{ sources.tasks_max_age_hours }}"></label>
+    <label class="field"><span>Address the phone posts to</span>
+      <input type="text" name="tasks_post_url" value="{{ sources.tasks_post_url }}"
+             placeholder="{{ tasks_url_derived }}" autocomplete="off"></label>
   </div>
+  <p class="note">Leave it empty unless the address below is not one the phone
+  can reach — behind a reverse proxy, or on a different port outside the box.</p>
   <div class="panel">
     <p><strong>Last sync:</strong>
       {% if tasks_status.updated %}
@@ -105,12 +118,21 @@
       {% else %}never{% endif %}
     </p>
     <p><strong>The iPhone Shortcut posts:</strong></p>
-    <p class="mono">POST http://{{ tasks_host }}/tasks</p>
-    <p class="mono">Authorization: Bearer &lt;TASKS_TOKEN&gt;</p>
+    <p class="mono">POST <a href="{{ tasks_url }}/tasks" id="tasks-url">{{ tasks_url }}/tasks</a>
+      <button type="button" class="copy" data-copy="{{ tasks_url }}/tasks">Copy URL</button></p>
+    <p class="mono">Authorization: Bearer &lt;TASKS_TOKEN&gt;
+      <span class="note">&mdash; {{ tasks_token_hint }}</span>
+      {%- if tasks_token_set %}
+      <button type="button" class="copy" data-copy="{{ tasks_auth_copy }}">Copy Authorization header</button>
+      {%- endif %}</p>
+    {%- if tasks_auth_locked %}
+    <p class="note">The copy button gives a placeholder because this page has no login.
+      Set <code>WEB_PASSWORD</code> and it copies the real header.</p>
+    {%- endif %}
     <p class="mono">Content-Type: application/json</p>
-    <p class="mono">{"tasks": ["..."]}</p>
-    <p class="note">TASKS_TOKEN is {{ "set in container" if tasks_token_set else "not set" }}.
-      A plain-text body with one task per line works too.</p>
+    <p class="mono">{"tasks": ["first task", "second task"]}
+      <button type="button" class="copy" data-copy='{"tasks": ["first task", "second task"]}'>Copy example body</button></p>
+    <p class="note">A plain-text body with one task per line works too.</p>
   </div>
 
   <h2>Crossword</h2>
@@ -154,6 +176,40 @@
 
 {% block scripts %}
 <script>
+// Copy buttons: async clipboard where the browser allows it (https or
+// localhost), otherwise a hidden textarea + execCommand, which still works
+// on plain http and on iOS Safari.
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).catch(function () { return copyViaTextarea(text); });
+  }
+  return copyViaTextarea(text);
+}
+function copyViaTextarea(text) {
+  return new Promise(function (resolve, reject) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed"; area.style.top = "0"; area.style.left = "0"; area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.focus(); area.select(); area.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(area);
+    ok ? resolve() : reject(new Error("copy failed"));
+  });
+}
+document.querySelectorAll("button.copy[data-copy]").forEach(function (button) {
+  const label = button.textContent;
+  button.addEventListener("click", function () {
+    copyText(button.dataset.copy).then(function () {
+      button.textContent = "Copied";
+    }, function () {
+      button.textContent = "Select and copy by hand";
+    });
+    setTimeout(function () { button.textContent = label; }, 2000);
+  });
+});
 // Check buttons are delegated so rows added with "Add another" work too.
 document.addEventListener("click", function (event) {
   const button = event.target.closest("[data-check-calendar], [data-check-substack]");

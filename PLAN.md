@@ -21,12 +21,16 @@ fonts, `render.py`, sample data). This plan covers everything around it.
    set in `template.html`; keep changes there deliberate.
 5. **The paper is one double-sided sheet: exactly two pages, always.**
    Page 1 is the front page; page 2 carries the continuations and, when
-   enabled, the crossword. Because of rule 1, an article is printed only
-   when all of it fits: the layout tries the lead plus three stories and
-   drops the lowest-priority story until everything fits, down to none.
-   Dropped stories are not marked seen, so they print on a later morning
-   with room. Hyphenation at line ends (soft hyphens inserted at render
-   time, never into the stored text) is typesetting, not editing.
+   enabled, the crossword. The articles arrive as a queue (see
+   substack.py) and the layout fills the sheet from the top of it: whole
+   articles first, and when the next one will not fit whole, as many of
+   its leading complete paragraphs as fit, closed with a line pointing to
+   the rest online. A partially printed article counts as used. Articles
+   that got no room are not marked seen, so they print on a later morning.
+   Paragraphs are never split except at the front-page jump to page 2, and
+   nothing is ever reworded. Hyphenation at line ends (soft hyphens
+   inserted at render time, never into the stored text) is typesetting,
+   not editing.
 
 ## Architecture
 
@@ -101,7 +105,8 @@ Read that file first; it is the contract. Notes per field:
 - `weather.hourly[]`: six entries at 7, 10, 13, 16, 19, 22 local time.
 - `articles[]`: `title`, `deck` (nullable), `author`, `publication`,
   `published` (short, e.g. `"Sept. 15"`), `paragraphs` (list of plain-text
-  strings, in the author's order, untouched). Up to four are placed on the
+  strings, in the author's order, untouched), `url` (the post's own page,
+  printed under a story that only partly fit). Up to four are placed on the
   front page: index 0 is the lead, 1–3 the second row.
 
 - `crossword`: nullable. `null` on any morning without a puzzle (source off,
@@ -262,13 +267,28 @@ Each module exposes `fetch(settings) -> <its part of the contract>` and a
 ### substack.py
 
 - Config: `settings.sources.substacks`, an ordered list of publications; order is
-  front-page priority when several have new posts.
-- RSS at `https://<name>.substack.com/feed` via `feedparser`. New = published
-  since the last run; keep seen post GUIDs in `state.json` so nothing is
-  repeated or missed if a run is skipped.
+  front-page priority when several have posts waiting.
+- RSS at `https://<name>.substack.com/feed` via `feedparser`. Seen post GUIDs
+  are kept in `state.json` so nothing is repeated or missed if a run is
+  skipped.
+- **The queue.** Posts are a queue, not a news feed. Everything unprinted
+  inside the window — `settings.sources.article_max_age_days`, set on the
+  Sources tab, default 7 — waits its turn: publications in the order of the
+  Sources tab, and within a publication the **oldest unread post first**, so
+  nothing is skipped while newer posts jump ahead of it. A post that is still
+  waiting when it falls out of the window is never printed; that is what keeps
+  a first run from printing a year of archive. `fetch` returns up to
+  `QUEUE_LIMIT` (8) candidates — more than the four the sheet holds, so the
+  layout can fall through to the next one when a story does not fit — and logs
+  how many are still waiting behind them.
 - Fields: `title` ← item title; `deck` ← item `description`/subtitle when it
   is a real subtitle (not a truncated body); `author` ← `dc:creator`;
-  `publication` ← feed title; `published` ← formatted pubDate.
+  `publication` ← feed title; `published` ← formatted pubDate; `url` ← the
+  item link, tracking query stripped. `url` is part of the render contract:
+  the template prints "The rest of this story is online: <url>" under a story
+  that only partly fit. A partly printed post counts as used — run.py marks
+  its guid seen — because the reader has its beginning on paper and the
+  address of the rest.
 - Paragraphs: parse `content:encoded` with BeautifulSoup and take the text of
   each block element (`p`, `h2`–`h4`, `blockquote`, `li`) in document order.
   **Removing Substack chrome is allowed; editing text is not.** Strip
@@ -280,7 +300,8 @@ Each module exposes `fetch(settings) -> <its part of the contract>` and a
   env `IMAP_*`) with a label that her Substack emails land in; fetch the
   last 24 h, parse the HTML body with the same paragraph extractor. Build
   RSS first; add IMAP only if needed.
-- If more than four posts arrive, v1 prints the top four and logs the rest.
+- More candidates than the sheet can hold is the normal case: whatever does
+  not fit stays unseen and comes back to the front of the queue tomorrow.
 
 ### tasks.py
 
@@ -338,7 +359,10 @@ scheduler, by the web page's buttons, and by the CLI.
 3. Write `/data/out/<date>/data.json`.
 4. Render with that data and `settings.look` (import `render.render`, which
    becomes a function; the CLI wrapper stays). It writes `paper.pdf` and
-   reports the page count.
+   reports the page count, `printed` (the articles that reached the sheet,
+   whole or in part) and `partial` (article index → leading paragraphs
+   printed). Every printed index's guid is marked seen, a partly printed one
+   included; the rest are held for another morning and logged by title.
 5. Copy the PDF to `/data/archive/<date>.pdf`.
 6. `deliver()` over the enabled routes (skipped on `dry_run`).
 7. On success: bump the issue counter and write `last_success` to

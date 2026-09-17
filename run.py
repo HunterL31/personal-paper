@@ -53,9 +53,12 @@ class RunResult:
     gather_errors: dict[str, str] = field(default_factory=dict)
     #: True when today's puzzle was fetched and typeset on page 2
     crossword: bool = False
-    #: indices into the gathered articles that were printed in full; the
-    #: rest did not fit the sheet and stay unseen so they print another day
+    #: indices into the gathered articles that reached the sheet, whole or in
+    #: part; the rest did not fit and stay unseen so they print another day
     printed: list[int] = field(default_factory=list)
+    #: article index -> how many of its leading paragraphs were printed, for
+    #: the one story that was carried only in part. Empty when none was.
+    partial: dict[int, int] = field(default_factory=dict)
     #: route name -> error message, or None when that route succeeded
     delivery: dict[str, Optional[str]] = field(default_factory=dict)
     ok: bool = False
@@ -183,6 +186,10 @@ def _mark_seen(guids: list[str]) -> None:
 
     Only called after a successful real run: a failed or dry run leaves the
     posts unseen so they print tomorrow instead of being lost.
+
+    A post that was carried only in part counts as used: the reader has the
+    beginning on paper and the address of the rest, so reprinting it from the
+    top the next morning would be the wrong thing.
     """
     if not guids:
         return
@@ -266,7 +273,9 @@ def run(
         result.crossword = bool(data.get("crossword"))
         # Substack hands back a `guid` per article so the run can mark the
         # posts seen once the issue is actually delivered; it is not part
-        # of the render contract, so keep it out of data.json.
+        # of the render contract, so keep it out of data.json. `url` is
+        # part of the contract (the template prints it under a story that
+        # only partly fit) and is not a secret, so it stays.
         # One guid per article, positionally, so the printed indices reported
         # by the layout can be mapped back to the posts that actually appeared.
         articles = data.get("articles") or []
@@ -277,12 +286,25 @@ def run(
         # 4. render
         rendered = render_paper(data, look, out_dir)
         result.pdf, result.pages = rendered.pdf, rendered.pages
-        result.printed = list(getattr(rendered, "printed", []) or [])
+        # `printed` is every article that reached the sheet, whole or in part;
+        # `partial` says how much of the one that was cut short was carried.
+        result.partial = {int(k): int(v) for k, v in (getattr(rendered, "partial", {}) or {}).items()}
+        printed = list(getattr(rendered, "printed", []) or [])
+        printed += [i for i in result.partial if i not in printed]
+        result.printed = printed
         dropped = [i for i in range(len(articles)) if i not in result.printed]
         if dropped:
             log.info(
                 "did not fit the sheet, held for another day: %s",
                 "; ".join(str((articles[i] or {}).get("title", i)) for i in dropped),
+            )
+        for index, paragraphs in sorted(result.partial.items()):
+            title = str((articles[index] or {}).get("title", index)) if index < len(articles) else index
+            # House rule 1: nothing was shortened. The sheet simply ran out,
+            # and the post counts as used — it is not printed again tomorrow.
+            log.info(
+                "printed the first %d paragraph%s of %s; the rest is online",
+                paragraphs, "" if paragraphs == 1 else "s", title,
             )
         log.info("rendered %s page(s) -> %s", rendered.pages, rendered.pdf)
 

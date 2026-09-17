@@ -11,8 +11,11 @@ The data file is whatever the gather step produced (see sample_data.json for
 the shape). Article paragraphs must be the author's text, untouched.
 
 The paper is always one double-sided sheet: page 1, and page 2 on its back
-with the continuations and the crossword. An article is printed only if the
-whole of it fits; `RenderResult.printed` says which ones did.
+with the continuations and the crossword. The sheet is filled: the articles
+that fit whole are printed whole, and the next one may be printed as far as
+its last whole paragraph that fits, ended by a line saying where the rest is.
+`RenderResult.printed` says which articles are on the sheet and
+`RenderResult.partial` how much of the partial one was printed.
 
 As a library:
 
@@ -129,9 +132,15 @@ class RenderResult:
     #: Always 2: the sheet has a front and a back.
     pages: int
     #: Indices into `data["articles"]` of the articles that were printed, in
-    #: the order they were given.  The others did not fit whole and are
-    #: nowhere on the sheet; only these should be marked as seen.
+    #: the order they were given: the whole ones and, last, the partial one
+    #: if there is one.  The others are nowhere on the sheet.
     printed: list[int] = field(default_factory=list)
+    #: `{index: paragraphs printed}` for the one article that was printed
+    #: partially, or `{}` when every printed article was printed whole.  Its
+    #: index is the last of `printed`; the paragraphs printed are the first
+    #: `n` of the author's, unchanged, followed by a line saying where the
+    #: rest of the story is.
+    partial: dict[int, int] = field(default_factory=dict)
     pngs: list[Path] = field(default_factory=list)
     #: `document.documentElement.outerHTML` after the fitting script ran, i.e.
     #: the pages as they were printed.  The verbatim test parses this.
@@ -214,7 +223,7 @@ def render(
     html_path.write_text(html)
     pdf_path = out / "paper.pdf"
 
-    def _do(br) -> tuple[int, list[int], str]:
+    def _do(br) -> tuple[int, list[int], dict[int, int], str]:
         page = br.new_page()
         try:
             page.emulate_media(media="print")     # measure in the same mode we print in
@@ -222,21 +231,23 @@ def render(
             page.wait_for_function("window.__layoutDone === true")
             n = page.evaluate("window.__pages")
             printed = page.evaluate("window.__printed")
+            partial = page.evaluate("window.__partial") or {}
             laid_out = page.evaluate("document.documentElement.outerHTML")
             page.pdf(path=str(pdf_path), prefer_css_page_size=True, print_background=True)
-            return int(n), [int(i) for i in printed], laid_out
+            return (int(n), [int(i) for i in printed],
+                    {int(k): int(v) for k, v in dict(partial).items()}, laid_out)
         finally:
             page.close()
 
     if browser is not None:
-        pages, printed, laid_out_html = _do(browser)
+        pages, printed, partial, laid_out_html = _do(browser)
     else:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
             br = _launch(p)
             try:
-                pages, printed, laid_out_html = _do(br)
+                pages, printed, partial, laid_out_html = _do(br)
             finally:
                 br.close()
 
@@ -245,9 +256,10 @@ def render(
 
     pngs = _rasterize(pdf_path, out) if png else []
     given = len(data.get("articles") or [])
-    log.info("rendered 2 pages -> %s (%s of %s article(s) printed)", pdf_path, len(printed), given)
+    log.info("rendered 2 pages -> %s (%s of %s article(s) printed%s)", pdf_path, len(printed), given,
+             "".join(f", article {i} partial: {n} paragraph(s)" for i, n in partial.items()))
     return RenderResult(pdf=pdf_path, html=html_path, pages=pages, printed=printed,
-                        pngs=pngs, laid_out_html=laid_out_html)
+                        partial=partial, pngs=pngs, laid_out_html=laid_out_html)
 
 
 def _look_from_settings_file(path: str) -> Any:
@@ -274,7 +286,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"{result.pages} page(s) -> {result.pdf}")
     print(f"  {len(result.printed)} of {len(articles)} article(s) printed")
     for i in result.printed:
-        print(f"    [{i}] {articles[i]['title']}")
+        part = result.partial.get(i)
+        of = f"  ({part} of {len(articles[i]['paragraphs'])} paragraphs, rest online)" if part else ""
+        print(f"    [{i}] {articles[i]['title']}{of}")
     for p in result.pngs:
         print(f"  {p}")
 

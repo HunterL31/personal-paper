@@ -35,11 +35,12 @@
   2. The paper is one sheet: page 1 and, on its back, page 2. The only
      thing the layout is allowed to do to an article is break the text
      after the last word that fits the front-page slot and carry the rest,
-     unchanged, to page 2 under "Continued from Page 1". An article that
-     does not fit whole across the two pages is not printed at all; the
-     script at the bottom of this file drops the lowest-priority article
-     and lays the paper out again. Nothing anywhere may trim an article's
-     text to "make it fit".
+     unchanged, to page 2 under "Continued from Page 1". The sheet is
+     filled: the articles that fit whole are printed whole, and the one
+     after them may be printed as far as its last whole paragraph that
+     fits, ended by a line saying where the rest of it is. A paragraph is
+     never altered and never split, except at that front-page break.
+     Nothing anywhere may trim, shorten or reword an article's text.
 
   3. Weather, the agenda, and the to-do list are the reader's own data and
      are laid out as data, not prose.
@@ -151,7 +152,18 @@
 
   .body p { margin: 0; text-align: var(--align); text-indent: 0.14in; hyphens: manual; -webkit-hyphens: manual; }
   .body p:first-child, .story-head + p, p.tail { text-indent: 0; }
+  .body .ending:first-child > p, .story-head + .ending > p:first-child { text-indent: 0; }
   p.jump { text-indent: 0; text-align: right; font-style: italic; font-size: var(--byline); padding-top: 0.03in; break-inside: avoid; }
+  /* The last article on the sheet may stop at a paragraph boundary; this
+     line says where the rest of it is. It is set like the jump line, and it
+     travels in a wrapper with the paragraph it follows so that a column
+     break can never leave it stranded on its own. The `.page` in front of it
+     is what makes it outrank `.cols p` when the line falls on page 2. */
+  .page p.online { text-indent: 0; text-align: right; font-style: italic; font-size: var(--byline); padding-top: 0.03in; break-inside: avoid; break-before: avoid; }
+  /* A post's url is longer than a column is wide: it may break mid-word, but
+     only once the ordinary break points after its slashes and hyphens are used. */
+  .page p.online .u { overflow-wrap: break-word; }
+  .ending { break-inside: avoid; }
   p.no-stories { font-family: var(--head); font-style: italic; font-size: var(--row-head); margin: 0.3in 0 0; text-align: center; }
 
   /* Lead story: headline across the full width, text in three columns */
@@ -281,7 +293,7 @@
     <div class="stories">
       {% set a = articles[0] %}
       {% if articles %}
-      <article class="story lead" data-story="0">
+      <article class="story lead" data-story="0"{% if a.url %} data-url="{{ a.url }}"{% endif %}>
         <h2>{{ a.title }}</h2>
         {% if a.deck %}<p class="deck">{{ a.deck | hyphenate }}</p>{% endif %}
         <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span>{% if a.published %}, <span class="when">{{ a.published }}</span>{% endif %}</p>
@@ -292,7 +304,7 @@
       {% if row_articles %}
       <div class="row" style="grid-template-columns: repeat({{ row_articles | length }}, 1fr);">
         {% for a in row_articles %}
-        <article class="story" data-story="{{ loop.index }}">
+        <article class="story" data-story="{{ loop.index }}"{% if a.url %} data-url="{{ a.url }}"{% endif %}>
           <h2>{{ a.title }}</h2>
           {% if a.deck %}<p class="deck">{{ a.deck | hyphenate }}</p>{% endif %}
           <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span></p>
@@ -401,12 +413,16 @@
   Fit the paper to one sheet, without touching the words.
 
   The sheet is two pages and only two. Page 1 carries the front-page slots,
-  page 2 the continuations and, below them, the crossword. An article is
-  printed only if the whole of it fits across the two pages, so the layout
-  is a search: try the first N articles; if the continuations overrun page
-  2, drop the lowest-priority one (the last) and try again, down to one
-  article and then to none. The winning pass leaves the DOM as it printed,
-  and the dropped articles leave no trace on either page.
+  page 2 the continuations and, below them, the crossword. The articles come
+  in priority order and the sheet is filled, so the layout is a search: try
+  the first k articles whole; if the continuations overrun page 2, try again
+  with the last of them printed only as far as its last whole paragraph that
+  fits, ended by a line saying where the rest of it is (binary search on the
+  number of paragraphs, never fewer than one); and only if not even its first
+  paragraph fits, drop it and try k - 1. What prints is therefore N whole
+  articles and at most one partial one, at the end. The winning pass leaves
+  the DOM as it printed, and the dropped articles leave no trace on either
+  page.
 
   Within a pass:
     Step 1: for each front-page story, keep exactly as much of the author's
@@ -415,6 +431,9 @@
             "Continued on Page 2" line.
     Step 2: pour everything that was cut, unchanged, into the three columns
             of page 2. Anything that does not fit there fails the pass.
+
+  A paragraph is never reworded, never shortened and never split, except by
+  that one front-page break, which continues verbatim on page 2.
 */
 (function () {
   const rect = el => el.getBoundingClientRect();
@@ -427,7 +446,10 @@
   //: The articles as the server rendered them, kept out of the document so
   //: that every pass is measured from the same untouched starting point.
   const pristine = front().cloneNode(true);
-  const TOTAL = pristine.querySelectorAll('.story').length;
+  const STORIES = Array.from(pristine.querySelectorAll('.story'));
+  const TOTAL = STORIES.length;
+  //: How many paragraphs each story has, i.e. how far a partial one may go.
+  const PARAS = STORIES.map(s => s.querySelectorAll('.body > p').length);
   const cols = document.querySelector('#page-2 .cols');
 
   // Truncate p to the most words for which `ok()` still holds (binary search on a
@@ -443,6 +465,47 @@
     }
     p.textContent = words.slice(0, lo).join(' ');
     return lo === 0 ? null : words.slice(lo).join(' ');
+  }
+
+  // The line that ends a partial article. The url is shown without its
+  // scheme, and is set in a span the stylesheet lets break, because a post's
+  // url is longer than a column is wide. No url in the data, no url on the
+  // page: then the line just says the story is online.
+  function onlineLine(story) {
+    const p = el('p', 'online', '\u2003The rest of this story is online');
+    const url = story.dataset.url;
+    if (!url) { p.append('.'); return p; }
+    p.append(': ');
+    p.appendChild(el('span', 'u', url.replace(/^https?:\/\//, '')));
+    return p;
+  }
+
+  // The online line goes with the paragraph it follows: in a column the two
+  // travel together, or not at all.
+  function endWith(p, online) {
+    const wrap = el('div', 'ending');
+    p.replaceWith(wrap);
+    wrap.append(p, online);
+    return wrap;
+  }
+
+  // The two stay together when a column can hold them both. A paragraph
+  // taller than a column has to break somewhere, and then the wrapper breaks
+  // with it: `break-before: avoid` on the line still keeps it as close to the
+  // end of its paragraph as the layout allows.
+  function endFits(wrap, box) {
+    const fits = () => !spills(wrap, box) && !outside(wrap, box);
+    wrap.style.breakInside = '';
+    if (fits()) return true;
+    wrap.style.breakInside = 'auto';
+    return fits();
+  }
+
+  function unwrap(wrap) {
+    const p = wrap.querySelector('p');
+    wrap.parentNode.insertBefore(p, wrap);
+    wrap.remove();
+    return p;
   }
 
   // ---- The crossword ----
@@ -478,11 +541,19 @@
   }
 
   // ---- A pass ----
-  // Rebuild page 1 from the untouched copy with the first `k` articles.
-  function setFront(k) {
+  // Rebuild page 1 from the untouched copy with the first `k` articles. When
+  // `partial` is given, that story keeps only its first `partial.paras`
+  // paragraphs -- whole ones, exactly as written -- and is marked so that
+  // fitStory ends it with the online line.
+  function setFront(k, partial) {
     const fresh = pristine.cloneNode(true);
     for (const story of Array.from(fresh.querySelectorAll('.story')))
       if (+story.dataset.story >= k) story.remove();
+    if (partial) {
+      const story = fresh.querySelector('.story[data-story="' + partial.index + '"]');
+      for (const p of Array.from(story.querySelectorAll('.body > p')).slice(partial.paras)) p.remove();
+      story.dataset.partial = String(partial.paras);
+    }
     const row = fresh.querySelector('.row');
     if (row) {
       const n = row.querySelectorAll('.story').length;
@@ -494,20 +565,34 @@
     cols.textContent = '';
   }
 
-  // Step 1, for one story. Returns null when the whole story fits the slot,
-  // false when the slot cannot hold even the jump line, otherwise the
-  // remainder to be continued on page 2.
+  // Step 1, for one story. Returns null when everything the story is to
+  // print fits the slot, false when the slot cannot hold even the jump line,
+  // otherwise the remainder to be continued on page 2.
   function fitStory(story) {
     const body = story.querySelector('.body');
     const ps = Array.from(body.querySelectorAll('p'));
     const rem = [];                                   // {text, tail} in reading order
+    const online = story.dataset.partial ? onlineLine(story) : null;
+
+    // A partial story may end inside its front-page slot: try it there,
+    // online line and all, before cutting anything.
+    if (online && ps.length) {
+      const wrap = endWith(ps[ps.length - 1], online);
+      if (endFits(wrap, body)) return null;
+      unwrap(wrap);                                   // it goes to page 2 instead
+      online.remove();
+    }
+
     const jump = el('p', 'jump', 'Continued on Page 2');
     body.appendChild(jump);
 
     while (ps.length > 1 && outside(ps[ps.length - 1], body)) {
       const p = ps.pop(); rem.unshift({ text: p.textContent, tail: false }); p.remove();
     }
-    if (!rem.length && !spills(jump, body)) { jump.remove(); return null; }
+    // A partial story is only ever printed with its online line after it: if
+    // the slot held all its paragraphs but not that line, this pass fails and
+    // the search tries one paragraph fewer.
+    if (!rem.length && !spills(jump, body)) { if (online) return false; jump.remove(); return null; }
 
     while (ps.length && spills(jump, body)) {
       const p = ps[ps.length - 1];
@@ -518,7 +603,7 @@
       break;
     }
     if (spills(jump, body)) return false;             // no room to say where it goes
-    return { jump, title: story.querySelector('h2').textContent, rem };
+    return { jump, title: story.querySelector('h2').textContent, rem, online };
   }
 
   const head = title => {
@@ -532,20 +617,25 @@
   // Step 2. True when every remainder fitted page 2 whole.
   function pour(remainders) {
     for (const r of remainders) {
+      if (r.online && !r.rem.length) return false;    // nothing to hang it on
       const art = head(r.title);
       cols.appendChild(art);
       if (spills(art, cols)) return false;
-      for (const it of r.rem) {
+      for (let i = 0; i < r.rem.length; i++) {
+        const it = r.rem[i];
         const p = el('p', it.tail ? 'tail' : null, it.text);
         art.appendChild(p);
-        if (spills(p, cols)) return false;
+        // The last paragraph of a partial story carries the online line.
+        if (r.online && i === r.rem.length - 1) {
+          if (!endFits(endWith(p, r.online), cols)) return false;
+        } else if (spills(p, cols)) return false;
       }
     }
     return true;
   }
 
-  function attempt(k) {
-    setFront(k);
+  function attempt(k, partial) {
+    setFront(k, partial);
     const remainders = [];
     for (const story of document.querySelectorAll('#page-1 .story')) {
       const r = fitStory(story);
@@ -558,18 +648,32 @@
   function run() {
     fitCrossword();
 
-    let printed = 0;
-    for (let k = TOTAL; k >= 0; k--) {
-      if (attempt(k)) { printed = k; break; }
+    let printed = 0, partial = null;
+    for (let k = TOTAL; k >= 1; k--) {
+      if (attempt(k, null)) { printed = k; break; }
+      // The whole of article k - 1 does not fit. Before dropping it, print
+      // as much of it as the sheet holds: the most of its leading whole
+      // paragraphs that still leaves room for the online line.
+      const i = k - 1;
+      let lo = 0, hi = PARAS[i] - 1;                  // the whole of it has just failed
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (attempt(k, { index: i, paras: mid })) lo = mid; else hi = mid - 1;
+      }
+      if (lo) { partial = { index: i, paras: lo }; printed = k; attempt(k, partial); break; }
     }
+    if (!printed) attempt(0, null);                   // a paper with no stories in it
 
     // Ruled lines for the notes box: as many whole lines as the leftover rail space holds.
     const lines = document.querySelector('.rail .lines');
     if (lines) for (let i = 0; i < 80; i++) { const d = el('div'); lines.appendChild(d); if (spills(d, lines)) { d.remove(); break; } }
 
-    //: The articles that were printed, by their index in `articles`. The
-    //: rest were dropped whole and are nowhere on the sheet.
+    //: The articles that were printed, by their index in `articles`: the
+    //: whole ones and, last, the partial one if there is one. The rest were
+    //: dropped whole and are nowhere on the sheet.
     window.__printed = Array.from({ length: printed }, (_, i) => i);
+    //: {index: paragraphs printed} for the one partial article, or {}.
+    window.__partial = partial ? { [partial.index]: partial.paras } : {};
     window.__pages = document.querySelectorAll('.page').length;
     window.__layoutDone = true;
   }
