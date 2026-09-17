@@ -38,8 +38,9 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
    `TASKS_TOKEN` is needed for the phone sync, the `SMTP_*` set for
    emailing the PDF, the `IMAP_*` set only if a paid Substack needs the
    email route. See `.env.example` for each one.
-3. Open `http://<unraid-ip>:8080/`, log in with any username and
-   `WEB_PASSWORD`, and work through the tabs:
+3. Open `http://<unraid-ip>:8080/`. The browser shows a username and
+   password prompt: the username is ignored (type anything), the password
+   is `WEB_PASSWORD`. Then work through the tabs:
    - **Output**: pick the printer (Discover, or type its IP, then Test and
      Print test page), and/or enable email with the recipients; set the
      time and days.
