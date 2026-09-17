@@ -34,6 +34,38 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Check the Docker Hub secrets look sane
+        # Never prints the values: only lengths and shape, so a bad paste
+        # (trailing newline, email instead of username, quotes around the
+        # token) is diagnosed here instead of as a cryptic login error.
+        env:
+          U: ${{ secrets.DOCKERHUB_USERNAME }}
+          T: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          u, t = os.environ.get("U", ""), os.environ.get("T", "")
+          bad = []
+          def shape(name, v):
+              print(f"{name}: length {len(v)}, "
+                    f"leading/trailing whitespace: {v != v.strip()}, "
+                    f"contains newline: {chr(10) in v or chr(13) in v}, "
+                    f"non-ascii: {any(ord(c) > 126 for c in v)}, "
+                    f"quotes: {any(q in v for q in '\'\"')}")
+          shape("DOCKERHUB_USERNAME", u); shape("DOCKERHUB_TOKEN", t)
+          if not u: bad.append("DOCKERHUB_USERNAME is empty")
+          elif u != u.strip() or "\n" in u: bad.append("DOCKERHUB_USERNAME has whitespace or a newline around it")
+          elif "@" in u: bad.append("DOCKERHUB_USERNAME looks like an email; use the Docker Hub ID from hub.docker.com/u/<id>")
+          elif not re.fullmatch(r"[a-z0-9]{4,30}", u): bad.append("DOCKERHUB_USERNAME must be 4-30 lowercase letters/digits")
+          if not t: bad.append("DOCKERHUB_TOKEN is empty")
+          elif t != t.strip() or "\n" in t: bad.append("DOCKERHUB_TOKEN has whitespace or a newline around it")
+          elif any(q in t for q in "'\""): bad.append("DOCKERHUB_TOKEN contains quote characters; paste the bare token")
+          elif t.lower().startswith("bearer "): bad.append("DOCKERHUB_TOKEN must not start with 'Bearer '")
+          elif not t.startswith("dckr_pat_"): print("note: DOCKERHUB_TOKEN does not start with dckr_pat_ (a personal access token); an account password or org token may also work")
+          for b in bad: print("::error::" + b)
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
