@@ -11,7 +11,7 @@
   <Project/>
   <Overview>
     Personal Paper: a one-reader morning newspaper, called whatever its
-    reader types on the Look tab. It gathers the day's calendar, tasks,
+    reader types on the Look tab. It gathers the day's calendar, lists,
     weather and Substack posts, renders a black-and-white US Letter
     broadsheet as a PDF, and prints it over IPP and/or emails it, on a
     schedule set from its own web page.
@@ -42,7 +42,7 @@
     Target="8080"
     Default="8080"
     Mode="tcp"
-    Description="The settings, preview and status page, and POST /tasks for the iPhone Shortcut. On host networking this port must be free on the box."
+    Description="The settings, preview and status page, and POST /lists/&lt;slug&gt; for the iPhone Shortcut. On host networking this port must be free on the box."
     Type="Port"
     Display="always"
     Required="true"
@@ -52,7 +52,7 @@
     Target="/data"
     Default="/mnt/user/appdata/personal-paper"
     Mode="rw"
-    Description="settings.json, state.json, tasks.json, logs/, out/ and the PDF archive. Nothing secret is kept here."
+    Description="settings.json, state.json, lists/, logs/, out/ and the PDF archive. Nothing secret is kept here."
     Type="Path"
     Display="always"
     Required="true"
@@ -82,7 +82,7 @@
     Target="TASKS_TOKEN"
     Default=""
     Mode=""
-    Description="Bearer token the iPhone Shortcut sends to POST /tasks. Leave empty to disable the task endpoint."
+    Description="Bearer token the iPhone Shortcut sends to POST /lists/&lt;slug&gt;. Optional; each list also accepts its own slug as the bearer token, and with this empty a post with no Authorization header at all is accepted too."
     Type="Variable"
     Display="always"
     Required="false"

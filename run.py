@@ -94,7 +94,7 @@ def empty_data() -> dict[str, Any]:
             "hourly": [],
         },
         "events": [],
-        "tasks": [],
+        "lists": [],
         "articles": [],
         "crossword": None,
     }

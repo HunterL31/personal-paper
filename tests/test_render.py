@@ -81,6 +81,48 @@ def test_every_printed_article_is_continued_on_page_two(rendered):
     assert "Continued on Page 2" in result.laid_out_html
 
 
+# ------------------------------------------------------------ the layout
+#: `look.layout` spelled out with the values that are its defaults. The
+#: paper this produces must be the paper the defaults produce, to the pixel:
+#: rearranging is something the reader asks for, never something she gets.
+DEFAULT_LAYOUT = {
+    "sections": [
+        {"key": "agenda", "place": "rail"},
+        {"key": "list:tasks", "place": "rail"},
+        {"key": "hourly", "place": "rail"},
+        {"key": "notes", "place": "rail"},
+    ],
+    "rail_width_in": 1.9,
+    "front_stories": 4,
+    "crossword_place": "bottom",
+    "crossword_cell_in": 0.19,
+    "crossword_max_pct": 55,
+}
+
+#: The rail of the paper as it has always been set.
+DEFAULT_RAIL = ["Today", "To do", "Hour by hour", "Notes"]
+
+
+def test_the_default_layout_is_the_paper_as_it_was(sample_data, tmp_path):
+    """Spelling the defaults out changes nothing, down to the pixels."""
+    from bs4 import BeautifulSoup
+
+    plain = render(sample_data, None, tmp_path / "implicit", png=True)
+    spelled = render(sample_data, {"layout": DEFAULT_LAYOUT}, tmp_path / "explicit", png=True)
+
+    assert plain.pages == spelled.pages == 2
+    assert plain.printed == spelled.printed == SAMPLE_PRINTED
+    assert plain.partial == spelled.partial == {}
+    assert [q.read_bytes() for q in plain.pngs] == [q.read_bytes() for q in spelled.pngs], \
+        "the default layout must render the same page images as no layout at all"
+
+    for html in (plain.laid_out_html, spelled.laid_out_html):
+        soup = BeautifulSoup(html, "html.parser")
+        assert [h.get_text() for h in soup.select("#page-1 .rail h3")] == DEFAULT_RAIL
+        assert soup.select("#page-2 .page2-rail") == []      # nothing is on page 2 by default
+        assert "--rail-w: 1.9in" in html
+
+
 def test_dropping_a_story_reflows_the_second_row(rendered):
     """Three stories printed means two in the row, not three."""
     _, result = rendered

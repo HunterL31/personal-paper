@@ -36,6 +36,10 @@ the paper's name is whatever its one reader types on the Look tab
   bookkeeping and is stripped before the file is written.
   `crossword` is nullable: the puzzle object `gather/crossword.py` returns, or
   `null` on any morning without one. It never carries the answers.
+  `lists` replaces the old `tasks`: one entry per list configured on the
+  Sources tab, in that order, `{"name", "slug", "style", "items"}`, with
+  `items: []` when the phone did not sync. Where each one goes is
+  `look.layout.sections`, not the data.
 - `app/settings.py` is the settings contract. Extend it deliberately.
 - `DATA_DIR` env (default `/data`) is where state, settings, archive, logs live.
 - Each gatherer: `fetch(settings) -> <its part>` plus a `__main__` printing JSON.

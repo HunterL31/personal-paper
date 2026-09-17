@@ -103,7 +103,7 @@ td input[type="text"], td input[type="number"] { max-width: 100%; }
 .env td:first-child { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .mono, code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.82rem; }
 pre.log { border: var(--rule); padding: 0.6rem; overflow-x: auto; max-height: 34rem; overflow-y: auto; white-space: pre-wrap; }
-.panel { border: var(--rule); padding: 0.6rem 0.8rem; font-size: 0.88rem; }
+.panel { border: var(--rule); padding: 0.6rem 0.8rem; font-size: 0.88rem; margin: 0 0 0.8rem; }
 .panel p { margin: 0.25rem 0; }
 
 /* ---------------------------------------------------------- preview */

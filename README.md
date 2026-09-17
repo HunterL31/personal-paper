@@ -4,8 +4,8 @@ The paper's name, its fonts and its whole look are set per deployment on the
 Look tab; the sample issue calls itself "Personal Paper" only until you type
 your own name for it there.
 
-A one-reader morning newspaper: the reader's calendar, to-do list and weather
-in the rail, and the newest posts from the Substacks they read on the front
+A one-reader morning newspaper: the reader's calendar, their own lists and
+the weather in the rail, and the newest posts from the Substacks they read on the front
 page, printed exactly as their authors wrote them. Rendered every morning in a
 Docker container on the Unraid box, then printed on the Brother and/or
 emailed as a PDF.
@@ -16,15 +16,15 @@ code: [`CLAUDE.md`](CLAUDE.md).
 ## How it runs
 
 One container, one process. A FastAPI app serves a password-protected
-settings page on port 8080, accepts the phone's task sync, and runs an
+settings page on port 8080, accepts the phone's list syncs, and runs an
 in-process scheduler that produces the paper at the time set on the page.
 
 ```
-scheduler ─▶ gather (calendar, weather, substack, tasks) ─▶ render (Chromium) ─▶ archive ─▶ print / email
+scheduler ─▶ gather (calendar, weather, substack, lists) ─▶ render (Chromium) ─▶ archive ─▶ print / email
 ```
 
 Everything persistent lives under `/data`: `settings.json` (the page's
-settings), `state.json` (issue counter, seen posts), `tasks.json`,
+settings), `state.json` (issue counter, seen posts), `lists/<slug>.json`,
 `archive/<date>.pdf`, `out/<date>/` (that day's data and HTML) and
 `logs/run.log`.
 
@@ -37,7 +37,8 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
 2. Fill in the variables. None is required to start. `WEB_PASSWORD` puts a
    login on the page; leave it empty and the page is open to anyone on
    your network, which the page itself points out.
-   `TASKS_TOKEN` is needed for the phone sync, the `SMTP_*` set for
+   `TASKS_TOKEN` guards the phone sync (optional: each list also accepts
+   its own slug as the token), the `SMTP_*` set for
    emailing the PDF, `NYT_S` for the crossword, and the `IMAP_*` set only
    if a paid Substack needs the email route. See `.env.example` for each
    one.
@@ -49,9 +50,11 @@ settings), `state.json` (issue counter, seen posts), `tasks.json`,
      time and days.
    - **Sources**: paste the calendar's secret iCal address, list the
      Substacks in priority order, set the weather location, switch the
-     crossword on if you want one, and follow the Shortcut instructions
-     for tasks.
-   - **Look**: fonts, size, name, ear text. Check it on **Preview**.
+     crossword on if you want one, and name your lists and follow the
+     Shortcut instructions beside each of them.
+   - **Look**: fonts, size, name, ear text, and the Layout table that says
+     which sections go in the rail, which go on page 2 and which are off.
+     Check it on **Preview**.
 
 With `docker compose` instead: copy `.env.example` to `.env`, fill it in,
 `docker compose up -d`.
@@ -59,23 +62,30 @@ With `docker compose` instead: copy `.env.example` to `.env`, fill it in,
 Host networking is what lets the page discover the printer over mDNS. On
 bridge networking discovery finds nothing and the printer is entered by IP.
 
-## The phone: tasks
+## The phone: lists
 
-There is no API for the tasks app, so the phone pushes. An iPhone Shortcut
-personal automation, a few minutes before print time, collects today's
-tasks and sends them:
+There is no API for the list apps, so the phone pushes. An iPhone Shortcut
+personal automation, a few minutes before print time, collects a list and
+sends it to that list's own address:
 
 ```
-POST http://<unraid-ip>:8080/tasks
-Authorization: Bearer <TASKS_TOKEN>
+POST http://<unraid-ip>:8080/lists/tasks
+Authorization: Bearer tasks
 Content-Type: application/json
 
-{"tasks": ["Return library books", "Water the fig tree"]}
+{"items": ["Return library books", "Water the fig tree"]}
 ```
 
-A plain-text body with one task per line also works. If the file is older
-than the age set on the Sources tab, the paper prints an empty to-do list
-and logs "tasks not synced" rather than yesterday's list.
+The bearer token is either the list's slug (as above — it is already in the
+URL, so it is no secret) or the container's `TASKS_TOKEN` if you set one;
+with no `TASKS_TOKEN` set, no header at all is accepted too. A plain-text
+body with one item per line works, and so does `{"tasks": [...]}`. If a
+list's file is older than the age set on the Sources tab, that section
+prints empty and the log says "list <slug> not synced" rather than
+yesterday's list.
+
+`POST /tasks` is still the `tasks` list, so a Shortcut made before lists had
+names keeps working.
 
 ## Publishing the image
 
@@ -228,46 +238,68 @@ stored and no login is scripted — the cookie is copied by hand from a
 browser that is already signed in. If the fetch fails for any reason the
 paper prints without a puzzle; nothing here can stop the morning's paper.
 
-### Tasks (from the phone)
+### Lists (from the phone)
 
-There is no API for the tasks app, so an iPhone Shortcut pushes today's
-list every morning before print time.
+Each list is a row in the **Lists** table on the Sources tab: a name, the
+style it is set in (checkboxes, plain lines or numbers), and how old a sync
+may be before the section prints empty instead of stale. Saving the row
+works out its **slug** — "Weekend shopping" becomes `weekend-shopping` —
+and the slug never changes afterwards, because it is half of the address
+the phone is set up with. Under the table, each list has a box with its own
+address and the exact header, with copy buttons.
 
-1. Set the container variable `TASKS_TOKEN` to a long random string
-   (anything; it only has to match what the Shortcut sends). Apply.
-2. The Sources tab shows the exact URL and header to use. It is:
+A new list is added to the rail by itself; move it to page 2, or switch it
+off, in the Layout table on the Look tab.
+
+1. Optionally set the container variable `TASKS_TOKEN` to a long random
+   string and apply. It is not required: a list also accepts its own slug
+   as the token, and with no `TASKS_TOKEN` set a post with no Authorization
+   header at all is accepted.
+2. The Sources tab shows the exact URL and header for each list. They are:
 
    ```
-   POST http://<unraid-ip>:8080/tasks
-   Authorization: Bearer <TASKS_TOKEN>
+   POST http://<unraid-ip>:8080/lists/<slug>
+   Authorization: Bearer <slug>
    Content-Type: application/json
-   {"tasks": ["first task", "second task"]}
+   {"items": ["first item", "second item"]}
    ```
 
-   A `text/plain` body with one task per line also works. The line is
-   built from the address your browser is using, so if the box is behind
-   a reverse proxy or answers on another port from the phone's side, type
-   the right address into **Address the phone posts to** on the same tab
-   and the line follows it. Beside the Authorization line the page shows
-   the first four characters of the token the container is holding, so
-   you can tell at a glance whether the Shortcut is sending the same one.
-3. On the iPhone, open Shortcuts and create a shortcut:
-   - An action that produces today's tasks as text. With Apple Reminders:
-     **Find Reminders** where *Is Completed* is false and *Due Date* is
-     today, then **Combine Text** with a new line. If the tasks app has
-     its own Shortcuts actions, use those instead; if it has none,
-     Reminders is the fallback.
+   A `text/plain` body with one item per line also works, and `{"tasks":
+   [...]}` is still read. The address is built from the address your
+   browser is using, so if the box is behind a reverse proxy or answers on
+   another port from the phone's side, type the right address into
+   **Address the phone posts to** on the same tab and every box follows it.
+   With a `TASKS_TOKEN` set, the box also offers `Bearer <TASKS_TOKEN>` and
+   shows the first four characters of the token the container is holding,
+   so you can tell at a glance whether the Shortcut is sending the same one.
+3. On the iPhone, open Shortcuts and create one shortcut per list:
+   - An action that produces that list as text. With Apple Reminders:
+     **Find Reminders** where *Is Completed* is false and *List* is the one
+     you want (and, for the to-do list, *Due Date* is today), then
+     **Combine Text** with a new line. If the list app has its own
+     Shortcuts actions, use those instead.
    - **Get Contents of URL**: URL as above, Method POST, one header
      `Authorization` whose value is the word `Bearer`, a space, and the
-     token itself (no angle brackets: if the token is `test`, the value is
-     `Bearer test`; the Sources tab has a button that copies the exact
-     value), Request Body = File, pick the combined text. A Content-Type
-     header is not needed; either text lines or JSON is accepted.
-4. Run it once by hand and look at the Sources tab: it shows how many
-   tasks were received and when.
+     slug or the token itself (no angle brackets: for the list
+     `groceries` the value is `Bearer groceries`; the Sources tab has a
+     button that copies the exact value), Request Body = File, pick the
+     combined text. A Content-Type header is not needed; either text lines
+     or JSON is accepted.
+4. Run it once by hand and look at the Sources tab: each box shows how many
+   items were received and when.
 5. Automations tab, New, Time of Day, a few minutes before print time,
-   Run Immediately (turn off "Ask Before Running"), and pick the
-   shortcut.
+   Run Immediately (turn off "Ask Before Running"), and pick the shortcut.
 
-If the file is older than the "max age" on the Sources tab when the paper
-runs, the to-do list prints empty rather than stale.
+### Layout (on the Look tab)
+
+The **Layout** table is where each section of furniture goes: `Today`, the
+hours, the notes box and one row per list. Each row has an order number and
+a place. Sections in the **rail** fill page 1's right column top to bottom,
+in that order; sections on **page 2** go in a column beside the
+continuations; **off** leaves one out entirely. Beside the table are the
+rail's width, how many stories the front page may hold (1–4), and where the
+crossword sits on page 2 with its square size and the most of the page it
+may take.
+
+Changing any of it changes how much fits, never a word of an article. Judge
+it on the **Preview** tab before it hits paper.

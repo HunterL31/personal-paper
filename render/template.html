@@ -1,7 +1,7 @@
 <!doctype html>
 {#
   `look` is app.settings.Look.model_dump() (render.py fills in the defaults),
-  `paper`, `weather`, `events`, `tasks`, `articles` are the gather output.
+  `paper`, `weather`, `events`, `lists`, `articles` are the gather output.
   The name, imprint, price and both ears come from `look`; the volume and
   date come from `paper`.  Nothing here may change an article's words.
 #}
@@ -19,7 +19,100 @@
 {% set head_family     = FONTS.get(look.headline_font, FONTS["Old Standard"]) %}
 {% set body_family     = FONTS.get(look.body_font, FONTS["PT Serif"]) %}
 {% set s = (look.body_size_pt | float) / 9.0 %}
-{% set row_articles = articles[1:4] %}
+
+{#
+  ---- The arrangement, from `look.layout` (app.settings.Look.layout) ----
+
+  Which sections are on the sheet, in what order, and on which side of it:
+  "rail" is the right-hand column of page 1, "page2" a column of the same
+  width down the right of page 2, "off" is not printed. Everything here is
+  read defensively -- a key this template does not know is ignored, a
+  `list:<slug>` whose list is not in the data is skipped, an out-of-range
+  number is clamped -- because an odd settings file must still print a
+  paper. The defaults reproduce the paper exactly as it was before the
+  Look tab could rearrange it.
+#}
+{% set LAYOUT = look.layout if look.layout is mapping else {} %}
+{% set DEFAULT_SECTIONS = [
+  {"key": "agenda",     "place": "rail"},
+  {"key": "list:tasks", "place": "rail"},
+  {"key": "hourly",     "place": "rail"},
+  {"key": "notes",      "place": "rail"}
+] %}
+{% set sections = LAYOUT.sections if (LAYOUT.sections is defined and LAYOUT.sections is not none) else DEFAULT_SECTIONS %}
+{% set rail_w   = [[LAYOUT.rail_width_in    | default(1.9,  true) | float, 1.5 ] | max, 2.8 ] | min %}
+{% set front_n  = [[LAYOUT.front_stories    | default(4,    true) | int,   1   ] | max, 4   ] | min %}
+{% set cell_pref= [[LAYOUT.crossword_cell_in| default(0.19, true) | float, 0.14] | max, 0.26] | min %}
+{% set xw_pct   = [[LAYOUT.crossword_max_pct| default(55,   true) | float, 25  ] | max, 75  ] | min %}
+{% set xw_top   = LAYOUT.crossword_place is defined and LAYOUT.crossword_place == 'top' %}
+
+{# Page 1 holds the lead and, under it, up to `front_stories - 1` more. #}
+{% set row_articles = articles[1:front_n] %}
+
+{#
+  The reader's lists (`data.lists`): each has a name, a slug the layout
+  refers to, a style for its markers, and its items. render.py turns an
+  older data.json's plain `tasks` into the one list called "To do".
+  The Look tab's older on/off switches are still honoured when they are
+  there: they veto a section the layout would otherwise print.
+#}
+{% set all_lists = lists if (lists is defined and lists) else [] %}
+{% set rail_sections = [] %}
+{% set page2_sections = [] %}
+{% for sec in sections %}
+  {% set key = sec.key | default('', true) | string %}
+  {% set place = sec.place | default('rail', true) | string %}
+  {% set into = rail_sections if place == 'rail' else (page2_sections if place == 'page2' else none) %}
+  {% if into is not none %}
+    {% if key.startswith('list:') %}
+      {% set found = all_lists | selectattr('slug', 'defined') | selectattr('slug', 'equalto', key[5:]) | list %}
+      {% if found and (key != 'list:tasks' or look.get('show_todo', True)) %}
+        {% set _ = into.append({'key': key, 'data': found[0]}) %}
+      {% endif %}
+    {% elif key == 'agenda' %}
+      {% set _ = into.append({'key': key}) %}
+    {% elif key == 'hourly' and look.get('show_hourly', True) %}
+      {% set _ = into.append({'key': key}) %}
+    {% elif key == 'notes' and look.get('show_notes', True) %}
+      {% set _ = into.append({'key': key}) %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+
+{# One section of the reader's own day, wherever it was placed. #}
+{% macro rail_section(sec) %}
+    {%- if sec.key == 'agenda' %}
+      <section class="agenda-box">
+        <h3>Today</h3>
+        <ul class="agenda">
+          {% for e in events %}
+          <li><span class="t">{{ e.time }}</span><span>{{ e.title }}{% if e.where %}<span class="where">{{ e.where }}</span>{% endif %}</span></li>
+          {% endfor %}
+        </ul>
+      </section>
+    {%- elif sec.key == 'hourly' %}
+      <section class="hourly-box">
+        <h3>Hour by hour</h3>
+        <table class="hourly">
+          {% for h in weather.hourly %}<tr><td>{{ h.time }}</td><td class="sky">{{ h.sky }}</td><td class="temp">{{ h.temp }}°</td></tr>{% endfor %}
+        </table>
+        <p class="sun">Sunrise {{ weather.sunrise }}, sunset {{ weather.sunset }}</p>
+      </section>
+    {%- elif sec.key == 'notes' %}
+      <section class="notes">
+        <h3>Notes</h3>
+        <div class="lines"></div>
+      </section>
+    {%- elif sec.data %}
+      {%- set style = sec.data['style'] | default('checkbox', true) %}
+      <section class="list-box">
+        <h3>{{ sec.data['name'] | default('List', true) }}</h3>
+        <ul class="todo">
+          {% for item in sec.data['items'] | default([], true) %}<li>{% if style == 'numbered' %}<span class="num">{{ loop.index }}.</span>{% elif style != 'plain' %}<span class="box"></span>{% endif %}<span>{{ item }}</span></li>{% endfor %}
+        </ul>
+      </section>
+    {%- endif %}
+{%- endmacro %}
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -69,6 +162,9 @@
 
   :root {
     --gutter: 0.16in;      /* space between text columns */
+    /* The reader's own column: the right rail of page 1, and the same
+       measure again on page 2 when she puts a section there. */
+    --rail-w: {{ rail_w | round(3) }}in;
     --masthead: {{ masthead_family | safe }};
     --head: {{ head_family | safe }};
     --body: {{ body_family | safe }};
@@ -140,7 +236,7 @@
   /* ---------- Front page grid ---------- */
   .front-grid {
     flex: 1; min-height: 0; display: grid;
-    grid-template-columns: 1fr 1.9in; column-gap: 0.18in; padding-top: 0.13in;
+    grid-template-columns: 1fr var(--rail-w); column-gap: 0.18in; padding-top: 0.13in;
   }
   .stories { display: flex; flex-direction: column; min-height: 0; }
 
@@ -208,11 +304,23 @@
   .agenda .where { display: block; font-size: var(--rail-small); font-style: italic; }
   .todo li { display: flex; gap: 0.07in; align-items: flex-start; }
   .todo .box { flex: 0 0 auto; width: 0.11in; height: 0.11in; border: 1px solid #000; margin-top: 0.012in; }
+  /* A numbered list counts in the headline face; a plain one has no marker
+     at all, only the dotted rule every list item sits on. */
+  .todo .num { flex: 0 0 auto; font-family: var(--head); font-weight: bold; font-variant-numeric: tabular-nums; }
   .hourly { width: 100%; border-collapse: collapse; font-size: var(--rail-table); }
   .hourly td { padding: 0.03in 0; border-bottom: 1px dotted #000; }
   .hourly td.temp { text-align: right; font-family: var(--head); font-weight: bold; white-space: nowrap; }
   .hourly td.sky { text-align: right; font-style: italic; }
   .sun { font-size: var(--rail-small); margin: 0.06in 0 0; }
+
+  /* The same column on page 2, beside the continuations. Its notes block is
+     a fixed depth there: page 2 has no spare height to give away, and the
+     columns beside it want every line they can get. */
+  .page2-main { flex: 1; min-height: 0; display: flex; column-gap: 0.18in; }
+  .page2-main .cols { flex: 1; min-width: 0; }
+  .page2-rail { flex: 0 0 var(--rail-w); padding-top: 0.13in; }
+  .page2-rail section.notes { flex: 0 0 auto; min-height: 0; }
+  .page2-rail .lines { flex: 0 0 auto; height: 1.5in; }
 
   .front-foot {
     margin-top: 0.1in; padding-top: 0.04in; border-top: 1px solid #000;
@@ -235,6 +343,9 @@
      Furniture, not prose: the clue size is the one thing the script may shrink,
      and only to keep the section inside its share of the page. */
   .xword { flex: 0 0 auto; margin-top: 0.16in; padding-top: 0.09in; border-top: 3px double #000; }
+  /* At the top of page 2 the puzzle keeps its rule, turned over: the double
+     line now closes it off from the continuations underneath. */
+  .xword.top { margin: 0.1in 0 0; padding: 0 0 0.1in; border-top: 0; border-bottom: 3px double #000; }
   .xw-head { display: flex; align-items: baseline; column-gap: 0.12in; margin: 0 0 0.07in; }
   .xw-head h3 { font-family: var(--head); font-weight: bold; font-size: var(--cols-head); line-height: 1; margin: 0; }
   .xw-head .byline { margin: 0; }
@@ -293,7 +404,7 @@
     <span>{{ look.price }}</span>
   </div>
 
-  <main class="front-grid">
+  <main class="front-grid"{% if not rail_sections %} style="grid-template-columns: 1fr;"{% endif %}>
     <div class="stories">
       {% set a = articles[0] %}
       {% if articles %}
@@ -319,39 +430,11 @@
       {% endif %}
     </div>
 
+    {% if rail_sections %}
     <aside class="rail">
-      <section>
-        <h3>Today</h3>
-        <ul class="agenda">
-          {% for e in events %}
-          <li><span class="t">{{ e.time }}</span><span>{{ e.title }}{% if e.where %}<span class="where">{{ e.where }}</span>{% endif %}</span></li>
-          {% endfor %}
-        </ul>
-      </section>
-      {% if look.show_todo %}
-      <section>
-        <h3>To do</h3>
-        <ul class="todo">
-          {% for t in tasks %}<li><span class="box"></span><span>{{ t }}</span></li>{% endfor %}
-        </ul>
-      </section>
-      {% endif %}
-      {% if look.show_hourly %}
-      <section>
-        <h3>Hour by hour</h3>
-        <table class="hourly">
-          {% for h in weather.hourly %}<tr><td>{{ h.time }}</td><td class="sky">{{ h.sky }}</td><td class="temp">{{ h.temp }}°</td></tr>{% endfor %}
-        </table>
-        <p class="sun">Sunrise {{ weather.sunrise }}, sunset {{ weather.sunset }}</p>
-      </section>
-      {% endif %}
-      {% if look.show_notes %}
-      <section class="notes">
-        <h3>Notes</h3>
-        <div class="lines"></div>
-      </section>
-      {% endif %}
+      {%- for sec in rail_sections %}{{ rail_section(sec) }}{% endfor %}
     </aside>
+    {% endif %}
   </main>
 
   <footer class="front-foot">
@@ -366,26 +449,32 @@
    risking the morning's paper over it. #}
 {% set puzzle = crossword if (crossword and crossword.grid and crossword.width) else None %}
 {% if puzzle %}
-{# The grid is square: 0.19in cells for a 15x15 (2.85in), shrunk so that a
-   21x21 Sunday is no wider than 3.6in. Clue numbers stay legible in print. #}
-{% set cell_in = [0.19, 3.6 / puzzle.width] | min %}
+{# The grid is square, its cell the size the reader set (0.19in by default: a
+   15x15 is then 2.85in), shrunk when it has to be so that the grid keeps to
+   3.6in of the 7.6in measure -- a 21x21 Sunday, or a large cell on a normal
+   week -- and the clues always have their half of the page. #}
+{% set cell_in = [cell_pref, 3.6 / puzzle.width] | min %}
 {# The clue block beside the grid takes what the grid leaves of the 7.6in
    text measure; the overflow block under the grid keeps the same column
    width across the full measure. #}
 {% set beside_w = 7.6 - cell_in * puzzle.width - 0.17 %}
 {% set n_beside = 4 if cell_in * puzzle.width <= 3.1 else 3 %}
 {% set n_under = (7.6 * n_beside / beside_w) | round | int %}
+{# Clue numbers and clue type follow the cell, in proportion to the cell this
+   grid would have had by default, and within limits that keep both legible on
+   paper. A reader who has not touched the cell size gets exactly the numbers
+   and the 6.5pt clues the paper has always had; a bigger cell is a bigger,
+   airier puzzle, and the script still shrinks the clues if they overrun. #}
+{% set default_cell = [0.19, 3.6 / puzzle.width] | min %}
+{% set xw_scale = cell_in / default_cell %}
+{% set num_pt = [[((5 if puzzle.width <= 15 else 4) * xw_scale), 3.5] | max, 7] | min %}
+{% set clue_pt = [[6.5, (6.5 * xw_scale)] | max, 8] | min %}
 {% endif %}
-<section class="page inside" id="page-2">
-  <div class="folio">
-    <span>{{ look.paper_name }}</span>
-    <span>{{ paper.date }}</span>
-    <span>Page 2</span>
-  </div>
-  <div class="cols"></div>
-  {% if puzzle %}
-  <section class="xword" id="xword"
-           style="--cell: {{ cell_in | round(4) }}in; --xw-num: {{ 5 if puzzle.width <= 15 else 4 }}pt;
+
+{% macro xword_block() %}
+  <section class="xword{% if xw_top %} top{% endif %}" id="xword"
+           data-max-pct="{{ xw_pct | round(2) }}" data-clue-pt="{{ clue_pt | round(2) }}"
+           style="--cell: {{ cell_in | round(4) }}in; --xw-num: {{ num_pt | round(2) }}pt;
                   --xw-cols: {{ n_beside }}; --xw-cols-under: {{ n_under }};">
     <div class="xw-head">
       <h3>The Crossword</h3>
@@ -409,7 +498,25 @@
     </div>
     <div class="xw-clues xw-under" id="xw-clues-under"></div>
   </section>
-  {% endif %}
+{% endmacro %}
+<section class="page inside" id="page-2">
+  <div class="folio">
+    <span>{{ look.paper_name }}</span>
+    <span>{{ paper.date }}</span>
+    <span>Page 2</span>
+  </div>
+  {% if puzzle and xw_top %}{{ xword_block() }}{% endif %}
+  {%- if page2_sections %}
+  <div class="page2-main">
+  {%- endif %}
+  <div class="cols"></div>
+  {%- if page2_sections %}
+    <aside class="rail page2-rail">
+      {%- for sec in page2_sections %}{{ rail_section(sec) }}{% endfor %}
+    </aside>
+  </div>
+  {%- endif %}
+  {% if puzzle and not xw_top %}{{ xword_block() }}{% endif %}
 </section>
 
 <script>
@@ -535,8 +642,9 @@
   function fitCrossword() {
     const xw = document.getElementById('xword');
     if (!xw) return;
-    const cap = 0.55 * 11 * PX_PER_IN;
-    for (const size of [6.5, 6.25, 6, 5.75, 5.5, 5.25, 5, 4.75, 4.5]) {
+    const cap = (+xw.dataset.maxPct || 55) / 100 * 11 * PX_PER_IN;
+    const start = +xw.dataset.cluePt || 6.5;
+    for (let size = start; size >= 4.5 - 1e-9; size -= 0.25) {
       xw.style.setProperty('--xw-clue', size + 'pt');
       spreadClues();
       if (rect(xw).height <= cap) break;
@@ -669,9 +777,9 @@
     }
     if (!printed) attempt(0, null);                   // a paper with no stories in it
 
-    // Ruled lines for the notes box: as many whole lines as the leftover rail space holds.
-    const lines = document.querySelector('.rail .lines');
-    if (lines) for (let i = 0; i < 80; i++) { const d = el('div'); lines.appendChild(d); if (spills(d, lines)) { d.remove(); break; } }
+    // Ruled lines for each notes box: as many whole lines as its space holds.
+    for (const lines of document.querySelectorAll('.lines'))
+      for (let i = 0; i < 80; i++) { const d = el('div'); lines.appendChild(d); if (spills(d, lines)) { d.remove(); break; } }
 
     //: The articles that were printed, by their index in `articles`: the
     //: whole ones and, last, the partial one if there is one. The rest were

@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import jobs, scheduler
-from app.settings import CalendarSource, Schedule, Settings, SubstackSource
+from app.settings import CalendarSource, ListSource, Schedule, Settings, SubstackSource
 
 AUTH = ("reader", "pw")
 
@@ -102,7 +102,6 @@ def test_saving_look_keeps_the_other_sections(client):
             "body_font": "EB Garamond",
             "body_size_pt": "10.5",
             "lead_body_height_in": "3.1",
-            "show_todo": "on",
         },
         follow_redirects=False,
     )
@@ -115,8 +114,10 @@ def test_saving_look_keeps_the_other_sections(client):
     assert saved.look.lead_body_height_in == 3.1
     assert saved.look.masthead_font == "UnifrakturCook"
     assert saved.look.ear.lines == ["One line", "Another line"]
-    assert saved.look.show_todo is True
-    assert saved.look.show_hourly is False        # unchecked boxes are off
+    # A save that does not touch the Layout table leaves it alone.
+    assert [s.key for s in saved.look.layout.sections] == [
+        "agenda", "list:tasks", "hourly", "notes"
+    ]
     # The other tabs' sections are untouched.
     assert saved.output.email.to == ["her@example.com"]
     assert saved.output.schedule.time == "05:45"
@@ -128,6 +129,92 @@ def test_look_ignores_an_unknown_font_and_clamps_the_size(client):
     look = Settings.load().look
     assert look.body_font == "PT Serif"
     assert look.body_size_pt == 11.0
+
+
+def test_the_look_tab_saves_the_layout(client):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.sync_list_sections()
+    settings.save()
+
+    # The table submits one `sec_key` per row, with the order and place
+    # boxes numbered by row.
+    client.post(
+        "/look",
+        auth=AUTH,
+        data={
+            "paper_name": "The Evening Ledger",
+            "sec_key": ["agenda", "list:tasks", "hourly", "notes", "list:groceries"],
+            "sec_order_0": "2", "sec_place_0": "rail",
+            "sec_order_1": "1", "sec_place_1": "rail",
+            "sec_order_2": "4", "sec_place_2": "page2",
+            "sec_order_3": "5", "sec_place_3": "off",
+            "sec_order_4": "3", "sec_place_4": "page2",
+            "rail_width_in": "2.4",
+            "front_stories": "2",
+            "crossword_place": "top",
+            "crossword_cell_in": "0.22",
+            "crossword_max_pct": "40",
+        },
+    )
+
+    layout = Settings.load().look.layout
+    assert [(s.key, s.place) for s in layout.sections] == [
+        ("list:tasks", "rail"),
+        ("agenda", "rail"),
+        ("list:groceries", "page2"),
+        ("hourly", "page2"),
+        ("notes", "off"),
+    ]
+    assert layout.rail_width_in == 2.4
+    assert layout.front_stories == 2
+    assert layout.crossword_place == "top"
+    assert layout.crossword_cell_in == 0.22
+    assert layout.crossword_max_pct == 40
+
+
+def test_the_layout_numbers_are_clamped_and_unknown_sections_ignored(client):
+    client.post(
+        "/look",
+        auth=AUTH,
+        data={
+            "sec_key": ["agenda", "list:nosuchlist", "hourly", "notes"],
+            "sec_order_0": "1", "sec_place_0": "sideways",     # not a place
+            "sec_order_1": "2", "sec_place_1": "rail",
+            "sec_order_2": "3", "sec_place_2": "off",
+            "sec_order_3": "4", "sec_place_3": "rail",
+            "rail_width_in": "9",
+            "front_stories": "12",
+            "crossword_cell_in": "0.01",
+            "crossword_max_pct": "1",
+        },
+    )
+    layout = Settings.load().look.layout
+    # The section naming a list that does not exist is dropped, and the
+    # list that does exist gets its section back at the end of the rail.
+    assert [(s.key, s.place) for s in layout.sections] == [
+        ("agenda", "rail"), ("hourly", "off"), ("notes", "rail"), ("list:tasks", "rail")
+    ]
+    assert layout.rail_width_in == 2.8
+    assert layout.front_stories == 4
+    assert layout.crossword_cell_in == 0.14
+    assert layout.crossword_max_pct == 25
+
+
+def test_the_look_tab_lists_every_section_with_its_list_name(client):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Weekend shopping"))
+    settings.sync_list_sections()
+    settings.save()
+
+    body = client.get("/look", auth=AUTH).text
+    assert "<h2>Layout</h2>" in body
+    assert 'value="list:weekend-shopping"' in body
+    assert "Weekend shopping" in body
+    assert "Hour by hour" in body and "Notes" in body
+    assert 'name="rail_width_in"' in body and 'name="front_stories"' in body
+    assert 'name="crossword_cell_in"' in body and 'name="crossword_max_pct"' in body
+    assert "Sections in the rail fill page 1" in body
 
 
 def test_saving_output_persists_and_reschedules(client, monkeypatch):
@@ -187,7 +274,10 @@ def test_saving_sources_keeps_masked_urls_and_adds_rows(client):
             "lat": "37.87",
             "lon": "-122.27",
             "article_max_age_days": "14",
-            "tasks_max_age_hours": "12",
+            "list_index": "0",
+            "list_name_0": "To do",
+            "list_style_0": "numbered",
+            "list_max_age_0": "12",
             "tasks_post_url": "http://paper.lan:9000/",
         },
     )
@@ -199,8 +289,115 @@ def test_saving_sources_keeps_masked_urls_and_adds_rows(client):
     assert [(s.name, s.paid) for s in sources.substacks] == [("oneuseful", True)]
     assert sources.weather.lat == 37.87
     assert sources.article_max_age_days == 14
-    assert sources.tasks_max_age_hours == 12
+    assert [(li.slug, li.style, li.max_age_hours) for li in sources.lists] == [
+        ("tasks", "numbered", 12)
+    ]
     assert sources.tasks_post_url == "http://paper.lan:9000"   # the slash is dropped
+
+
+def test_adding_a_list_gives_it_a_slug_a_section_and_a_box(client):
+    response = client.post(
+        "/sources",
+        auth=AUTH,
+        data={
+            "list_index": "0", "list_name_0": "To do",
+            "list_style_0": "checkbox", "list_max_age_0": "24",
+            "list_new": ["n0", "n1"],
+            "list_new_name_n0": "Weekend shopping!",
+            "list_new_style_n0": "numbered",
+            "list_new_max_age_n0": "72",
+            "list_new_name_n1": "",                       # left blank: ignored
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    settings = Settings.load()
+    assert [(li.name, li.slug, li.style, li.max_age_hours) for li in settings.sources.lists] == [
+        ("To do", "tasks", "checkbox", 24),
+        ("Weekend shopping!", "weekend-shopping", "numbered", 72),
+    ]
+    # The new list takes its place in the rail without a trip to the Look tab.
+    assert [(s.key, s.place) for s in settings.look.layout.sections] == [
+        ("agenda", "rail"), ("list:tasks", "rail"), ("hourly", "rail"),
+        ("notes", "rail"), ("list:weekend-shopping", "rail"),
+    ]
+
+    body = client.get("/sources", auth=AUTH, headers={"Host": "unraid.local:8080"}).text
+    assert 'href="http://unraid.local:8080/lists/weekend-shopping"' in body
+    assert 'data-copy="http://unraid.local:8080/lists/weekend-shopping"' in body
+    assert 'data-copy="Bearer weekend-shopping"' in body
+    assert "Copy URL" in body and "Copy example body" in body
+    # The slug is shown, read-only, beside the name.
+    assert 'name="list_slug_1" value="weekend-shopping" readonly' in body
+
+    # And it is a working address straight away.
+    assert client.post(
+        "/lists/weekend-shopping",
+        json={"items": ["Cheese"]},
+        headers={"Authorization": "Bearer weekend-shopping"},
+    ).json() == {"ok": True, "list": "weekend-shopping", "count": 1}
+
+
+def test_a_list_keeps_its_slug_when_it_is_renamed(client):
+    client.post(
+        "/sources",
+        auth=AUTH,
+        data={"list_index": "0", "list_name_0": "To do",
+              "list_new": "n0", "list_new_name_n0": "Groceries"},
+    )
+    client.post(
+        "/sources",
+        auth=AUTH,
+        data={
+            "list_index": ["0", "1"],
+            "list_name_0": "To do", "list_name_1": "Shopping",
+        },
+    )
+    settings = Settings.load()
+    assert [(li.name, li.slug) for li in settings.sources.lists] == [
+        ("To do", "tasks"), ("Shopping", "groceries")
+    ]
+
+
+def test_two_lists_with_the_same_name_get_different_slugs(client):
+    client.post(
+        "/sources",
+        auth=AUTH,
+        data={
+            "list_index": "0", "list_name_0": "To do",
+            "list_new": ["n0", "n1"],
+            "list_new_name_n0": "Packing", "list_new_name_n1": "Packing",
+        },
+    )
+    assert Settings.load().sources.slugs() == ["tasks", "packing", "packing-2"]
+
+
+def test_removing_a_list_drops_its_section(client):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.sync_list_sections()
+    settings.save()
+    assert "list:groceries" in [s.key for s in Settings.load().look.layout.sections]
+
+    client.post(
+        "/sources",
+        auth=AUTH,
+        data={
+            "list_index": ["0", "1"],
+            "list_name_0": "To do", "list_name_1": "Groceries",
+            "list_remove_1": "on",
+        },
+    )
+    settings = Settings.load()
+    assert settings.sources.slugs() == ["tasks"]
+    assert [s.key for s in settings.look.layout.sections] == [
+        "agenda", "list:tasks", "hourly", "notes"
+    ]
+    # Its address is gone with it.
+    assert client.post(
+        "/lists/groceries", json={"items": ["Milk"]}, headers={"Authorization": "Bearer tok"}
+    ).status_code == 404
 
 
 def test_several_new_rows_save_at_once(client):
@@ -235,11 +432,11 @@ def test_sources_page_shows_masked_url_and_shortcut_instructions(client):
     body = client.get("/sources", auth=AUTH).text
     assert "abc123456" not in body
     assert "••••123456" in body
-    assert "/tasks" in body and "Bearer" in body
+    assert "/lists/tasks" in body and "Bearer" in body
     assert "TASKS_TOKEN" in body
 
 
-# ------------------------------------------------------------- the tasks box
+# ------------------------------------------------------------ the list boxes
 def test_the_window_field_is_on_the_page(client):
     settings = Settings()
     settings.sources.article_max_age_days = 21
@@ -258,7 +455,7 @@ def test_an_out_of_range_window_is_clamped(client):
 
 def test_the_tasks_box_uses_the_host_the_browser_used(client):
     body = client.get("/sources", auth=AUTH, headers={"Host": "unraid.local:8080"}).text
-    assert 'href="http://unraid.local:8080/tasks"' in body
+    assert 'href="http://unraid.local:8080/lists/tasks"' in body
 
 
 def test_the_tasks_box_falls_back_to_the_lan_address(client, monkeypatch):
@@ -267,7 +464,7 @@ def test_the_tasks_box_falls_back_to_the_lan_address(client, monkeypatch):
 
     monkeypatch.setattr(app_main, "lan_ip", lambda: "192.168.1.50")
     body = client.get("/sources", auth=AUTH, headers={"Host": "127.0.0.1:8080"}).text
-    assert 'href="http://192.168.1.50:8080/tasks"' in body
+    assert 'href="http://192.168.1.50:8080/lists/tasks"' in body
     assert "127.0.0.1:8080" not in body
 
 
@@ -276,7 +473,7 @@ def test_the_tasks_box_falls_back_again_when_there_is_no_lan_address(client, mon
 
     monkeypatch.setattr(app_main, "lan_ip", lambda: "")
     body = client.get("/sources", auth=AUTH, headers={"Host": "localhost:8080"}).text
-    assert 'href="http://unraid.local:8080/tasks"' in body
+    assert 'href="http://unraid.local:8080/lists/tasks"' in body
 
 
 def test_the_tasks_box_shows_the_override_when_it_is_set(client, monkeypatch):
@@ -288,8 +485,8 @@ def test_the_tasks_box_shows_the_override_when_it_is_set(client, monkeypatch):
     settings.save()
 
     body = client.get("/sources", auth=AUTH, headers={"Host": "127.0.0.1:8080"}).text
-    assert 'href="http://paper.example.com/tasks"' in body
-    assert 'href="http://192.168.1.50:8080/tasks"' not in body   # the override wins; the derived one stays as the placeholder
+    assert 'href="http://paper.example.com/lists/tasks"' in body
+    assert 'href="http://192.168.1.50:8080/lists/tasks"' not in body   # the override wins; the derived one stays as the placeholder
     # the worked-out address is still offered, as the field's placeholder
     assert 'placeholder="http://192.168.1.50:8080"' in body
 
@@ -541,46 +738,144 @@ def test_email_test_reports_errors(client, monkeypatch):
     assert body["ok"] is False and "SMTP is not configured" in body["error"]
 
 
-# -------------------------------------------------------------- POST /tasks
-def test_tasks_rejects_a_bad_token(client):
-    response = client.post("/tasks", json={"tasks": ["a"]}, headers={"Authorization": "Bearer nope"})
-    assert response.status_code == 401
-    response = client.post("/tasks", json={"tasks": ["a"]})
-    assert response.status_code == 401
+# --------------------------------------------------- POST /lists/<slug>
+def test_a_list_takes_its_own_slug_as_the_token(client, data_dir):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.save()
+
+    response = client.post(
+        "/lists/groceries",
+        json={"items": ["Milk", "Bread"]},
+        headers={"Authorization": "Bearer groceries"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "list": "groceries", "count": 2}
+    stored = json.loads((data_dir / "lists" / "groceries.json").read_text())
+    assert stored["items"] == ["Milk", "Bread"]
 
 
-def test_tasks_without_a_configured_token(client, monkeypatch):
+def test_a_list_also_takes_the_container_token(client, data_dir):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.save()
+
+    response = client.post(
+        "/lists/groceries", json={"items": ["Milk"]}, headers={"Authorization": "Bearer tok"}
+    )
+    assert response.json() == {"ok": True, "list": "groceries", "count": 1}
+
+
+def test_a_list_refuses_a_wrong_token(client):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.save()
+
+    # Neither the container's token nor this list's own slug.
+    assert client.post(
+        "/lists/groceries", json={"items": ["Milk"]}, headers={"Authorization": "Bearer tasks"}
+    ).status_code == 401
+    response = client.post(
+        "/lists/groceries", json={"items": ["Milk"]}, headers={"Authorization": "Bearer nope"}
+    )
+    assert response.status_code == 401 and response.json()["detail"].startswith("bad token")
+
+    # With TASKS_TOKEN set, no header at all is refused too.
+    assert client.post("/lists/groceries", json={"items": ["Milk"]}).status_code == 401
+
+
+def test_without_a_container_token_a_bare_post_is_accepted(client, monkeypatch):
     monkeypatch.delenv("TASKS_TOKEN")
-    response = client.post("/tasks", json={"tasks": ["a"]}, headers={"Authorization": "Bearer tok"})
-    assert response.status_code == 503
-    assert "TASKS_TOKEN" in response.json()["detail"]
+    assert client.post("/lists/tasks", json={"items": ["a"]}).json() == {
+        "ok": True, "list": "tasks", "count": 1
+    }
+    # The slug still works as the token, and anything else is still refused.
+    assert client.post(
+        "/lists/tasks", json={"items": ["a"]}, headers={"Authorization": "Bearer tasks"}
+    ).status_code == 200
+    assert client.post(
+        "/lists/tasks", json={"items": ["a"]}, headers={"Authorization": "Bearer nope"}
+    ).status_code == 401
 
 
-def test_tasks_writes_json_body(client, data_dir):
-    from gather import tasks as tasks_gather
+def test_an_unknown_slug_names_the_lists_there_are(client):
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.save()
 
+    response = client.post(
+        "/lists/packing", json={"items": ["Socks"]}, headers={"Authorization": "Bearer packing"}
+    )
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "packing" in detail and "tasks, groceries" in detail
+
+    # A slug that is not even a slug is the same answer, not a crash.
+    assert client.post("/lists/Not%20A%20Slug", json={"items": []}).status_code == 404
+
+
+def test_the_tasks_alias_still_works(client, data_dir):
     response = client.post(
         "/tasks",
         json={"tasks": ["Call the school", "Buy stamps"]},
         headers={"Authorization": "Bearer tok"},
     )
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "count": 2}
-    stored = json.loads((data_dir / "tasks.json").read_text())
-    assert stored["tasks"] == ["Call the school", "Buy stamps"]
-    assert tasks_gather.status()["count"] == 2
+    assert response.json() == {"ok": True, "list": "tasks", "count": 2}
+    stored = json.loads((data_dir / "lists" / "tasks.json").read_text())
+    assert stored["items"] == ["Call the school", "Buy stamps"]
+
+    from gather import lists as lists_gather
+
+    assert lists_gather.status("tasks")["count"] == 2
 
 
-def test_tasks_accepts_a_plain_text_body(client):
-    from gather import tasks as tasks_gather
+def test_the_alias_takes_the_slug_as_its_token_too(client):
+    assert client.post(
+        "/tasks", json={"items": ["a"]}, headers={"Authorization": "Bearer tasks"}
+    ).json() == {"ok": True, "list": "tasks", "count": 1}
+
+
+def test_a_list_accepts_a_plain_text_body(client):
+    from gather import lists as lists_gather
 
     response = client.post(
-        "/tasks",
+        "/lists/tasks",
         content="Call the school\nBuy stamps\nWater the fig\n",
-        headers={"Authorization": "Bearer tok", "Content-Type": "text/plain"},
+        headers={"Authorization": "Bearer tasks", "Content-Type": "text/plain"},
     )
-    assert response.json() == {"ok": True, "count": 3}
-    assert tasks_gather.status()["count"] == 3
+    assert response.json() == {"ok": True, "list": "tasks", "count": 3}
+    assert lists_gather.status("tasks")["count"] == 3
+
+
+def test_the_endpoint_explains_angle_brackets_and_reads_any_content_type(client, monkeypatch):
+    monkeypatch.setenv("TASKS_TOKEN", "test")
+    r = client.post("/lists/tasks", headers={"Authorization": "Bearer <test>"}, content="x")
+    assert r.status_code == 401 and "angle brackets" in r.json()["detail"]
+
+    r = client.post("/tasks", headers={"Authorization": "Basic test"}, content="x")
+    assert r.status_code == 401 and "must start with Bearer" in r.json()["detail"]
+
+    r = client.post(
+        "/lists/tasks",
+        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
+        content="Water the fig tree\nCall the vet",
+    )
+    assert r.status_code == 200 and r.json()["count"] == 2
+
+    r = client.post(
+        "/lists/tasks",
+        headers={"Authorization": "Bearer test", "Content-Type": "text/plain"},
+        content='{"items": ["one", "two", "three"]}',
+    )
+    assert r.status_code == 200 and r.json()["count"] == 3
+
+    r = client.post(
+        "/lists/tasks",
+        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
+        content='{"items": [broken',
+    )
+    assert r.status_code == 400
 
 
 # ------------------------------------------------------------ archive, log
@@ -739,38 +1034,24 @@ def test_tasks_box_copy_button_is_a_placeholder_on_an_open_page(monkeypatch):
     assert "Set <code>WEB_PASSWORD</code>" in html
 
 
-def test_tasks_box_has_no_header_copy_button_without_a_token(client, monkeypatch):
+def test_the_box_has_no_token_copy_button_without_a_token(client, monkeypatch):
     monkeypatch.delenv("TASKS_TOKEN", raising=False)
     html = client.get("/sources", auth=AUTH).text
-    assert "Copy Authorization header" not in html
-    assert "Copy URL" in html
+    assert "Copy TASKS_TOKEN header" not in html
+    # The slug is not a secret, so its header is always copyable.
+    assert 'data-copy="Bearer tasks"' in html
+    assert "Copy Authorization header" in html and "Copy URL" in html
 
 
-def test_tasks_endpoint_explains_angle_brackets_and_accepts_text_under_a_json_header(client, monkeypatch):
+def test_the_alias_reads_a_tasks_body_under_any_content_type(client, monkeypatch):
+    """The Shortcut that was built for `POST /tasks` keeps working."""
     monkeypatch.setenv("TASKS_TOKEN", "test")
-    r = client.post("/tasks", headers={"Authorization": "Bearer <test>"}, content="x")
-    assert r.status_code == 401 and "angle brackets" in r.json()["detail"]
-
-    r = client.post(
-        "/tasks",
-        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
-        content="Water the fig tree\nCall the vet",
-    )
-    assert r.status_code == 200 and r.json()["count"] == 2
-
     r = client.post(
         "/tasks",
         headers={"Authorization": "Bearer test", "Content-Type": "text/plain"},
         content='{"tasks": ["one", "two", "three"]}',
     )
-    assert r.status_code == 200 and r.json()["count"] == 3
-
-    r = client.post(
-        "/tasks",
-        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
-        content='{"tasks": [broken',
-    )
-    assert r.status_code == 400
+    assert r.status_code == 200 and r.json() == {"ok": True, "list": "tasks", "count": 3}
 
 
 def test_footer_names_the_build(client, monkeypatch):

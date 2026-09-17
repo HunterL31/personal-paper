@@ -30,12 +30,30 @@
     {"time": "3:00", "title": "Dentist", "where": "Dr. Okafor, suite 210"},
     {"time": "6:30", "title": "Dinner reservation for two"}
   ],
-  "tasks": [
-    "Return library books",
-    "Call the vet about Biscuit's appointment",
-    "Order more coffee beans",
-    "Send Mom the photos from Saturday",
-    "Water the fig tree"
+  "lists": [
+    {
+      "name": "To do",
+      "slug": "tasks",
+      "style": "checkbox",
+      "items": [
+        "Return library books",
+        "Call the vet about Biscuit's appointment",
+        "Order more coffee beans",
+        "Send Mom the photos from Saturday",
+        "Water the fig tree"
+      ]
+    },
+    {
+      "name": "Groceries",
+      "slug": "groceries",
+      "style": "plain",
+      "items": [
+        "Leeks and a bunch of carrots",
+        "Coffee, the dark roast",
+        "A loaf from the Tuesday bakery",
+        "Figs, if they still have them"
+      ]
+    }
   ],
   "articles": [
     {
