@@ -61,10 +61,10 @@ def test_bigger_type_prints_fewer_articles(sample_data, tmp_path):
     ordered = [counts[s] for s in (8.0, 9.0, 10.0, 11.0)]
     assert ordered == sorted(ordered, reverse=True), counts
     assert counts[11.0] < counts[9.0], counts
-    # At 11pt the lead alone is more than the sheet holds, so it prints as far
-    # as it fits rather than leaving the reader a paper with no stories in it.
+    # At 11pt only the lead fits; alone on the front it takes the whole page,
+    # whole or as far as it fits, rather than leaving a paper with no stories.
     assert counts[11.0] == 1, counts
-    assert list(partials[11.0]) == [0] and partials[11.0][0] >= 1, partials[11.0]
+    assert not partials[11.0] or list(partials[11.0]) == [0], partials[11.0]
 
 
 @pytest.mark.parametrize("size", [8.0, 9.5, 11.0])

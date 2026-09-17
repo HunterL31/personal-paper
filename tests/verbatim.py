@@ -186,3 +186,15 @@ def assert_verbatim(result, articles: list[dict]) -> None:
             assert opening not in printed_text, (
                 f"article {i}, {article['title']!r}: {opening!r} was held back but is on the sheet"
             )
+
+
+def lengthen(article: dict, times: int = 3) -> dict:
+    """A copy of `article` with its paragraphs repeated `times` over, each
+    made distinct with a leading ordinal so the held-back checks stay
+    unambiguous (the same sentence must not be both printed and held)."""
+    import copy
+
+    out = copy.deepcopy(article)
+    paras = article["paragraphs"]
+    out["paragraphs"] = [f"({n}) {p}" for n, p in enumerate(paras * times, start=1)]
+    return out

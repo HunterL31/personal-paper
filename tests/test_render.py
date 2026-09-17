@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from render.render import render
-from tests.verbatim import assert_verbatim, reconstruct
+from tests.verbatim import assert_verbatim, reconstruct, lengthen
 
 SAMPLE = Path(__file__).resolve().parent.parent / "render" / "sample_data.json"
 
@@ -241,15 +241,18 @@ BIG_TYPE = {"body_size_pt": 11.0}
 
 @pytest.fixture(scope="module")
 def partial_issue(tmp_path_factory):
+    """Big type and a lead three times its sample length: more than the
+    sheet holds, so the lead prints as far as it fits and stops."""
     data = json.loads(SAMPLE.read_text())
+    data["articles"][0] = lengthen(data["articles"][0], 3)
     return data, render(data, BIG_TYPE, tmp_path_factory.mktemp("partial"))
 
 
 def test_a_story_that_cannot_fit_whole_is_printed_as_far_as_it_fits(partial_issue):
     data, result = partial_issue
     assert result.printed == [0]
-    assert result.partial == BIG_TYPE_PARTIAL
-    assert len(data["articles"][0]["paragraphs"]) == 10      # eight of the ten printed
+    total = len(data["articles"][0]["paragraphs"])
+    assert list(result.partial) == [0] and 1 <= result.partial[0] < total, (result.partial, total)
     assert_verbatim(result, data["articles"])
 
 
@@ -296,6 +299,7 @@ def test_without_a_url_the_line_just_says_it_is_online(sample_data, tmp_path):
     from bs4 import BeautifulSoup
 
     data = copy.deepcopy(sample_data)
+    data["articles"][0] = lengthen(data["articles"][0], 3)
     for article in data["articles"]:
         article.pop("url")
     result = render(data, BIG_TYPE, tmp_path / "nourl")
