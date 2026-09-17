@@ -35,9 +35,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Check the Docker Hub secrets look sane
-        # Never prints the values: only lengths and shape, so a bad paste
+        # Never prints the token: only lengths and shape, so a bad paste
         # (trailing newline, email instead of username, quotes around the
         # token) is diagnosed here instead of as a cryptic login error.
+        # Docker Hub IDs are lowercase and the registry rejects a mixed-case
+        # login as "malformed", so the username is lowercased here and the
+        # later steps use this step's output rather than the raw secret.
+        id: creds
         env:
           U: ${{ secrets.DOCKERHUB_USERNAME }}
           T: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -56,13 +60,17 @@ jobs:
           if not u: bad.append("DOCKERHUB_USERNAME is empty")
           elif u != u.strip() or "\n" in u: bad.append("DOCKERHUB_USERNAME has whitespace or a newline around it")
           elif "@" in u: bad.append("DOCKERHUB_USERNAME looks like an email; use the Docker Hub ID from hub.docker.com/u/<id>")
-          elif not re.fullmatch(r"[a-z0-9]{4,30}", u): bad.append("DOCKERHUB_USERNAME must be 4-30 lowercase letters/digits")
+          elif not re.fullmatch(r"[A-Za-z0-9]{4,30}", u): bad.append("DOCKERHUB_USERNAME must be 4-30 letters/digits")
+          elif u != u.lower(): print(f"note: DOCKERHUB_USERNAME has uppercase letters; logging in as {u.lower()}")
           if not t: bad.append("DOCKERHUB_TOKEN is empty")
           elif t != t.strip() or "\n" in t: bad.append("DOCKERHUB_TOKEN has whitespace or a newline around it")
           elif any(q in t for q in "'\""): bad.append("DOCKERHUB_TOKEN contains quote characters; paste the bare token")
           elif t.lower().startswith("bearer "): bad.append("DOCKERHUB_TOKEN must not start with 'Bearer '")
           elif not t.startswith("dckr_pat_"): print("note: DOCKERHUB_TOKEN does not start with dckr_pat_ (a personal access token); an account password or org token may also work")
           for b in bad: print("::error::" + b)
+          if not bad:
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"username={u.lower()}\n")
           sys.exit(1 if bad else 0)
           PY
 
@@ -70,14 +78,14 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ steps.creds.outputs.username }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compute tags and labels
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/personal-paper
+          images: ${{ steps.creds.outputs.username }}/personal-paper
           tags: |
             # latest only for pushes to the default branch
             type=raw,value=latest,enable={{is_default_branch}}
