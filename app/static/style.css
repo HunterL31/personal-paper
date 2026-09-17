@@ -155,3 +155,17 @@ footer { border-top: var(--rule); margin-top: 2.5rem; padding-top: 0.4rem; font-
 
 /* copy-to-clipboard buttons beside values worth pasting elsewhere */
 button.copy { font-size: 0.8em; padding: 0.1em 0.5em; margin-left: 0.6em; vertical-align: baseline; }
+
+/* -------------------------------------------- the Substack queue view
+   The queue as the gatherer sees it: what is waiting, then, in grey, what
+   has already been printed and what never will be. */
+.queue { margin: 0 0 1rem; }
+.queue-summary { font-size: 0.9rem; font-weight: bold; margin: 0.2rem 0 0.4rem; }
+.queue table { margin-bottom: 0.2rem; }
+.queue td.pos { font-variant: tabular-nums; color: var(--grey); }
+.queue td.when { white-space: nowrap; }
+.queue td.when .note { font-size: 0.8rem; color: var(--grey); }
+.queue a { color: #000; }
+.queue tbody.muted td, .queue tbody.muted a { color: #777; }
+.queue tr.group td { font-variant: small-caps; color: var(--grey);
+  border-top: var(--rule); padding-top: 0.5rem; }

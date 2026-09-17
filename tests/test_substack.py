@@ -377,3 +377,110 @@ def test_check(feeds):
 
 def test_no_sources_is_no_articles(fake_state):
     assert substack.fetch(settings_for()) == []
+
+
+# -------------------------------------------------------- queue preview
+def test_queue_preview_matches_what_fetch_would_offer(feeds, no_imap, fake_state):
+    """The preview is the queue: same order, numbered from 1."""
+    feeds["https://first.substack.com/feed"] = build_feed(
+        "First", "first",
+        [{"title": "First, newer", "slug": "a",
+          "pubdate": "Tue, 16 Sep 2025 09:00:00 GMT"},
+         {"title": "First, older", "slug": "b",
+          "pubdate": "Sat, 13 Sep 2025 16:00:00 GMT"}],
+    )
+    feeds["https://second.substack.com/feed"] = build_feed(
+        "Second", "second",
+        [{"title": "Second, newest", "slug": "c", "pubdate": "Tue, 16 Sep 2025 10:00:00 GMT"},
+         {"title": "Second, oldest", "slug": "d", "pubdate": "Fri, 12 Sep 2025 09:00:00 GMT"}],
+    )
+    settings = settings_for(SubstackSource(name="first"), SubstackSource(name="second"))
+
+    preview = substack.queue_preview(settings)
+    assert preview["window_days"] == 7
+    assert [row["title"] for row in preview["queued"]] == [
+        a["title"] for a in substack.fetch(settings)
+    ]
+    assert [row["position"] for row in preview["queued"]] == [1, 2, 3, 4]
+    assert {row["status"] for row in preview["queued"]} == {"queued"}
+    assert preview["errors"] == [] and preview["printed"] == []
+
+    first = preview["queued"][0]
+    assert first["publication"] == "First"
+    assert first["url"] == "https://first.substack.com/p/b"
+    assert first["published"] == "2025-09-13"       # Sept 13 in America/Los_Angeles
+    assert first["age_days"] == 3.0          # Sept 13 16:00 UTC, rounded
+    assert set(first) == {
+        "publication", "title", "url", "published", "age_days", "position", "status",
+    }
+
+
+def test_queue_preview_marks_printed_posts(feeds, no_imap, fake_state):
+    fake_state["seen_posts"] = [BREAD]
+    preview = substack.queue_preview(settings_for(SubstackSource(name="slowkitchen")))
+    assert preview["queued"] == []
+    assert [(row["title"], row["status"], row["position"]) for row in preview["printed"]] == [
+        ("The bread you meant to make", "printed", None)
+    ]
+
+
+def test_queue_preview_flags_a_preview_and_an_old_post(feeds, no_imap, fake_state):
+    """The paid post with no email route, and the one out of the window."""
+    preview = substack.queue_preview(
+        settings_for(SubstackSource(name="slowkitchen", paid=True))
+    )
+    by_title = {row["title"]: row for row in preview["skipped"]}
+    assert by_title["The case for the second cup"]["status"] == "preview-only"
+    old = by_title["What to do with the end of the summer tomatoes"]
+    assert old["status"] == "too-old"
+    assert old["age_days"] > 7
+    assert [row["title"] for row in preview["queued"]] == ["The bread you meant to make"]
+
+
+def test_queue_preview_does_not_write_state(feeds, no_imap, fake_state):
+    substack.queue_preview(settings_for(SubstackSource(name="slowkitchen")))
+    assert fake_state["seen_posts"] == []
+
+
+def test_queue_preview_reports_a_broken_feed_and_keeps_the_rest(
+    monkeypatch, feeds, no_imap, fake_state
+):
+    def fake_get(url):
+        if "broken" in url:
+            raise OSError("connection reset")
+        return feeds[url]
+
+    monkeypatch.setattr(substack, "_get", fake_get)
+    preview = substack.queue_preview(
+        settings_for(SubstackSource(name="broken"), SubstackSource(name="slowkitchen"))
+    )
+    assert preview["errors"] == [
+        {"publication": "broken", "error": "OSError: connection reset"}
+    ]
+    assert [row["title"] for row in preview["queued"]] == ["The bread you meant to make"]
+    assert preview["queued"][0]["position"] == 1
+
+
+def test_queue_preview_marks_the_posts_beyond_the_limit(feeds, no_imap, fake_state):
+    items = [
+        {"title": f"Post {n}", "slug": f"post-{n}",
+         "pubdate": f"Mon, 1{n} Sep 2025 16:00:00 GMT", "body": f"The body of post {n}."}
+        for n in range(6)
+    ]
+    items += [
+        {"title": f"Extra {n}", "slug": f"extra-{n}",
+         "pubdate": f"Mon, 1{n} Sep 2025 18:00:00 GMT", "body": f"Extra body {n}."}
+        for n in range(4)
+    ]
+    feeds["https://daily.substack.com/feed"] = build_feed("Daily", "daily", items)
+    preview = substack.queue_preview(settings_for(SubstackSource(name="daily")))
+
+    assert len(preview["queued"]) == 10          # nothing is dropped from the view
+    printable = preview["queued"][:substack.QUEUE_LIMIT]
+    assert [row["position"] for row in printable] == list(range(1, 9))
+    assert {row["status"] for row in printable} == {"queued"}
+    waiting = preview["queued"][substack.QUEUE_LIMIT:]
+    assert [(row["status"], row["position"]) for row in waiting] == [
+        ("beyond-limit", None), ("beyond-limit", None)
+    ]
+    assert [row["title"] for row in waiting] == ["Post 4", "Post 5"]

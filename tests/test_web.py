@@ -633,6 +633,45 @@ def test_substack_check_reports_errors(client, monkeypatch):
     assert body["ok"] is False and "no such feed" in body["error"]
 
 
+QUEUE_PREVIEW = {
+    "window_days": 7,
+    "queued": [{"publication": "The Slow Kitchen", "title": "The bread you meant to make",
+                "url": "https://slowkitchen.substack.com/p/bread", "published": "2025-09-15",
+                "age_days": 1.0, "position": 1, "status": "queued"}],
+    "printed": [],
+    "skipped": [],
+    "errors": [],
+}
+
+
+def test_substack_queue_returns_the_preview(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        "gather.substack.queue_preview",
+        lambda settings: seen.append(settings) or QUEUE_PREVIEW,
+    )
+    body = client.post("/sources/substack/queue", auth=AUTH).json()
+    assert body == {"ok": True, "result": QUEUE_PREVIEW}
+    assert len(seen) == 1 and hasattr(seen[0].sources, "substacks")
+
+
+def test_substack_queue_reports_errors(client, monkeypatch):
+    def boom(settings):
+        raise ValueError("no such feed")
+
+    monkeypatch.setattr("gather.substack.queue_preview", boom)
+    body = client.post("/sources/substack/queue", auth=AUTH).json()
+    assert body["ok"] is False and "no such feed" in body["error"]
+
+
+def test_sources_page_has_the_show_queue_button(client):
+    body = client.get("/sources", auth=AUTH).text
+    assert 'id="show-queue"' in body
+    assert "Show queue" in body
+    assert "Fetches every feed now; nothing is marked." in body
+    assert "/sources/substack/queue" in body
+
+
 def test_crossword_check_reports_errors(client, monkeypatch):
     def boom(today=None):
         raise RuntimeError("NYT-S cookie rejected (got a login page)")

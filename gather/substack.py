@@ -576,6 +576,127 @@ def fetch(settings) -> list[dict]:
     return articles[:QUEUE_LIMIT]
 
 
+# ------------------------------------------------------- queue preview
+#: Statuses a previewed post can carry, for the Sources tab's queue view.
+QUEUE_STATUSES = ("queued", "beyond-limit", "printed", "preview-only", "too-old")
+#: How many out-of-window posts the preview bothers to list.
+TOO_OLD_SHOWN = 10
+
+
+def _preview_row(entry, publication: str, dt: datetime, status: str,
+                 position: Optional[int] = None) -> dict:
+    """One row of the queue view. No article text: the sheet prints that."""
+    local = dt.astimezone(_local_tz())
+    return {
+        "publication": publication,
+        "title": _clean(entry.get("title") or ""),
+        "url": _url(entry),
+        "published": local.date().isoformat(),
+        "age_days": round((_now() - dt).total_seconds() / 86400.0, 1),
+        "position": position,
+        "status": status,
+    }
+
+
+def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list, list, list]:
+    """
+    One feed, sorted into (queued, printed, skipped) — the same decisions
+    `_articles_for_source` makes, kept as rows instead of dropped.
+
+    A paywalled post is only really printable when the source is marked paid
+    *and* the email route exists; IMAP itself is not opened here, because the
+    preview is meant to be cheap and to change nothing.
+    """
+    parsed = _parse_feed(_get(feed_url(source.name)))
+    publication = _clean((parsed.feed or {}).get("title") or source.name)
+    cutoff = _now() - timedelta(days=max_age_days)
+    email_route = bool(getattr(source, "paid", False)) and _imap_config() is not None
+
+    queued: list[tuple[datetime, dict]] = []
+    printed: list[tuple[datetime, dict]] = []
+    skipped: list[tuple[datetime, dict]] = []
+
+    for entry in parsed.entries or []:
+        dt = _published_dt(entry)
+        if dt is None:
+            logger.debug("%s: %r has no usable date; not previewed", publication,
+                         _clean(entry.get("title") or ""))
+            continue
+        if dt < cutoff:
+            skipped.append((dt, _preview_row(entry, publication, dt, "too-old")))
+            continue
+        guid = _guid(entry)
+        if guid and guid in seen:
+            printed.append((dt, _preview_row(entry, publication, dt, "printed")))
+            continue
+        html = _entry_html(entry)
+        paragraphs = extract_paragraphs(html)
+        if looks_paywalled(html, paragraphs):
+            if not email_route:
+                skipped.append((dt, _preview_row(entry, publication, dt, "preview-only")))
+                continue
+        elif not paragraphs:
+            continue  # nothing printable; `fetch` skips it too
+        queued.append((dt, _preview_row(entry, publication, dt, "queued")))
+
+    # The queue's own order: the oldest unprinted post is next.
+    queued.sort(key=lambda pair: pair[0])
+    # The other two groups read better newest first — they are a record.
+    printed.sort(key=lambda pair: pair[0], reverse=True)
+    skipped.sort(key=lambda pair: pair[0], reverse=True)
+    return (
+        [row for _, row in queued],
+        [row for _, row in printed],
+        [row for _, row in skipped],
+    )
+
+
+def queue_preview(settings) -> dict:
+    """
+    What the Sources tab's "Show queue" button shows: every configured feed
+    fetched now, every post in it sorted into what would happen to it.
+
+    `queued` is exactly what `fetch` would offer, in its order — positions 1
+    upwards, and `beyond-limit` (position `None`) for the ones still waiting
+    behind `QUEUE_LIMIT`. `printed` is what has already been in the paper,
+    `skipped` what never will be: paywalled previews with no email route, and
+    the posts that fell out of the window (the most recent `TOO_OLD_SHOWN`
+    of those). A feed that fails is an `errors` entry, not an exception.
+
+    Nothing is written: this marks no post as seen.
+    """
+    max_age_days = _max_age_days(settings)
+    seen = _seen_guids()
+    result: dict[str, Any] = {
+        "window_days": max_age_days,
+        "queued": [], "printed": [], "skipped": [], "errors": [],
+    }
+    too_old: list[dict] = []
+
+    for source in list(settings.sources.substacks or []):
+        try:
+            queued, printed, skipped = _preview_for_source(source, seen, max_age_days)
+        except Exception as exc:  # noqa: BLE001 - one bad feed, not one bad preview
+            logger.error("substack source %r failed", source.name, exc_info=True)
+            result["errors"].append(
+                {"publication": source.name, "error": f"{type(exc).__name__}: {exc}"}
+            )
+            continue
+        result["queued"].extend(queued)
+        result["printed"].extend(printed)
+        for row in skipped:
+            (too_old if row["status"] == "too-old" else result["skipped"]).append(row)
+
+    for index, row in enumerate(result["queued"]):
+        if index < QUEUE_LIMIT:
+            row["position"] = index + 1
+        else:
+            row["status"] = "beyond-limit"
+    too_old.sort(key=lambda row: row["age_days"])   # most recent first
+    result["skipped"].extend(too_old[:TOO_OLD_SHOWN])
+    return result
+
+
 def check(name: str) -> dict:
     """What the Sources tab's "Check" button shows for one publication."""
     result: dict[str, Any] = {
