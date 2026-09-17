@@ -111,3 +111,104 @@ Each gatherer can be run alone: `python -m gather.weather`.
 3. The paper prints every morning even when a source fails.
 4. Credentials live in container variables; everything the reader changes
    lives on the settings page.
+
+## Setting up each source
+
+All of this happens on the **Sources** tab except the two credentials
+that go in container variables. Every source has a Check button that
+fetches live and shows what it found, so you can confirm each one before
+the first morning.
+
+### Calendar (Google Calendar)
+
+1. In Google Calendar on the web, open Settings, then the calendar in the
+   left list, then "Integrate calendar".
+2. Copy the **Secret address in iCal format** (not the public one; it
+   starts with `https://calendar.google.com/calendar/ical/…/private-…`).
+   Treat it like a password: anyone with it can read the calendar.
+3. Paste it into a calendar row on the Sources tab and press Check. It
+   shows the calendar's name and today's event count. Save.
+4. Repeat for each calendar that should appear in the rail. Events are
+   merged and sorted, all-day first.
+
+Declined invitations and cancelled events are left out. Times are shown
+without a.m./p.m. because the order makes it obvious. If a recurring
+event is missing, the feed itself is probably missing it: Google's secret
+address includes recurrences, but a shared calendar you were only invited
+to sometimes does not.
+
+### Weather (Open-Meteo)
+
+No account or key. Enter latitude and longitude for the house (right
+click the spot in Google Maps and copy the pair, e.g. `37.7749,
+-122.4194`) and press Check. It shows the summary, high and low for
+today. The container's `TZ` variable is the zone the hours are in.
+
+### Substack
+
+Posts come from each publication's RSS feed. List the publications in
+the order you want them on the front page (the first with a new post is
+the lead) and press Check on each to see its latest title.
+
+- **Name** is the part before `.substack.com`, e.g. `platformer` for
+  `platformer.substack.com`. A custom domain works too: paste the full
+  feed URL, e.g. `https://www.example.com/feed`.
+- **Paid** should be ticked for any subscription you pay for. Paid posts
+  arrive in RSS as previews, and a preview is never printed. With Paid
+  ticked the gatherer fetches the full post from the email Substack sent
+  you instead, which needs the IMAP setup below.
+
+Only posts from the last seven days are considered, and each post prints
+once. The first morning prints whatever is new that week, not the archive.
+
+**Email route for paid posts (Gmail):**
+
+1. In Gmail, create a label, e.g. `Paper`, and a filter: From contains
+   `substack.com`, apply label `Paper`. Optionally "Skip the Inbox".
+2. In your Google account, Security, enable 2-Step Verification if it is
+   not on, then App passwords: create one named `Personal Paper`. Google
+   shows a 16-character password once.
+3. Set the container variables `IMAP_HOST=imap.gmail.com`,
+   `IMAP_USER=<your gmail address>`, `IMAP_PASSWORD=<the app password>`,
+   `IMAP_MAILBOX=Paper` (the label name; `INBOX` if you skipped step 1).
+   Apply, which restarts the container.
+4. The Sources tab shows each IMAP variable as "set in container".
+
+The gatherer matches the email by the post's title within the last 24
+hours and strips only email chrome (headers, footers, unsubscribe
+links); the author's text is untouched.
+
+### Tasks (from the phone)
+
+There is no API for the tasks app, so an iPhone Shortcut pushes today's
+list every morning before print time.
+
+1. Set the container variable `TASKS_TOKEN` to a long random string
+   (anything; it only has to match what the Shortcut sends). Apply.
+2. The Sources tab shows the exact URL and header to use. It is:
+
+   ```
+   POST http://<unraid-ip>:8080/tasks
+   Authorization: Bearer <TASKS_TOKEN>
+   Content-Type: application/json
+   {"tasks": ["first task", "second task"]}
+   ```
+
+   A `text/plain` body with one task per line also works.
+3. On the iPhone, open Shortcuts and create a shortcut:
+   - An action that produces today's tasks as text. With Apple Reminders:
+     **Find Reminders** where *Is Completed* is false and *Due Date* is
+     today, then **Combine Text** with a new line. If the tasks app has
+     its own Shortcuts actions, use those instead; if it has none,
+     Reminders is the fallback.
+   - **Get Contents of URL**: URL as above, Method POST, Headers
+     `Authorization` = `Bearer <TASKS_TOKEN>` and `Content-Type` =
+     `text/plain`, Request Body = File, pick the combined text.
+4. Run it once by hand and look at the Sources tab: it shows how many
+   tasks were received and when.
+5. Automations tab, New, Time of Day, a few minutes before print time,
+   Run Immediately (turn off "Ask Before Running"), and pick the
+   shortcut.
+
+If the file is older than the "max age" on the Sources tab when the paper
+runs, the to-do list prints empty rather than stale.
