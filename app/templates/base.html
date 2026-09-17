@@ -38,6 +38,7 @@
     <div><dt>Log</dt><dd><a href="/log">last 200 lines</a></dd></div>
   </dl>
   {% if status.last_error %}<p class="error">Last error: {{ status.last_error }}</p>{% endif %}
+  {% if status.login_off %}<p class="error">No login: WEB_PASSWORD is not set, so anyone on the network can open this page. Set it in the container's variables to require a password.</p>{% endif %}
 </section>
 
 <nav class="tabs">

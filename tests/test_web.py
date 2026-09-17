@@ -523,11 +523,22 @@ def test_unreadable_schedule_time_falls_back():
     assert scheduler.parse_time("07:15") == (7, 15)
 
 
-def test_app_refuses_to_start_without_a_password(monkeypatch):
-    """Importable for tests, but the lifespan will not come up unset."""
+def test_no_password_means_no_login(monkeypatch):
+    """Unset WEB_PASSWORD: the page opens without credentials and says so."""
     monkeypatch.delenv("WEB_PASSWORD")
     from app.main import app
 
-    with pytest.raises(RuntimeError, match="WEB_PASSWORD"):
-        with TestClient(app):
-            pass
+    with TestClient(app) as c:
+        r = c.get("/look")
+        assert r.status_code == 200
+        assert "WEB_PASSWORD is not set" in r.text
+        assert "www-authenticate" not in {k.lower() for k in r.headers}
+
+
+def test_setting_a_password_turns_login_on(monkeypatch):
+    monkeypatch.setenv("WEB_PASSWORD", "pw")
+    from app.main import app
+
+    with TestClient(app) as c:
+        assert c.get("/look").status_code == 401
+        assert "WEB_PASSWORD is not set" not in c.get("/look", auth=("x", "pw")).text
