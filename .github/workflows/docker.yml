@@ -14,6 +14,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Extra image tag for this manual build (e.g. dev)"
+        required: false
+        default: dev
 
 jobs:
   build:
@@ -49,6 +54,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             # every build also gets sha-<short>
             type=sha,prefix=sha-,format=short
+            # a manual run also gets the tag typed into the Run workflow box
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
