@@ -1,4 +1,4 @@
-# The Molly Ledger.
+# Personal Paper.
 #
 # Playwright's own image, at the tag that matches playwright==1.56.0 in
 # requirements.txt: Chromium and every system library it needs are already

@@ -37,7 +37,7 @@ from pyipp.models import Printer
 from pyipp.parser import parse as parse_ipp
 from pyipp.serializer import construct_attribute
 
-from ._util import issue_label
+from ._util import DEFAULT_PAPER_NAME, issue_label, slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ def _encode_print_job(uri: str, pdf_bytes: bytes, *, job_name: str, duplex: bool
     out += construct_attribute("attributes-charset", "utf-8", IppTag.CHARSET)
     out += construct_attribute("attributes-natural-language", "en-us", IppTag.LANGUAGE)
     out += construct_attribute("printer-uri", uri, IppTag.URI)
-    out += construct_attribute("requesting-user-name", "molly-ledger", IppTag.NAME)
+    out += construct_attribute("requesting-user-name", "personal-paper", IppTag.NAME)
     out += construct_attribute("job-name", job_name, IppTag.NAME)
     out += construct_attribute("document-format", "application/pdf", IppTag.MIME_TYPE)
 
@@ -150,12 +150,18 @@ def _encode_print_job(uri: str, pdf_bytes: bytes, *, job_name: str, duplex: bool
     return out + pdf_bytes
 
 
-def print_pdf(pdf: Path, host: str, *, duplex: bool = True) -> None:
+def print_pdf(
+    pdf: Path,
+    host: str,
+    *,
+    duplex: bool = True,
+    paper_name: str = DEFAULT_PAPER_NAME,
+) -> None:
     """Send `pdf` to the printer at `host` over IPP. Raises on failure."""
     pdf = Path(pdf)
     data = pdf.read_bytes()
     uri = printer_uri(host)
-    job_name = f"Molly Ledger {issue_label(pdf)}"
+    job_name = f"{slug(paper_name)} {issue_label(pdf)}"
 
     body = _encode_print_job(uri, data, job_name=job_name, duplex=duplex)
 
@@ -177,7 +183,7 @@ def print_pdf(pdf: Path, host: str, *, duplex: bool = True) -> None:
             headers={
                 "Content-Type": "application/ipp",
                 "Accept": "application/ipp",
-                "User-Agent": "MollyLedger/1.0",
+                "User-Agent": "PersonalPaper/1.0",
             },
             timeout=60,
             # Printers carry self-signed certificates; pyipp does the same.

@@ -10,9 +10,9 @@ from app.settings import Env, Look, Settings, SubstackSource
 def test_defaults_with_an_empty_data_dir(data_dir):
     assert not (data_dir / "settings.json").exists()
     s = Settings.load()
-    assert s.look.paper_name == "The Molly Ledger"
+    assert s.look.paper_name == "Personal Paper"
     assert s.look.body_size_pt == 9.0
-    assert s.look.ear.initials == "M. L."
+    assert s.look.ear.initials == ""
     assert s.output.print.enabled is False
     assert s.output.schedule.time == "06:00"
 
@@ -24,7 +24,7 @@ def test_round_trip(data_dir):
     s.look.body_font = "EB Garamond"
     s.look.ear.lines = ["Stories continue inside."]
     s.sources.substacks.append(SubstackSource(name="astralcodexten", paid=True))
-    s.output.email.to = ["molly@example.com"]
+    s.output.email.to = ["reader@example.com"]
     s.save()
 
     again = Settings.load()
@@ -34,7 +34,7 @@ def test_round_trip(data_dir):
     assert again.look.ear.lines == ["Stories continue inside."]
     assert again.sources.substacks[0].name == "astralcodexten"
     assert again.sources.substacks[0].paid is True
-    assert again.output.email.to == ["molly@example.com"]
+    assert again.output.email.to == ["reader@example.com"]
     assert again.model_dump() == s.model_dump()
 
 

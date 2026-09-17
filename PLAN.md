@@ -1,4 +1,4 @@
-# The Molly Ledger — implementation plan
+# Personal Paper — implementation plan
 
 A personalized one-reader newspaper, generated and printed every morning on the
 home Brother HL-L2460DW. This repo already contains the render step (template,
@@ -206,7 +206,8 @@ notification. The archive copy is written before any route runs.
   HL-L2460DW is AirPrint-capable so it accepts PDF over IPP; keep the
   CUPS route from the earlier draft as a documented fallback only.
 - **Email** (`deliver/email.py`): stdlib `smtplib` + `email.message`,
-  STARTTLS, PDF attached, filename `Molly Ledger YYYY-MM-DD.pdf`.
+  STARTTLS, PDF attached, filename `<paper name> YYYY-MM-DD.pdf` from
+  `settings.look.paper_name`.
 
 ## Gatherers
 
@@ -341,7 +342,7 @@ which negotiates the format. Not built unless needed.
   every variable documented and secrets marked as password fields.
 - Image publishing: `.github/workflows/docker.yml` builds the image on
   every push to `main` and on `v*` tags and pushes it to Docker Hub as
-  `<DOCKERHUB_USERNAME>/molly-ledger` with tags `latest`, the version, and
+  `<DOCKERHUB_USERNAME>/personal-paper` with tags `latest`, the version, and
   the short SHA. Needs two repository secrets, `DOCKERHUB_USERNAME` and
   `DOCKERHUB_TOKEN` (a Docker Hub access token, not the account password).
   `docker-compose.yml` and `unraid-template.xml` reference that published

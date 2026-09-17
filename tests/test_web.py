@@ -19,14 +19,14 @@ from fastapi.testclient import TestClient
 from app import jobs, scheduler
 from app.settings import CalendarSource, Schedule, Settings, SubstackSource
 
-AUTH = ("molly", "pw")
+AUTH = ("reader", "pw")
 
 
 @pytest.fixture(autouse=True)
 def web_env(monkeypatch):
     monkeypatch.setenv("WEB_PASSWORD", "pw")
     monkeypatch.setenv("TASKS_TOKEN", "tok")
-    monkeypatch.setenv("MOLLY_NO_SCHEDULER", "1")
+    monkeypatch.setenv("PAPER_NO_SCHEDULER", "1")
     monkeypatch.setenv("TZ", "America/Los_Angeles")
     jobs.reset()
 
@@ -61,11 +61,11 @@ def test_look_needs_a_password(client):
 def test_look_with_auth(client):
     response = client.get("/look", auth=AUTH)
     assert response.status_code == 200
-    assert "The Molly Ledger" in response.text
+    assert "Personal Paper" in response.text
 
 
 def test_wrong_password_is_refused(client):
-    assert client.get("/look", auth=("molly", "nope")).status_code == 401
+    assert client.get("/look", auth=("reader", "nope")).status_code == 401
 
 
 def test_healthz_needs_no_auth(client):
@@ -145,7 +145,7 @@ def test_saving_output_persists_and_reschedules(client, monkeypatch):
             "duplex": "on",
             "email_enabled": "on",
             "email_to": "her@example.com, him@example.com",
-            "email_subject": "The Molly Ledger, {date}",
+            "email_subject": "The Evening Ledger, {date}",
             "schedule_time": "07:15",
             "day_0": "on",
             "day_2": "on",
@@ -358,7 +358,7 @@ def test_test_page_refuses_when_the_printer_cannot_be_reached(client, monkeypatc
 
 
 def test_email_test_reports_errors(client, monkeypatch):
-    def boom(to, smtp):
+    def boom(to, smtp, **kwargs):
         raise RuntimeError("SMTP is not configured")
 
     monkeypatch.setattr("deliver.send_test", boom)

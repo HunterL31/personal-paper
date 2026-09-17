@@ -1,5 +1,5 @@
 """
-The Molly Ledger's web page: four tabs of settings, a preview, the task
+Personal Paper's web page: four tabs of settings, a preview, the task
 endpoint the iPhone Shortcut posts to, and the in-process scheduler.
 
     DATA_DIR=/data WEB_PASSWORD=... uvicorn app.main:app --host 0.0.0.0 --port 8080
@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
 
 
-app = FastAPI(title="The Molly Ledger", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="Personal Paper", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.middleware("http")(auth.middleware)
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
@@ -129,6 +129,8 @@ def page(request: Request, tab: str, template: str, **extra: Any) -> Response:
         "request": request,
         "tab": tab,
         "tabs": TABS,
+        # The paper's name is the reader's, set on the Look tab.
+        "paper_name": Settings.load().look.paper_name,
         "status": _status(),
         "saved": request.query_params.get("saved") == "1",
     }
@@ -444,7 +446,12 @@ async def printer_test_page(request: Request) -> JSONResponse:
         with jobs.RUN_LOCK:
             result = render(data, settings.look, out)
             try:
-                deliver.print_pdf(result.pdf, host, duplex=duplex)
+                deliver.print_pdf(
+                    result.pdf,
+                    host,
+                    duplex=duplex,
+                    paper_name=settings.look.paper_name,
+                )
             except Exception as err:
                 deliver.record_print_result(host, f"{type(err).__name__}: {err}")
                 raise
@@ -469,7 +476,9 @@ async def email_test(request: Request) -> JSONResponse:
     import deliver
 
     def work() -> dict[str, Any]:
-        deliver.send_test(to, Env.smtp())
+        deliver.send_test(
+            to, Env.smtp(), paper_name=Settings.load().look.paper_name
+        )
         return {"sent_to": to}
 
     return await check_json(work)

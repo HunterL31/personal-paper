@@ -10,12 +10,14 @@ from pathlib import Path
 
 from app.settings import Env
 
+from ._util import DEFAULT_PAPER_NAME, slug
+
 _LOGGER = logging.getLogger(__name__)
 
 UNRAID_NOTIFY = Path("/usr/local/emhttp/webGui/scripts/notify")
 
 
-def _notify_unraid(message: str) -> None:
+def _notify_unraid(message: str, paper_name: str = DEFAULT_PAPER_NAME) -> None:
     if not UNRAID_NOTIFY.exists():
         _LOGGER.warning(
             "unraid notification requested but %s is not mounted", UNRAID_NOTIFY
@@ -25,7 +27,7 @@ def _notify_unraid(message: str) -> None:
         [
             str(UNRAID_NOTIFY),
             "-e",
-            "Molly Ledger",
+            paper_name,
             "-s",
             "Paper failed",
             "-d",
@@ -40,7 +42,9 @@ def _notify_unraid(message: str) -> None:
     _LOGGER.info("posted unraid notification")
 
 
-def _notify_email(address: str, message: str) -> None:
+def _notify_email(
+    address: str, message: str, paper_name: str = DEFAULT_PAPER_NAME
+) -> None:
     from email.message import EmailMessage
 
     from .email import _check, _send
@@ -52,7 +56,7 @@ def _notify_email(address: str, message: str) -> None:
     mail = EmailMessage()
     mail["From"] = smtp["user"]
     mail["To"] = address
-    mail["Subject"] = "The Molly Ledger — the paper failed"
+    mail["Subject"] = f"{paper_name} — the paper failed"
     mail.set_content(f"{message}\n")
     _send(mail, smtp)
     _LOGGER.info("sent failure notification to %s", address)
@@ -65,11 +69,12 @@ def notify_failure(settings, message: str) -> None:
         _LOGGER.debug("failure notification disabled: %s", message)
         return
 
+    paper_name = slug(getattr(getattr(settings, "look", None), "paper_name", ""))
     try:
         if route == "email":
-            _notify_email(settings.output.notify_email, message)
+            _notify_email(settings.output.notify_email, message, paper_name)
         elif route == "unraid":
-            _notify_unraid(message)
+            _notify_unraid(message, paper_name)
         else:
             _LOGGER.warning("unknown notify route %r", route)
     except Exception:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from app.settings import Env
 
-from ._util import issue_label
+from ._util import issue_label, slug
 from .email import send_pdf, send_test
 from .notify import notify_failure
 from .printer import (
@@ -52,6 +52,11 @@ __all__ = [
 ]
 
 
+def _paper_name(settings: "Settings") -> str:
+    """What the reader called the paper on the Look tab, or the default."""
+    return slug(getattr(getattr(settings, "look", None), "paper_name", ""))
+
+
 def _explained(host: str, err: Exception) -> Exception:
     """Say why a print failed in the printer's terms, not `requests`'.
 
@@ -78,7 +83,12 @@ def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
     # A test print is the same operation on a different PDF (the sample
     # issue), so `test` changes nothing here.
     try:
-        print_pdf(pdf, route.printer_host, duplex=route.duplex)
+        print_pdf(
+            pdf,
+            route.printer_host,
+            duplex=route.duplex,
+            paper_name=_paper_name(settings),
+        )
     except Exception as err:
         explained = _explained(route.printer_host, err)
         if explained is err:
@@ -91,12 +101,13 @@ def _email_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
     route = settings.output.email
     if not route.to:
         raise RuntimeError("Email route is enabled but no recipients are configured")
-    subject = (route.subject or "The Molly Ledger, {date}").replace(
+    paper_name = _paper_name(settings)
+    subject = (route.subject or f"{paper_name}, {{date}}").replace(
         "{date}", issue_label(pdf)
     )
     if test:
         subject = f"[test] {subject}"
-    send_pdf(pdf, list(route.to), subject, Env.smtp())
+    send_pdf(pdf, list(route.to), subject, Env.smtp(), paper_name=paper_name)
 
 
 _ROUTES = {"print": _print_route, "email": _email_route}

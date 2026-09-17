@@ -39,10 +39,10 @@ log = logging.getLogger(__name__)
 #: Fallback defaults, used when `app.settings` is unavailable and to fill in
 #: keys a partial look dict leaves out.  Kept in sync with `app.settings.Look`.
 _FALLBACK_LOOK: dict[str, Any] = {
-    "paper_name": "The Molly Ledger",
+    "paper_name": "Personal Paper",
     "imprint": "Printed at home before sunrise",
     "price": "Single copy, free",
-    "ear": {"initials": "M. L.", "lines": ["Continued stories inside."]},
+    "ear": {"initials": "", "lines": ["Continued stories inside."]},
     "masthead_font": "Maguntia",
     "headline_font": "Old Standard",
     "body_font": "PT Serif",

@@ -18,7 +18,7 @@ from app.settings import Env
 #: Paths that never ask for the browser password.
 OPEN_ROUTES: set[tuple[str, str]] = {("POST", "/tasks"), ("GET", "/healthz")}
 
-_CHALLENGE = {"WWW-Authenticate": 'Basic realm="The Molly Ledger"'}
+_CHALLENGE = {"WWW-Authenticate": 'Basic realm="Personal Paper"'}
 
 
 def is_open(method: str, path: str) -> bool:

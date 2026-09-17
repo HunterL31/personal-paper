@@ -12,7 +12,7 @@ import smtplib
 from email.message import EmailMessage
 from pathlib import Path
 
-from ._util import issue_label
+from ._util import DEFAULT_PAPER_NAME, issue_label, slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,9 +29,9 @@ def _check(smtp: dict | None) -> dict:
     return smtp
 
 
-def attachment_name(pdf: Path) -> str:
-    """`Molly Ledger YYYY-MM-DD.pdf` — what lands in her mail app."""
-    return f"Molly Ledger {issue_label(Path(pdf))}.pdf"
+def attachment_name(pdf: Path, paper_name: str = DEFAULT_PAPER_NAME) -> str:
+    """`<Paper name> YYYY-MM-DD.pdf` — what lands in the reader's mail app."""
+    return f"{slug(paper_name)} {issue_label(Path(pdf))}.pdf"
 
 
 def _send(message: EmailMessage, smtp: dict) -> None:
@@ -72,21 +72,28 @@ def _message(to: list[str], subject: str, smtp: dict, body: str) -> EmailMessage
     return message
 
 
-def send_pdf(pdf: Path, to: list[str], subject: str, smtp: dict) -> None:
+def send_pdf(
+    pdf: Path,
+    to: list[str],
+    subject: str,
+    smtp: dict,
+    *,
+    paper_name: str = DEFAULT_PAPER_NAME,
+) -> None:
     """Mail today's issue to `to`. Raises on failure."""
     smtp = _check(smtp)
     if not to:
         raise RuntimeError("No email recipients configured")
 
     pdf = Path(pdf)
-    name = attachment_name(pdf)
+    name = attachment_name(pdf, paper_name)
     subtype = (mimetypes.guess_type(name)[0] or "application/pdf").split("/")[-1]
 
     message = _message(
         list(to),
         subject,
         smtp,
-        f"{name} is attached.\n\nThe Molly Ledger, printed at home before sunrise.\n",
+        f"{name} is attached.\n\n{slug(paper_name)}, printed at home before sunrise.\n",
     )
     message.add_attachment(
         pdf.read_bytes(), maintype="application", subtype=subtype, filename=name
@@ -96,17 +103,20 @@ def send_pdf(pdf: Path, to: list[str], subject: str, smtp: dict) -> None:
     _LOGGER.info("emailed %s to %s", name, ", ".join(to))
 
 
-def send_test(to: list[str], smtp: dict) -> None:
+def send_test(
+    to: list[str], smtp: dict, *, paper_name: str = DEFAULT_PAPER_NAME
+) -> None:
     """The Output tab's "Send test" button. Raises on failure."""
     smtp = _check(smtp)
     if not to:
         raise RuntimeError("No email recipients configured")
 
+    name = slug(paper_name)
     message = _message(
         list(to),
-        "The Molly Ledger — test message",
+        f"{name} — test message",
         smtp,
-        "This is a test from The Molly Ledger.\n"
+        f"This is a test from {name}.\n"
         f"If it arrived, the morning paper can be mailed from {smtp['user']}.\n",
     )
     _send(message, smtp)
