@@ -85,6 +85,12 @@
   <p class="note">Posts are a queue: the oldest unprinted post of the first
   publication goes first, and nothing jumps ahead of it. A post still waiting
   when it passes that age is never printed.</p>
+  <p>
+    <button type="button" id="show-queue">Show queue</button>
+    <span class="result" id="queue_result"></span>
+  </p>
+  <p class="note">Fetches every feed now; nothing is marked.</p>
+  <div class="queue" id="queue_view"></div>
 
   <h2>Weather</h2>
   <div class="grid">
@@ -348,6 +354,91 @@ crosswordButton.addEventListener("click", function () {
     function (result) {
       return result.title + " — " + (result.author || "unknown constructor")
         + ", " + result.date + " (" + result.size + ", " + result.clues + " clues)";
+    });
+});
+
+// ------------------------------------------------------ the Substack queue
+// "Show queue" fetches every feed and lays the answer out as a table: what is
+// waiting, what has already been printed, what will never print. Every string
+// that comes back from the server goes through esc() before it is written.
+function esc(value) {
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function queueAge(days) {
+  const n = Math.max(0, Math.round(Number(days) || 0));
+  return n === 0 ? "today" : n + " d ago";
+}
+
+function queueStatusWord(row, windowDays) {
+  switch (row.status) {
+    case "queued": return row.position === 1 ? "next up" : "queued";
+    case "beyond-limit": return "waiting (more than 8 ahead)";
+    case "printed": return "printed";
+    case "preview-only": return "preview only: needs the email route";
+    case "too-old": return "older than " + esc(windowDays) + " days";
+    default: return esc(row.status);
+  }
+}
+
+function queueRow(row, windowDays) {
+  const title = row.url
+    ? '<a href="' + esc(row.url) + '" target="_blank" rel="noopener">' + esc(row.title) + "</a>"
+    : esc(row.title);
+  return "<tr>"
+    + "<td class=\"pos\">" + (row.position ? esc(row.position) : "") + "</td>"
+    + "<td>" + esc(row.publication) + "</td>"
+    + "<td>" + title + "</td>"
+    + "<td class=\"when\">" + esc(row.published) + " <span class=\"note\">"
+    + esc(queueAge(row.age_days)) + "</span></td>"
+    + "<td>" + queueStatusWord(row, windowDays) + "</td>"
+    + "</tr>";
+}
+
+function queueGroup(label, rows, windowDays) {
+  if (!rows.length) return "";
+  return '<tr class="group"><td colspan="5">' + esc(label) + "</td></tr>"
+    + rows.map(function (row) { return queueRow(row, windowDays); }).join("");
+}
+
+function renderQueue(result) {
+  const view = document.getElementById("queue_view");
+  const days = result.window_days;
+  const queued = result.queued || [], printed = result.printed || [];
+  const skipped = result.skipped || [], errors = result.errors || [];
+  let html = "";
+  errors.forEach(function (err) {
+    html += '<p class="error">' + esc(err.publication) + " — " + esc(err.error) + "</p>";
+  });
+  html += '<p class="queue-summary">' + esc(queued.length) + " waiting, "
+    + esc(printed.length) + " printed this week, " + esc(skipped.length) + " skipped</p>";
+  if (!queued.length && !printed.length && !skipped.length) {
+    view.innerHTML = html + '<p class="note">Nothing in any feed inside the window.</p>';
+    return;
+  }
+  html += "<table><thead><tr>"
+    + '<th style="width:2.5rem">#</th><th style="width:22%">Publication</th>'
+    + '<th>Title</th><th style="width:10rem">Published</th>'
+    + '<th style="width:16rem">Status</th></tr></thead><tbody>'
+    + queued.map(function (row) { return queueRow(row, days); }).join("")
+    + "</tbody>"
+    + '<tbody class="muted">'
+    + queueGroup("Already printed", printed, days)
+    + queueGroup("Skipped", skipped, days)
+    + "</tbody></table>";
+  view.innerHTML = html;
+}
+
+const queueButton = document.getElementById("show-queue");
+queueButton.addEventListener("click", function () {
+  document.getElementById("queue_view").innerHTML = "";
+  withButton(queueButton, document.getElementById("queue_result"),
+    function () { return postJSON("/sources/substack/queue", {}); },
+    function (result) {
+      renderQueue(result);
+      return "";
     });
 });
 </script>

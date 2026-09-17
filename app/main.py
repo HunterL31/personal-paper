@@ -626,6 +626,15 @@ async def substack_check(request: Request) -> JSONResponse:
     return await check_json(lambda: substack_gather.check(name))
 
 
+@app.post("/sources/substack/queue")
+async def substack_queue() -> JSONResponse:
+    """The whole queue, fetched now: what would print, what already did."""
+    from gather import substack as substack_gather
+
+    settings = Settings.load()
+    return await check_json(lambda: substack_gather.queue_preview(settings))
+
+
 @app.post("/sources/crossword/check")
 async def crossword_check() -> JSONResponse:
     from gather import crossword as crossword_gather
