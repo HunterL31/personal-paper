@@ -13,7 +13,8 @@ The sheet is filled, so the last article on it may be printed partially:
 those paragraphs must be the author's first N, whole and unchanged, ended
 by the one line saying where the rest of the story is. Everything after
 them, and every article that did not fit at all, must be nowhere on the
-sheet.
+sheet -- including on a morning when nothing fitted at all and the paper
+is the front page alone.
 
 A paragraph is split in exactly one place and nowhere else: the front-page
 cut, whose remainder is the `.tail` fragment that opens the continuation.
@@ -121,7 +122,10 @@ def assert_verbatim(result, articles: list[dict]) -> None:
     last, may be printed as far as a paragraph boundary, ended by the line
     saying where the rest of it is; the others are not there at all.
     """
-    assert result.pages == 2, f"the paper is one sheet, not {result.pages} pages"
+    # Two pages, or one on a morning that printed no article at all: there
+    # is then nothing to continue and no page 2 to continue it onto.
+    assert result.pages == (2 if result.printed else 1), \
+        f"{result.pages} page(s) with {len(result.printed)} article(s) printed"
     assert result.printed == sorted(result.printed), f"printed out of order: {result.printed}"
 
     partial = dict(result.partial)

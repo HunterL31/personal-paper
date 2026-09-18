@@ -43,10 +43,11 @@ def fake_gather(monkeypatch, sample_data):
 @pytest.fixture
 def fake_deliver(monkeypatch):
     """`from deliver import deliver` records the PDF it was handed."""
-    calls: dict[str, object] = {"pdfs": [], "result": {"archive": None}}
+    calls: dict[str, object] = {"pdfs": [], "result": {"archive": None}, "pages": None}
 
-    def deliver(pdf, settings, *, test=False):
+    def deliver(pdf, settings, *, test=False, pages=None):
         calls["pdfs"].append(Path(pdf))
+        calls["pages"] = pages
         return dict(calls["result"])
 
     mod = types.ModuleType("deliver")
@@ -89,6 +90,7 @@ def test_a_real_run_delivers_and_bumps_the_issue(data_dir, fake_gather, fake_del
 
     assert result.ok
     assert result.delivery == {"archive": None}
+    assert fake_deliver["pages"] == result.pages == 2
     assert fake_deliver["pdfs"] == [data_dir / "archive" / f"{result.date}.pdf"]
     state = state_module.load_state()
     assert state["issue"] == 1
@@ -149,7 +151,27 @@ def test_a_missing_gather_module_still_prints(data_dir, fake_deliver, monkeypatc
     result = run(Settings(), dry_run=True)
     assert result.ok
     assert "gather" in result.gather_errors
-    assert result.pages == 2                              # an empty paper is still a paper
+    # An empty paper is still a paper -- one page of it, with nothing to
+    # continue onto a second.
+    assert result.pages == 1
+    assert result.printed == []
+
+
+def test_a_morning_with_no_articles_is_a_one_page_paper(data_dir, fake_gather, fake_deliver):
+    """It prints, it delivers, and it counts as an issue -- on one page."""
+    def run_all(settings):
+        return {**json.loads(SAMPLE.read_text()), "articles": [], "errors": {}}
+
+    sys.modules["gather"].run_all = run_all
+
+    result = run(Settings())
+
+    assert result.ok and result.error is None
+    assert result.pages == 1 and result.printed == []
+    assert state_module.load_state()["last_pages"] == 1
+    assert state_module.load_state()["issue"] == 1
+    # What the render laid out is what the print route is told.
+    assert fake_deliver["pages"] == 1
 
 
 def test_sample_mode_does_not_gather(data_dir, fake_deliver, monkeypatch):

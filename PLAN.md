@@ -19,9 +19,14 @@ fonts, `render.py`, sample data). This plan covers everything around it.
    run.
 4. Traditional broadsheet style, black only, US Letter, duplex. The look is
    set in `template.html`; keep changes there deliberate.
-5. **The paper is one double-sided sheet: exactly two pages, always.**
+5. **The paper is one double-sided sheet: exactly two pages, printed
+   one-sided on a morning with no articles.**
    Page 1 is the front page; page 2 carries the continuations and, when
-   enabled, the crossword. The articles arrive as a queue (see
+   enabled, the crossword. With nothing in the queue there is nothing to
+   continue, so there is no page 2: the paper is the front page alone, with
+   the crossword set where the lead would have been (and "No new stories
+   this morning." when there is no puzzle either), and it goes to the
+   printer one-sided. The articles arrive as a queue (see
    substack.py) and the layout fills the sheet from the top of it: whole
    articles first, and when the next one will not fit whole, as many of
    its leading complete paragraphs as fit, closed with a line pointing to

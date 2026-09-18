@@ -310,6 +310,71 @@ def test_print_pdf_single_sided(pdf, fake_printer):
     assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
 
 
+# ------------------------------------------------- the one-page paper
+def _real_pdf(path: Path, pages: int) -> Path:
+    """A PDF with `pages` US Letter pages, as the render would write it."""
+    import pymupdf
+
+    with pymupdf.open() as doc:
+        for _ in range(pages):
+            doc.new_page(width=612, height=792)
+        doc.save(path)
+    return path
+
+
+def test_a_one_page_paper_is_printed_one_sided_even_with_duplex_on(tmp_path, fake_printer):
+    """The morning with nothing queued: one page, and the job says so."""
+    one = _real_pdf(tmp_path / "2026-09-16.pdf", 1)
+
+    printer_route.print_pdf(one, fake_printer.host, duplex=True)
+
+    _, body = fake_printer.requests[0]
+    assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
+
+
+def test_a_two_page_paper_is_still_a_duplex_job(tmp_path, fake_printer):
+    two = _real_pdf(tmp_path / "2026-09-17.pdf", 2)
+
+    printer_route.print_pdf(two, fake_printer.host, duplex=True)
+
+    _, body = fake_printer.requests[0]
+    assert _parse_request(body)["jobs"][0]["sides"] == "two-sided-long-edge"
+
+
+def test_the_page_count_the_render_reports_is_the_one_used(tmp_path, fake_printer):
+    """`pages` comes from the render; the PDF is not re-counted for it."""
+    two = _real_pdf(tmp_path / "2026-09-18.pdf", 2)
+
+    printer_route.print_pdf(two, fake_printer.host, duplex=True, pages=1)
+
+    _, body = fake_printer.requests[0]
+    assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
+
+
+def test_a_pdf_that_cannot_be_counted_is_printed_as_asked(pdf, fake_printer):
+    """The fixture is not a real PDF: an uncountable paper keeps duplex."""
+    assert printer_route.page_count(pdf) is None
+
+    printer_route.print_pdf(pdf, fake_printer.host, duplex=True)
+
+    _, body = fake_printer.requests[0]
+    assert _parse_request(body)["jobs"][0]["sides"] == "two-sided-long-edge"
+
+
+def test_deliver_passes_the_page_count_to_the_print_route(tmp_path, fake_printer):
+    """`run.py` hands `deliver` what the render laid out, and it arrives."""
+    one = _real_pdf(tmp_path / "2026-09-19.pdf", 1)
+    settings = Settings()
+    settings.output.print.enabled = True
+    settings.output.print.duplex = True
+    settings.output.print.printer_host = fake_printer.host
+
+    assert deliver(one, settings, pages=1) == {"print": None}
+
+    _, body = fake_printer.requests[0]
+    assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
+
+
 def test_print_pdf_raises_when_the_printer_rejects_the_job(pdf, fake_printer, monkeypatch):
     rejected = _ipp_response(0x0400, [OPERATION_GROUP])  # ERROR_BAD_REQUEST
     monkeypatch.setitem(globals(), "PRINT_JOB_OK", rejected)

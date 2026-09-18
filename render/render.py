@@ -10,12 +10,14 @@ Render today's paper.
 The data file is whatever the gather step produced (see sample_data.json for
 the shape). Article paragraphs must be the author's text, untouched.
 
-The paper is always one double-sided sheet: page 1, and page 2 on its back
-with the continuations and the crossword. The sheet is filled: the articles
-that fit whole are printed whole, and the next one may be printed as far as
-its last whole paragraph that fits, ended by a line saying where the rest is.
-`RenderResult.printed` says which articles are on the sheet and
-`RenderResult.partial` how much of the partial one was printed.
+The paper is one double-sided sheet: page 1, and page 2 on its back with the
+continuations and the crossword -- printed one-sided on a morning with no
+articles, when page 2 has nothing to carry and the crossword takes the front.
+The sheet is filled: the articles that fit whole are printed whole, and the
+next one may be printed as far as its last whole paragraph that fits, ended
+by a line saying where the rest is. `RenderResult.printed` says which
+articles are on the sheet and `RenderResult.partial` how much of the partial
+one was printed.
 
 As a library:
 
@@ -152,7 +154,10 @@ def DEFAULT_LOOK() -> dict[str, Any]:
 class RenderResult:
     pdf: Path
     html: Path
-    #: Always 2: the sheet has a front and a back.
+    #: 2, the front of the sheet and its back -- or 1 on a morning with no
+    #: articles to print, when there is nothing to continue onto page 2 and
+    #: the paper is the front alone.  `pages == 1` exactly when `printed`
+    #: is empty.
     pages: int
     #: Indices into `data["articles"]` of the articles that were printed, in
     #: the order they were given: the whole ones and, last, the partial one
@@ -254,8 +259,9 @@ def render(
     `browser` lets a caller reuse one Playwright browser across renders; when
     it is None a browser is launched and closed for this render.
 
-    The paper is always two pages; anything else is a bug in the template,
-    not a layout the caller could recover from, so it raises.
+    The paper is two pages, or one when no article reached the sheet;
+    anything else is a bug in the template, not a layout the caller could
+    recover from, so it raises.
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -293,12 +299,20 @@ def render(
             finally:
                 br.close()
 
-    if pages != 2:
-        raise AssertionError(f"the paper is one sheet: expected 2 pages, laid out {pages}")
+    if pages not in (1, 2):
+        raise AssertionError(f"the paper is one sheet: expected 1 or 2 pages, laid out {pages}")
+    # One page is the morning with nothing queued, and only that: a page 2
+    # missing from a paper that has stories on it would lose their
+    # continuations, which is exactly what must never happen silently.
+    if (pages == 1) != (not printed):
+        raise AssertionError(
+            f"a one-page paper is a morning with no articles: laid out {pages} page(s) "
+            f"with {len(printed)} article(s) printed"
+        )
 
     pngs = _rasterize(pdf_path, out) if png else []
     given = len(data.get("articles") or [])
-    log.info("rendered 2 pages -> %s (%s of %s article(s) printed%s)", pdf_path, len(printed), given,
+    log.info("rendered %s page(s) -> %s (%s of %s article(s) printed%s)", pages, pdf_path, len(printed), given,
              "".join(f", article {i} partial: {n} paragraph(s)" for i, n in partial.items()))
     return RenderResult(pdf=pdf_path, html=html_path, pages=pages, printed=printed,
                         partial=partial, pngs=pngs, laid_out_html=laid_out_html)
@@ -335,8 +349,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"  {p}")
 
     if args.printer:
+        # One page is the morning with no articles: not a duplex job.
+        sides = "two-sided-long-edge" if result.pages > 1 else "one-sided"
         subprocess.run(
-            ["lp", "-d", args.printer, "-o", "media=Letter", "-o", "sides=two-sided-long-edge", str(result.pdf)],
+            ["lp", "-d", args.printer, "-o", "media=Letter", "-o", f"sides={sides}", str(result.pdf)],
             check=True,
         )
     return 0

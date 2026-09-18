@@ -49,6 +49,7 @@ CROSSWORD_TIMEOUT = 30.0
 class RunResult:
     date: str
     pdf: Optional[Path] = None
+    #: what the render laid out: 2, or 1 on a morning with no articles
     pages: int = 0
     gather_errors: dict[str, str] = field(default_factory=dict)
     #: True when today's puzzle was fetched and typeset on page 2
@@ -168,14 +169,16 @@ def _crossword(settings: Settings) -> Optional[dict[str, Any]]:
     return puzzle or None
 
 
-def _deliver(pdf: Path, settings: Settings) -> dict[str, Optional[str]]:
+def _deliver(pdf: Path, settings: Settings, pages: int) -> dict[str, Optional[str]]:
+    """Hand the issue to the routes. `pages` is what the render laid out:
+    a one-page paper is not a duplex job, and the print route says so."""
     try:
         from deliver import deliver
     except Exception as exc:
         log.error("deliver unavailable: %s", exc)
         return {"deliver": f"{type(exc).__name__}: {exc}"}
     try:
-        return dict(deliver(pdf, settings) or {})
+        return dict(deliver(pdf, settings, pages=pages) or {})
     except Exception as exc:
         log.error("deliver failed: %s", traceback.format_exc())
         return {"deliver": f"{type(exc).__name__}: {exc}"}
@@ -318,7 +321,7 @@ def run(
         if dry_run or replay:
             log.info("dry run: not delivering")
         else:
-            result.delivery = _deliver(archive, settings)
+            result.delivery = _deliver(archive, settings, result.pages)
             for route, err in result.delivery.items():
                 log.info("route %s: %s", route, err or "ok")
 

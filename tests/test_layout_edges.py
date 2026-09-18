@@ -1,9 +1,9 @@
 """
 Layout edges: whatever the gather step hands over, the paper is one sheet
-of two pages, and every article on it is there whole -- except the last,
-which may stop at a paragraph boundary with a line saying where the rest
-of it is. Nothing is ever reworded, and no paragraph is ever split but at
-the front-page jump.
+of two pages -- one page on a morning with no article on it -- and every
+article there is whole, except the last, which may stop at a paragraph
+boundary with a line saying where the rest of it is. Nothing is ever
+reworded, and no paragraph is ever split but at the front-page jump.
 """
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ def _with(sample_data, **over):
 
 def _render(data, tmp_path, name="out"):
     result = render(data, None, tmp_path / name)
-    assert result.pages == 2, f"{result.pages} pages"
+    # The sheet: two pages, or one when nothing was printed on it.
+    assert result.pages == (2 if result.printed else 1), f"{result.pages} pages"
     assert_verbatim(result, data["articles"])
     return result
 
@@ -57,8 +58,15 @@ def test_article_counts(sample_data, tmp_path, n):
 
     result = _render(data, tmp_path, f"n{n}")
     if n == 0:
-        assert result.printed == []
-        assert "No new stories this morning." in result.laid_out_html
+        # Nothing to print is the one-page paper; the sample's puzzle takes
+        # the front, so the "no new stories" line is not needed.
+        from bs4 import BeautifulSoup
+
+        assert result.printed == [] and result.pages == 1
+        soup = BeautifulSoup(result.laid_out_html, "html.parser")
+        assert soup.select_one("#page-2") is None
+        assert soup.select_one("#page-1 .stories #xword") is not None
+        assert "No new stories" not in soup.select_one("#page-1").get_text()
     else:
         assert result.printed == list(range(len(result.printed)))   # always a prefix
         assert set(result.partial) <= {result.printed[-1]}          # only the last is partial
@@ -259,7 +267,7 @@ def test_deck_may_be_null(sample_data, tmp_path):
 
 
 def test_empty_paper(tmp_path):
-    """A total gather failure still prints the sheet, both sides of it."""
+    """A total gather failure still prints a paper: one page, and it says so."""
     data = {
         "paper": {"volume": "Vol. I, No. 9", "date": "Wednesday, September 16, 2026"},
         "weather": {"summary": "Forecast unavailable", "high": "—", "low": "—",
@@ -271,7 +279,9 @@ def test_empty_paper(tmp_path):
     }
     result = _render(data, tmp_path, "empty")
     assert result.printed == []
-    assert 'id="page-2"' in result.laid_out_html      # the back of the sheet is still there
+    assert result.pages == 1
+    assert 'id="page-2"' not in result.laid_out_html   # nothing to print on the back
+    assert "No new stories this morning." in result.laid_out_html
 
 
 def test_a_lone_lead_fills_the_front_page(tmp_path, sample_data):

@@ -150,27 +150,61 @@ def _encode_print_job(uri: str, pdf_bytes: bytes, *, job_name: str, duplex: bool
     return out + pdf_bytes
 
 
+def page_count(pdf: Path) -> int | None:
+    """How many pages the PDF has, or None when it cannot be counted.
+
+    Never raises: the page count decides `sides`, and a paper that cannot be
+    counted is still a paper to print.
+    """
+    try:
+        import pymupdf
+
+        with pymupdf.open(pdf) as doc:
+            return int(doc.page_count)
+    except Exception as exc:  # noqa: BLE001 - an unreadable count is not a failure
+        # The reason, as text: neither the exception nor `exc_info` may go
+        # into the record, because a log handler that keeps records would
+        # then keep this call's frames -- and whatever their callers hold
+        # open -- alive with them.
+        _LOGGER.warning("could not count the pages of %s (%s)",
+                        pdf, f"{type(exc).__name__}: {exc}")
+        return None
+
+
 def print_pdf(
     pdf: Path,
     host: str,
     *,
     duplex: bool = True,
+    pages: int | None = None,
     paper_name: str = DEFAULT_PAPER_NAME,
 ) -> None:
-    """Send `pdf` to the printer at `host` over IPP. Raises on failure."""
+    """Send `pdf` to the printer at `host` over IPP. Raises on failure.
+
+    `pages` is how many pages the PDF has, from the render; when it is not
+    given the PDF is counted here. A one-page paper -- the morning with no
+    articles -- is sent `sides=one-sided` whatever the duplex setting: most
+    printers would do the right thing with it anyway, but the sheet that
+    comes out of a duplex queue is the reader's, so it is said explicitly.
+    """
     pdf = Path(pdf)
     data = pdf.read_bytes()
     uri = printer_uri(host)
     job_name = f"{slug(paper_name)} {issue_label(pdf)}"
 
-    body = _encode_print_job(uri, data, job_name=job_name, duplex=duplex)
+    if pages is None:
+        pages = page_count(pdf)
+    two_sided = duplex and (pages is None or pages > 1)
+
+    body = _encode_print_job(uri, data, job_name=job_name, duplex=two_sided)
 
     _LOGGER.info(
-        "printing %s (%d bytes) to %s, %s",
+        "printing %s (%d bytes, %s page(s)) to %s, %s",
         pdf.name,
         len(data),
+        pages if pages is not None else "?",
         uri,
-        "duplex" if duplex else "single-sided",
+        "duplex" if two_sided else "single-sided",
     )
 
     # trust_env=False: the printer is on the LAN, and a proxy variable in the
