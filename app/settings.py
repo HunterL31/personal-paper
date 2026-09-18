@@ -296,6 +296,9 @@ class Sources(BaseModel):
     #: How far back the article queue looks. A post older than this is never
     #: printed, so switching on a publication does not print its archive.
     article_max_age_days: int = Field(7, ge=1, le=60)
+    #: when nothing unread is inside the window, look further back in steps
+    #: (14, 30, 60, 90, 180, 365 days) rather than print a paper with no story
+    extend_window_when_empty: bool = False
     #: The reader's lists, in the order they were added; one file each
     #: under `<DATA_DIR>/lists/<slug>.json`.
     lists: list[ListSource] = Field(default_factory=default_lists)

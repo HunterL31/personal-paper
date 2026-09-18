@@ -687,6 +687,7 @@ async def sources_post(request: Request) -> RedirectResponse:
     settings.sources.lists = _posted_lists(form, list(settings.sources.lists))
     settings.sources.weather.lat = form_number(form, "lat", settings.sources.weather.lat, -90.0, 90.0)
     settings.sources.weather.lon = form_number(form, "lon", settings.sources.weather.lon, -180.0, 180.0)
+    settings.sources.extend_window_when_empty = form_flag(form, "extend_window_when_empty")
     settings.sources.article_max_age_days = int(
         form_number(form, "article_max_age_days", float(settings.sources.article_max_age_days), 1.0, 60.0)
     )

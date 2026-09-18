@@ -509,3 +509,39 @@ def test_queue_rows_carry_the_guid_for_marking(data_dir, monkeypatch, fixtures):
     view = substack.queue_preview(s)
     rows = view["queued"] + view["printed"] + view["skipped"]
     assert rows and all(r.get("guid") for r in rows)
+
+
+def test_an_empty_window_can_look_further_back(feeds, no_imap, fake_state):
+    """Nothing unread within 7 days: with the option on, the paper widens the
+    window step by step and prints the oldest unread post it finds."""
+    feeds["https://window.substack.com/feed"] = build_feed(
+        "Window", "window",
+        [{"title": "Twenty days ago", "slug": "twenty",
+          "pubdate": "Wed, 27 Aug 2025 15:00:00 GMT"},      # NOW is Sept 16, 15:00
+         {"title": "Twenty-five days ago", "slug": "twentyfive",
+          "pubdate": "Fri, 22 Aug 2025 15:00:00 GMT"}],
+    )
+    source = SubstackSource(name="window")
+
+    assert substack.fetch(settings_for(source)) == []
+
+    s = settings_for(source)
+    s.sources.extend_window_when_empty = True
+    found = substack.fetch(s)
+    assert [a["title"] for a in found] == ["Twenty-five days ago", "Twenty days ago"]
+
+    view = substack.queue_preview(s)
+    assert view["window_extended"] is True and view["window_days"] == 30
+    assert [r["title"] for r in view["queued"]] == ["Twenty-five days ago", "Twenty days ago"]
+    assert view["queued"][0]["position"] == 1
+    assert not [r for r in view["skipped"] if r["status"] == "too-old"]
+
+    plain = substack.queue_preview(settings_for(source))
+    assert plain["window_extended"] is False and plain["queued"] == []
+    assert {r["status"] for r in plain["skipped"]} == {"too-old"}
+
+
+def test_wider_windows_step_up_from_the_setting():
+    assert substack.wider_windows(7) == [14, 30, 60, 90, 180, 365]
+    assert substack.wider_windows(60) == [90, 180, 365]
+    assert substack.wider_windows(365) == []

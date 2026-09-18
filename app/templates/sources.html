@@ -86,6 +86,12 @@
              value="{{ sources.article_max_age_days }}">
       <span class="note">How far back the paper looks, so switching a publication on
       does not print its whole archive.</span></label>
+    <label class="field"><span>If nothing is waiting</span>
+      <label class="inline"><input type="checkbox" name="extend_window_when_empty"
+        {{ "checked" if sources.extend_window_when_empty else "" }}> Look further back</label>
+      <span class="note">On a morning with no unread post inside that window, widen it
+      in steps (14, 30, 60, 90, 180, 365 days) and print the oldest unread post found,
+      rather than a paper with no story.</span></label>
   </div>
   <p class="note">Posts wait their turn: the oldest unprinted post of the first
   publication goes first, and nothing jumps ahead of it. A post still waiting when
@@ -436,6 +442,10 @@ function renderQueue(result) {
   errors.forEach(function (err) {
     html += '<p class="error">' + esc(err.publication) + " — " + esc(err.error) + "</p>";
   });
+  if (result.window_extended) {
+    html += '<p class="note">Nothing unread within the usual window; looking back '
+      + esc(result.window_days) + " days, as allowed.</p>";
+  }
   html += '<p class="queue-summary">' + esc(queued.length) + " waiting, "
     + esc(printed.length) + " printed this week, " + esc(skipped.length) + " skipped</p>";
   if (!queued.length && !printed.length && !skipped.length) {
