@@ -4,6 +4,7 @@
 Keys
 ----
 issue         int   number of issues printed so far; the next paper is issue + 1
+first_issue_date  str  ISO date of issue 1; the volume is the year of publication, counted from here
 seen_posts    list  Substack post GUIDs already printed (gather/substack.py)
 last_run      str   ISO timestamp of the last attempt
 last_success  str   ISO timestamp of the last successful run
@@ -15,6 +16,8 @@ Everything is written atomically; a corrupt or missing file reads as defaults,
 because a bad state file must never stop the paper.
 """
 from __future__ import annotations
+
+from datetime import date as _date
 
 import json
 import logging
@@ -82,9 +85,45 @@ def next_issue() -> int:
     return int(load_state().get("issue", 0)) + 1
 
 
-def bump_issue() -> int:
-    """Count one printed issue and return the new number."""
+def bump_issue(today: str | None = None) -> int:
+    """Count one printed issue and return the new number.
+
+    The first print also records `first_issue_date`, which the volume
+    number counts from (one volume per year of publication).
+    """
     state = load_state()
     state["issue"] = int(state.get("issue", 0)) + 1
+    if not state.get("first_issue_date"):
+        state["first_issue_date"] = today or _date.today().isoformat()
     save_state(state)
     return state["issue"]
+
+
+def volume_number(today: "_date | None" = None) -> int:
+    """1 in the first year of publication, 2 in the second, and so on.
+
+    Before the first issue is printed the paper is in volume 1. Counts
+    whole years from `first_issue_date`, anniversary to anniversary.
+    """
+    first = load_state().get("first_issue_date")
+    if not first:
+        return 1
+    today = today or _date.today()
+    try:
+        start = _date.fromisoformat(str(first)[:10])
+    except ValueError:
+        return 1
+    years = today.year - start.year - (1 if (today.month, today.day) < (start.month, start.day) else 0)
+    return max(1, years + 1)
+
+
+def roman(n: int) -> str:
+    """1 -> I, 4 -> IV, 12 -> XII. Good for as many volumes as a life holds."""
+    n = max(1, int(n))
+    out = ""
+    for value, glyph in ((1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+                         (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")):
+        while n >= value:
+            out += glyph
+            n -= value
+    return out

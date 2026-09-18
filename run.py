@@ -34,7 +34,7 @@ if str(HERE) not in sys.path:  # so `python run.py` finds app/, gather/, render/
 from app.settings import DATA_DIR as _DEFAULT_DATA_DIR  # noqa: E402
 from app.settings import Env, Settings  # noqa: E402
 from render.render import render as render_paper  # noqa: E402
-from state import bump_issue, next_issue, update_state  # noqa: E402
+from state import bump_issue, next_issue, roman, update_state, volume_number  # noqa: E402
 
 log = logging.getLogger("run")
 
@@ -261,7 +261,7 @@ def run(
         if not replay:
             paper.update({
                 "name": look.paper_name,
-                "volume": f"Vol. I, No. {next_issue()}",
+                "volume": f"Vol. {roman(volume_number(now.date()))}, No. {next_issue()}",
                 "date": long_date(now),
                 "imprint": look.imprint,
                 "price": look.price,
@@ -341,7 +341,7 @@ def run(
     if result.ok:
         fields = {"last_error": "", "last_pages": result.pages, "last_pdf": str(result.pdf or "")}
         if not (dry_run or replay):
-            issue = bump_issue()
+            issue = bump_issue(day)
             fields["last_success"] = now.isoformat(timespec="seconds")
             log.info("issue %s printed", issue)
             _mark_seen([g for i, g in enumerate(guids) if g and i in result.printed])
