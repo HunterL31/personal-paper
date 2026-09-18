@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_fonts.html" as fonts %}
 {# The bundled faces themselves, so every card is set in the face it names.
    /fonts.css is built from render/fontlist.py, the table the paper is set
    from: the sample here is the face that comes off the printer. #}
@@ -24,7 +25,8 @@
   </div>
 
   <h2>Date</h2>
-  <p class="note">How today's date is written on the rule under the masthead. Each choice shows today.</p>
+  <p class="note">How today's date is written, where it is printed, and in what
+  face. Each choice shows today.</p>
   <div class="fonts fonts-dates">
     {%- for f in date_styles %}
     <label class="fontcard datecard{{ ' on' if f.key == look.date_format else '' }}">
@@ -35,47 +37,97 @@
     {%- endfor %}
   </div>
 
-  <h2>Ears</h2>
-  <p class="note">The two boxes either side of the masthead. The left one is
-  today's weather; these set the right one.</p>
   <div class="grid">
-    <label class="field"><span>Initials</span>
-      <input type="text" name="ear_initials" value="{{ look.ear.initials }}">
-      <span class="note">A monogram at the top of the right ear. Leave it empty for none.</span></label>
-    <label class="field"><span>Ear lines</span>
-      <textarea name="ear_lines">{{ look.ear.lines | join("\n") }}</textarea>
-      <span class="note">One line of the right ear per line here. With the crossword
-      switched on, &ldquo;The crossword is on the back page.&rdquo; is the line to add;
-      nothing writes it for you.</span></label>
+    <label class="field"><span>Where it is printed</span>
+      <select name="date_place">
+        {%- for place in date_places %}
+        <option value="{{ place.key }}"{{ ' selected' if place.key == look.date_place else '' }}>{{ place.label }}</option>
+        {%- endfor %}
+      </select>
+      <span class="note">An ear set to the date shows it wherever this is set.</span></label>
+    <label class="field"><span>Size</span>
+      <input type="number" class="narrow" name="date_size_pt" step="0.5" min="6" max="24"
+             value="{{ "%g"|format(look.date_size_pt) }}">
+      <span class="note">8 on the rule; 10&ndash;14 above or below.</span></label>
   </div>
 
-  <h2>Type</h2>
+  <h3 class="sub">Date font</h3>
+  {{ fonts.picker("date_font", fonts_date, "datefont", date_today) }}
+
+  <h2>Ears</h2>
+  <p class="note">The two boxes either side of the masthead. Each one shows
+  whatever you set it to; a box set to nothing leaves its side of the masthead
+  open. The words below are kept whichever kind is chosen, so you can try
+  another and come back.</p>
+
   {#
-    One card per face, set in that face: the name, then a line of the kind
-    of text it will actually set. `font.stack` is the CSS stack from
-    render/fontlist.py -- our own constant, quotes and all, so it goes in
-    the attribute as it stands.
+    One column per ear. Every field is on the page whatever the kind is, so
+    that the form always submits all of them and the save reads back only
+    the ones that kind uses; the script below shows the ones that are the
+    chosen kind's, and the page is usable with no script at all.
   #}
-  {% macro picker(field, fonts, kind, sample) %}
-  <div class="fonts fonts-{{ kind }}" role="group" aria-label="{{ kind }} font">
-    {% for font in fonts %}
-    <label class="fontcard{{ ' on' if font.checked else '' }}" style='--face: {{ font.stack | safe }}'>
-      <input type="radio" name="{{ field }}" value="{{ font.name }}" {{ "checked" if font.checked else "" }}>
-      <span class="fontname">{{ font.name }}</span>
-      <span class="fontsample">{{ sample }}</span>
-    </label>
-    {% endfor %}
-  </div>
+  {% macro earcol(side, title, box) %}
+  <section class="earcol" data-side="{{ side }}">
+    <h3 class="sub">{{ title }}</h3>
+    <label class="field"><span>Shows</span>
+      <select name="ear_{{ side }}_kind" class="ear-kind">
+        {%- for kind in ear_kinds %}
+        <option value="{{ kind.key }}"{{ ' selected' if kind.key == box.kind else '' }}>{{ kind.label }}</option>
+        {%- endfor %}
+      </select></label>
+    <label class="field ear-field" data-field="initials"><span>Initials</span>
+      <input type="text" name="ear_{{ side }}_initials" value="{{ box.initials }}">
+      <span class="note">A monogram at the top of the box. Leave it empty for none.</span></label>
+    <label class="field ear-field" data-field="lines"><span>Lines</span>
+      <textarea name="ear_{{ side }}_lines">{{ box.lines | join("\n") }}</textarea>
+      <span class="note">One line of the box per line here. With the crossword
+      switched on, &ldquo;The crossword is on the back page.&rdquo; is the line to
+      add; nothing writes it for you.</span></label>
+    <label class="field ear-field" data-field="countdown_date"><span>Counting down to</span>
+      <input type="date" class="narrow" name="ear_{{ side }}_countdown_date" value="{{ box.countdown_date }}">
+      <span class="note">The box prints how many days off it is, and says
+      &ldquo;Today&rdquo; on the day itself.</span></label>
+    <label class="field ear-field" data-field="countdown_label"><span>Countdown label</span>
+      <input type="text" name="ear_{{ side }}_countdown_label" value="{{ box.countdown_label }}">
+      <span class="note">The line under the count: &ldquo;Sarah's visit&rdquo;.</span></label>
+  </section>
   {% endmacro %}
 
+  <div class="ears">
+    {{ earcol("left", "Left ear", look.ear_left) }}
+    {{ earcol("right", "Right ear", look.ear_right) }}
+  </div>
+
+  <script>
+    /* Which fields belong to which kind, from app/settings.py. Nothing is
+       removed from the form: a hidden field is still submitted, and the
+       save reads back only the ones the chosen kind uses. */
+    (function () {
+      var FIELDS = {{ ear_fields | tojson }};
+      function sync(col) {
+        var kind = col.querySelector('.ear-kind').value;
+        var wanted = FIELDS[kind] || [];
+        Array.prototype.forEach.call(col.querySelectorAll('.ear-field'), function (f) {
+          f.hidden = wanted.indexOf(f.dataset.field) < 0;
+        });
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('.earcol'), function (col) {
+        col.querySelector('.ear-kind').addEventListener('change', function () { sync(col); });
+        sync(col);
+      });
+    })();
+  </script>
+
+  <h2>Type</h2>
+
   <h3 class="sub">Masthead font</h3>
-  {{ picker("masthead_font", fonts_masthead, "masthead", look.paper_name) }}
+  {{ fonts.picker("masthead_font", fonts_masthead, "masthead", look.paper_name) }}
 
   <h3 class="sub">Headline font</h3>
-  {{ picker("headline_font", fonts_head, "headline", "Council votes to widen the river path") }}
+  {{ fonts.picker("headline_font", fonts_head, "headline", "Council votes to widen the river path") }}
 
   <h3 class="sub">Body font</h3>
-  {{ picker("body_font", fonts_body, "body", "The quick brown fox jumps over the lazy dog") }}
+  {{ fonts.picker("body_font", fonts_body, "body", "The quick brown fox jumps over the lazy dog") }}
 
   <p class="note">Each card is set in the printer's own file for that face, at
   screen size. The Preview tab shows the real sheet, at the real size, with

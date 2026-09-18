@@ -15,7 +15,33 @@
 {% set masthead_family = FONTS.get(look.masthead_font, FONTS["Maguntia"]) %}
 {% set head_family     = FONTS.get(look.headline_font, FONTS["Old Standard"]) %}
 {% set body_family     = FONTS.get(look.body_font, FONTS["PT Serif"]) %}
+{% set date_family     = FONTS.get(look.date_font, FONTS["Old Standard"]) %}
 {% set s = (look.body_size_pt | float) / 9.0 %}
+
+{#
+  ---- The nameplate, from `look` (app.settings.Look) ----
+
+  Each ear box is `look.ear_left` / `look.ear_right`: a `kind` and the
+  words the kinds that need them are set from. A kind this template does
+  not know is an empty column, exactly like "none", because an odd
+  settings file must still print a paper. `look.date_place` says where
+  the date goes: the folio rule under the masthead, a line above or below
+  the nameplate, or nowhere but an ear that shows it.
+#}
+{% set EAR_KINDS = ["weather", "date", "monogram", "issue", "text",
+                    "next_event", "sun", "countdown", "puzzle", "none"] %}
+{% set ear_l = look.ear_left if look.ear_left is mapping else {"kind": "weather"} %}
+{% set ear_r = look.ear_right if look.ear_right is mapping else {"kind": "none"} %}
+{% set kind_l = ear_l.get("kind", "none") if ear_l.get("kind", "none") in EAR_KINDS else "none" %}
+{% set kind_r = ear_r.get("kind", "none") if ear_r.get("kind", "none") in EAR_KINDS else "none" %}
+{% set date_place = look.date_place if look.date_place in ["folio", "above", "below", "none"] else "folio" %}
+{% set date_size = look.date_size_pt | float %}
+{% set date_style = "font-family: " ~ date_family ~ "; font-size: " ~ (date_size | round(2)) ~ "pt" %}
+
+{# A puzzle with no grid is no puzzle: the section is left out rather than
+   risking the morning's paper over it. The ear that names the day's puzzle
+   asks the same question, so this is settled before the nameplate. #}
+{% set puzzle = crossword if (crossword and crossword.grid and crossword.width) else None %}
 
 {#
   ---- The arrangement, from `look.layout` (app.settings.Look.layout) ----
@@ -79,6 +105,60 @@
     {% endif %}
   {% endif %}
 {% endfor %}
+
+{#
+  One ear box, either side of the masthead. Every kind is drawn here and
+  nowhere else, and each is furniture: it says what it says and nothing
+  labels it. Whatever a kind is set from, the box stays 1.3in by 1.12in --
+  the script under the sheet shrinks the type of a box whose words would
+  not fit, rather than letting one word of it run over the rule.
+#}
+{% macro ear(box, kind, side) %}
+    {%- if kind == 'none' %}
+    <div class="ear-off"></div>
+    {%- else %}
+    <div class="ear{{ ' right' if side == 'right' else '' }}">
+      {%- if kind == 'weather' %}
+      <div>{{ weather.summary }}.</div>
+      <div class="big">{{ weather.high }}° <small>low {{ weather.low }}°</small></div>
+      <div>Wind {{ weather.wind }}</div>
+      {%- elif kind == 'date' %}
+      <div class="ear-date" style="{{ date_style }}">{{ paper.date }}</div>
+      {%- elif kind == 'monogram' %}
+      {% if box.get('initials') %}<div class="initials">{{ box.get('initials') }}</div>{% endif %}
+      {% for line in box.get('lines') | default([], true) %}<div>{{ line }}</div>{% endfor %}
+      {%- elif kind == 'issue' %}
+      {% for part in (paper.volume | default('', true)).split(', ') if part %}<div class="big">{{ part }}</div>{% endfor %}
+      {%- elif kind == 'text' %}
+      {% for line in box.get('lines') | default([], true) %}<div>{{ line }}</div>{% endfor %}
+      {%- elif kind == 'next_event' %}
+      {% set ev = events | first_clock_event %}
+      {%- if ev %}
+      <div class="big">{{ ev.time }}</div>
+      <div>{{ ev.title }}</div>
+      {%- else %}
+      <div>Nothing scheduled</div>
+      {%- endif %}
+      {%- elif kind == 'sun' %}
+      {% set light = weather.sunrise | day_length(weather.sunset) %}
+      <div>Sunrise {{ weather.sunrise }}</div>
+      <div>Sunset {{ weather.sunset }}</div>
+      {% if light %}<div>{{ light }} of light</div>{% endif %}
+      {%- elif kind == 'countdown' %}
+      {% set left = box.get('countdown_date') | countdown %}
+      {% if left %}<div class="big">{{ left }}</div>{% endif %}
+      {% if box.get('countdown_label') %}<div>{{ box.get('countdown_label') }}</div>{% endif %}
+      {%- elif kind == 'puzzle' %}
+      {%- if puzzle %}
+      <div class="ear-title">{{ puzzle.title }}</div>
+      {% if puzzle.author %}<div>By {{ puzzle.author }}</div>{% endif %}
+      {%- else %}
+      <div>No puzzle today</div>
+      {%- endif %}
+      {%- endif %}
+    </div>
+    {%- endif %}
+{%- endmacro %}
 
 {# One section of the reader's own day, wherever it was placed. #}
 {% macro rail_section(sec) %}
@@ -218,6 +298,18 @@
   .ear .big small { font-size: 10pt; font-weight: normal; }
   .ear.right { text-align: right; }
   .ear .initials { font-family: var(--head); font-weight: bold; font-size: 15pt; line-height: 1; letter-spacing: 0.08em; }
+  /* The ears that are a name, not a reading: the day's puzzle, the date. */
+  .ear .ear-title { font-family: var(--head); font-weight: bold; font-size: 9.5pt; line-height: 1.15; }
+  .ear .ear-date { font-family: var(--head); line-height: 1.15; }
+  /* An ear set to nothing: the column is closed up by the nameplate's own
+     grid, and what is left of it is empty. */
+  .ear-off { border: 0; }
+
+  /* The date as a line of its own, above or below the nameplate. */
+  .dateline {
+    font-family: var(--head); text-align: center; line-height: 1.2;
+    margin: 0.05in 0 0; padding: 0;
+  }
 
   .folio {
     display: flex; justify-content: space-between; align-items: baseline;
@@ -395,21 +487,25 @@
 <body>
 
 <section class="page front" id="page-1">
-  <header class="nameplate">
-    <div class="ear">
-      <div>{{ weather.summary }}.</div>
-      <div class="big">{{ weather.high }}° <small>low {{ weather.low }}°</small></div>
-      <div>Wind {{ weather.wind }}</div>
-    </div>
+  {%- if date_place == 'above' %}
+  <p class="dateline" style="{{ date_style }}">{{ paper.date }}</p>
+  {%- endif %}
+  {#- A box set to "none" is no box: its column closes up and the masthead
+      centres over what is left, which with both of them closed is the
+      sheet itself. #}
+  <header class="nameplate"{% if kind_l == 'none' or kind_r == 'none' %} style="grid-template-columns: {{ '1.3in' if kind_l != 'none' else '0' }} 1fr {{ '1.3in' if kind_r != 'none' else '0' }};"{% endif %}>
+    {{- ear(ear_l, kind_l, 'left') }}
     <h1 class="masthead">{{ look.paper_name }}</h1>
-    <div class="ear right">
-      {% if look.ear.initials %}<div class="initials">{{ look.ear.initials }}</div>{% endif %}
-      {% for line in look.ear.lines %}<div>{{ line }}</div>{% endfor %}
-    </div>
+    {{- ear(ear_r, kind_r, 'right') }}
   </header>
+  {%- if date_place == 'below' %}
+  <p class="dateline" style="{{ date_style }}">{{ paper.date }}</p>
+  {%- endif %}
   <div class="folio">
     <span>{{ paper.volume }}</span>
+    {%- if date_place == 'folio' %}
     <span>{{ paper.date }}</span>
+    {%- endif %}
     {%- if look.imprint %}
     <span>{{ look.imprint }}</span>
     {%- endif %}
@@ -464,9 +560,6 @@
 
 <template id="no-stories"><p class="no-stories">No new stories this morning.</p></template>
 
-{# A puzzle with no grid is no puzzle: the section is left out rather than
-   risking the morning's paper over it. #}
-{% set puzzle = crossword if (crossword and crossword.grid and crossword.width) else None %}
 {% if puzzle %}
 {# The grid is square, its cell the size the reader set (0.19in by default: a
    15x15 is then 2.85in), shrunk when it has to be so that the grid keeps to
@@ -881,7 +974,42 @@
     return pour(remainders);
   }
 
+  // ---- The ears ----
+  // Whatever the reader put in a box, it is set inside the box: an ear that
+  // overflows is set smaller, in the same proportions, until it does not.
+  // Nothing is cut and nothing is reworded; a box that fits is not touched.
+  // The nameplate is furniture: its height is fixed, so a box with more in
+  // it than it holds grows out of the plate rather than pushing it open.
+  // That, and a word wider than the box, are what the type is shrunk for.
+  function earOverflows(box, plate) {
+    if (rect(box).height > rect(plate).height + 0.5) return true;
+    const b = rect(box), cs = getComputedStyle(box);
+    const edge = side => parseFloat(cs['border' + side + 'Width']) + parseFloat(cs['padding' + side]);
+    const left = b.left + edge('Left'), right = b.right - edge('Right');
+    for (const n of box.querySelectorAll('*')) {
+      const r = rect(n);
+      if (r.left < left - 0.5 || r.right > right + 0.5) return true;
+      // A word wider than the box: it has nowhere to wrap.
+      if (n.clientWidth && n.scrollWidth > n.clientWidth + 0.5) return true;
+    }
+    return false;
+  }
+
+  function fitEars() {
+    for (const box of document.querySelectorAll('.ear')) {
+      const plate = box.parentElement;
+      if (!earOverflows(box, plate)) continue;      // the usual morning
+      const nodes = [box, ...box.querySelectorAll('*')];
+      const base = nodes.map(n => parseFloat(getComputedStyle(n).fontSize));
+      for (let f = 0.95; f >= 0.35; f -= 0.05) {
+        nodes.forEach((n, i) => { n.style.fontSize = (base[i] * f).toFixed(2) + 'px'; });
+        if (!earOverflows(box, plate)) break;
+      }
+    }
+  }
+
   function run() {
+    fitEars();
     fitCrossword();
 
     let printed = 0, partial = null;

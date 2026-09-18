@@ -1,0 +1,19 @@
+{#
+  The font picker, used wherever the Look tab offers a face.
+
+  One card per face, set in that face: the name, then a line of the kind of
+  text it will actually set. `font.stack` is the CSS stack from
+  render/fontlist.py -- our own constant, quotes and all, so it goes in the
+  attribute as it stands. No script: they are plain radios.
+#}
+{% macro picker(field, fonts, kind, sample) %}
+  <div class="fonts fonts-{{ kind }}" role="group" aria-label="{{ kind }} font">
+    {% for font in fonts %}
+    <label class="fontcard{{ ' on' if font.checked else '' }}" style='--face: {{ font.stack | safe }}'>
+      <input type="radio" name="{{ field }}" value="{{ font.name }}" {{ "checked" if font.checked else "" }}>
+      <span class="fontname">{{ font.name }}</span>
+      <span class="fontsample">{{ sample }}</span>
+    </label>
+    {% endfor %}
+  </div>
+{% endmacro %}

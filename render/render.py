@@ -57,7 +57,13 @@ _FALLBACK_LOOK: dict[str, Any] = {
     "paper_name": "Personal Paper",
     "imprint": "Printed at home before sunrise",
     "price": "Single copy, free",
-    "ear": {"initials": "", "lines": ["Continued stories inside."]},
+    "ear_left": {"kind": "weather", "initials": "", "lines": [],
+                 "countdown_date": "", "countdown_label": ""},
+    "ear_right": {"kind": "monogram", "initials": "", "lines": ["Continued stories inside."],
+                  "countdown_date": "", "countdown_label": ""},
+    "date_place": "folio",
+    "date_font": "Old Standard",
+    "date_size_pt": 8.0,
     "masthead_font": "Maguntia",
     "headline_font": "Old Standard",
     "body_font": "PT Serif",
@@ -135,6 +141,60 @@ def hyphenate(text: Any) -> Any:
     )
 
 
+# ------------------------------------------------------------------- ears
+#: A clock time as the calendar gatherer writes one: "7:30", "9:30 a.m.".
+#: An event whose time is not one of these is an all-day event.
+_CLOCK = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*(?:([ap])\.?\s*m\.?)?\s*$", re.I)
+
+
+def clock_minutes(text: Any) -> Optional[int]:
+    """"6:53 a.m." -> 413, minutes past midnight. None if it is not a clock."""
+    if not isinstance(text, str):
+        return None
+    m = _CLOCK.match(text)
+    if not m:
+        return None
+    hour, minute, half = int(m.group(1)), int(m.group(2)), (m.group(3) or "").lower()
+    if minute > 59 or hour > (12 if half else 23):
+        return None
+    if half:
+        hour = hour % 12 + (12 if half == "p" else 0)
+    return hour * 60 + minute
+
+
+def first_clock_event(events: Any) -> Optional[dict]:
+    """The first event of the day that happens at a time, not all day."""
+    for event in events or []:
+        if isinstance(event, dict) and clock_minutes(event.get("time")) is not None:
+            return event
+    return None
+
+
+def day_length(sunrise: Any, sunset: Any) -> str:
+    """"6:53 a.m.", "7:15 p.m." -> "12h 22m". "" if either is not a clock."""
+    up, down = clock_minutes(sunrise), clock_minutes(sunset)
+    if up is None or down is None:
+        return ""
+    minutes = (down - up) % (24 * 60)
+    return f"{minutes // 60}h {minutes % 60:02d}m"
+
+
+def countdown(iso: Any, today: Any = None) -> str:
+    """"12 days" until that date, "Today" on it, "12 days since" after it."""
+    from datetime import date as _date
+
+    try:
+        year, month, day = (int(part) for part in str(iso).split("-"))
+        target = _date(year, month, day)
+    except (TypeError, ValueError):
+        return ""
+    days = (target - (today or _date.today())).days
+    if days == 0:
+        return "Today"
+    n = abs(days)
+    return f"{n} day{'' if n == 1 else 's'}" + ("" if days > 0 else " since")
+
+
 def DEFAULT_LOOK() -> dict[str, Any]:
     """The default Look as a plain dict (from `app.settings` when importable).
 
@@ -179,22 +239,33 @@ class RenderResult:
 def _look_dict(look: "Look | dict | None") -> dict[str, Any]:
     """Normalise whatever the caller passed into a full look dict.
 
-    `ear` and `layout` are merged key by key, so a caller may hand over one
-    layout setting and still get a whole arrangement.
+    The ears and `layout` are merged key by key, so a caller may hand over
+    one layout setting, or one ear, and still get a whole arrangement. A
+    look from before either ear could be set carries one `ear`: it is the
+    right-hand monogram, exactly as `app.settings.Look` reads it.
     """
     base = DEFAULT_LOOK()
     if look is None:
         return base
     raw = look.model_dump() if hasattr(look, "model_dump") else dict(look)
     merged = {**base, **{k: v for k, v in raw.items() if v is not None}}
-    ear = raw.get("ear") or {}
-    if hasattr(ear, "model_dump"):
-        ear = ear.model_dump()
-    merged["ear"] = {**base["ear"], **{k: v for k, v in dict(ear).items() if v is not None}}
-    layout = raw.get("layout") or {}
-    if hasattr(layout, "model_dump"):
-        layout = layout.model_dump()
-    merged["layout"] = {**base["layout"], **{k: v for k, v in dict(layout).items() if v is not None}}
+
+    def _part(value: Any) -> dict[str, Any]:
+        if hasattr(value, "model_dump"):
+            value = value.model_dump()
+        return dict(value or {})
+
+    legacy = _part(raw.get("ear"))
+    if legacy and not raw.get("ear_right"):
+        merged["ear_right"] = {**base["ear_right"], "kind": "monogram",
+                               **{k: v for k, v in legacy.items() if v is not None}}
+    merged.pop("ear", None)
+    for side in ("ear_left", "ear_right"):
+        given = _part(raw.get(side))
+        if given:
+            merged[side] = {**base[side], **{k: v for k, v in given.items() if v is not None}}
+    merged["layout"] = {**base["layout"],
+                        **{k: v for k, v in _part(raw.get("layout")).items() if v is not None}}
     return merged
 
 
@@ -202,6 +273,11 @@ def build_html(data: dict, look: "Look | dict | None" = None, *, font_dir: str |
     """Render the Jinja2 template (no browser involved)."""
     env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape(["html"]))
     env.filters["hyphenate"] = hyphenate
+    # What the ears are set from, where the data alone is not the words:
+    # the next thing on today, how long the day is, how far off a date is.
+    env.filters["first_clock_event"] = first_clock_event
+    env.filters["day_length"] = day_length
+    env.filters["countdown"] = countdown
     ctx = dict(data)
     ctx.setdefault("paper", {})
     ctx.setdefault("weather", {})

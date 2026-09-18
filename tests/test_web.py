@@ -18,10 +18,13 @@ from fastapi.testclient import TestClient
 
 from app import jobs, scheduler
 from app.settings import (
+    DATE_PLACES,
+    EAR_KINDS,
     FONT_CHOICES_BODY,
     FONT_CHOICES_HEAD,
     FONT_CHOICES_MASTHEAD,
     CalendarSource,
+    EarBox,
     ListSource,
     Schedule,
     Settings,
@@ -104,8 +107,9 @@ def test_saving_look_keeps_the_other_sections(client):
             "paper_name": "The Evening Ledger",
             "imprint": "Printed at home",
             "price": "Free",
-            "ear_initials": "M. L.",
-            "ear_lines": "One line\nAnother line\n",
+            "ear_right_kind": "monogram",
+            "ear_right_initials": "M. L.",
+            "ear_right_lines": "One line\nAnother line\n",
             "masthead_font": "UnifrakturCook",
             "headline_font": "Playfair Display",
             "body_font": "EB Garamond",
@@ -122,7 +126,7 @@ def test_saving_look_keeps_the_other_sections(client):
     assert saved.look.body_size_pt == 10.5
     assert saved.look.lead_body_height_in == 3.1
     assert saved.look.masthead_font == "UnifrakturCook"
-    assert saved.look.ear.lines == ["One line", "Another line"]
+    assert saved.look.ear_right.lines == ["One line", "Another line"]
     # A save that does not touch the Layout table leaves it alone.
     assert [s.key for s in saved.look.layout.sections] == [
         "agenda", "list:tasks", "hourly", "notes"
@@ -138,6 +142,108 @@ def test_look_ignores_an_unknown_font_and_clamps_the_size(client):
     look = Settings.load().look
     assert look.body_font == "PT Serif"
     assert look.body_size_pt == 11.0
+
+
+# ------------------------------------------- the ears and the date line
+def test_the_look_tab_offers_both_ears_and_the_date_controls(client):
+    """One column per box, every kind in each, and where the date goes."""
+    from render import fontlist
+
+    settings = Settings()
+    settings.look.ear_left = EarBox(kind="sun")
+    settings.look.ear_right = EarBox(kind="countdown", countdown_date="2026-12-24",
+                                     countdown_label="Christmas")
+    settings.look.date_place = "above"
+    settings.look.date_font = "Bodoni Moda"
+    settings.look.date_size_pt = 11.5
+    settings.save()
+
+    body = client.get("/look", auth=AUTH).text
+    assert "Left ear" in body and "Right ear" in body
+    for side, chosen in (("left", "sun"), ("right", "countdown")):
+        assert f'name="ear_{side}_kind"' in body, side
+        for kind in EAR_KINDS:
+            assert f'<option value="{kind}"' in body, kind
+        assert f'<option value="{chosen}" selected>' in body, side
+        for field in ("initials", "lines", "countdown_date", "countdown_label"):
+            assert f'name="ear_{side}_{field}"' in body, (side, field)
+    assert "2026-12-24" in body and "Christmas" in body
+
+    # The date: where it goes, what face it is set in, and how big.
+    assert 'name="date_place"' in body
+    for place in DATE_PLACES:
+        assert f'<option value="{place}"' in body, place
+    assert '<option value="above" selected>' in body
+    assert "On the rule under the masthead" in body
+    for name in FONT_CHOICES_HEAD:
+        assert f'name="date_font" value="{name}"' in body, name
+        assert f"--face: {fontlist.stack(name)}" in body, name
+    assert 'name="date_font" value="Bodoni Moda" checked' in body
+    assert 'name="date_size_pt"' in body and 'value="11.5"' in body
+
+
+def test_saving_the_ears_and_the_date_line(client):
+    response = client.post("/look", auth=AUTH, data={
+        "paper_name": "The Evening Gull",
+        "ear_left_kind": "countdown",
+        "ear_left_countdown_date": "2026-12-24",
+        "ear_left_countdown_label": "Christmas",
+        "ear_left_initials": "M. L.",
+        "ear_left_lines": "A line\nAnother\n",
+        "ear_right_kind": "none",
+        "ear_right_initials": "",
+        "ear_right_lines": "",
+        "date_place": "below",
+        "date_font": "Playfair Display",
+        "date_size_pt": "12.5",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+
+    look = Settings.load().look
+    assert look.ear_left.kind == "countdown"
+    assert look.ear_left.countdown_date == "2026-12-24"
+    assert look.ear_left.countdown_label == "Christmas"
+    # The words of the other kinds are kept: she may come back to them.
+    assert look.ear_left.initials == "M. L."
+    assert look.ear_left.lines == ["A line", "Another"]
+    assert look.ear_right.kind == "none"
+    assert (look.date_place, look.date_font, look.date_size_pt) == \
+        ("below", "Playfair Display", 12.5)
+
+
+def test_a_countdown_date_that_is_not_a_date_is_blanked(client):
+    client.post("/look", auth=AUTH, data={
+        "paper_name": "X",
+        "ear_left_kind": "countdown",
+        "ear_left_countdown_date": "next Tuesday",
+    })
+    assert Settings.load().look.ear_left.countdown_date == ""
+
+    client.post("/look", auth=AUTH, data={
+        "paper_name": "X", "ear_left_kind": "countdown",
+        "ear_left_countdown_date": "2026-02-30",
+    })
+    assert Settings.load().look.ear_left.countdown_date == ""
+
+
+def test_an_unknown_ear_kind_or_date_place_is_ignored(client):
+    settings = Settings()
+    settings.look.ear_left = EarBox(kind="sun")
+    settings.look.date_place = "above"
+    settings.save()
+
+    client.post("/look", auth=AUTH, data={
+        "paper_name": "X",
+        "ear_left_kind": "horoscope",
+        "date_place": "sideways",
+        "date_font": "Comic Sans",
+        "date_size_pt": "99",
+    })
+    look = Settings.load().look
+    assert look.ear_left.kind == "sun"          # what it was, not what was sent
+    assert look.date_place == "above"
+    assert look.date_font == "Old Standard"
+    assert look.date_size_pt == 24.0            # clamped to the range the tab offers
 
 
 # ------------------------------------------------------------ the fonts

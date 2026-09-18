@@ -165,8 +165,8 @@ def test_look_supplies_name_imprint_price_and_ears(sample_data, tmp_path):
         imprint="Set in the kitchen",
         price="Two cents",
     )
-    look.ear.initials = "A. B."
-    look.ear.lines = ["Stories continue inside.", "No crossword today."]
+    look.ear_right.initials = "A. B."
+    look.ear_right.lines = ["Stories continue inside.", "No crossword today."]
     result = render(sample_data, look, tmp_path / "ears")
     html = result.laid_out_html
     assert "The Evening Gull" in html and "Set in the kitchen" in html and "Two cents" in html

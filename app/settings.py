@@ -54,10 +54,61 @@ def slugify(name: str) -> str:
 
 
 # ---------------------------------------------------------------- Look
-class Ear(BaseModel):
-    """Text in the boxes either side of the masthead."""
-    initials: str = ""            # the reader's monogram; empty means no line
-    lines: list[str] = Field(default_factory=lambda: ["Continued stories inside."])
+#: What an ear box can be set to, in the order the Look tab offers them.
+#: The template draws each one; anything else in a settings file is an
+#: empty box, never an exception.
+EAR_KINDS = [
+    "weather", "date", "monogram", "issue", "text",
+    "next_event", "sun", "countdown", "puzzle", "none",
+]
+#: What the Look tab calls each one. The paper prints no label of its own:
+#: an ear is the thing itself, not a heading over it.
+EAR_KIND_LABELS = {
+    "weather": "Today's weather",
+    "date": "The date",
+    "monogram": "Monogram and lines",
+    "issue": "Volume and number",
+    "text": "Lines of your own",
+    "next_event": "The next thing on today",
+    "sun": "Sunrise and sunset",
+    "countdown": "A countdown",
+    "puzzle": "The crossword",
+    "none": "Nothing (no box)",
+}
+#: Which of an ear's fields the Look tab shows for a kind, by the field's
+#: own name. Every field is submitted whatever is picked; only the ones a
+#: kind uses are read back.
+EAR_KIND_FIELDS = {
+    "monogram": ["initials", "lines"],
+    "text": ["lines"],
+    "countdown": ["countdown_date", "countdown_label"],
+}
+#: Where the date is printed. "folio" is the rule under the masthead, as
+#: the paper has always set it; "none" leaves it to an ear, or to nowhere.
+DATE_PLACES = ["folio", "above", "below", "none"]
+DATE_PLACE_LABELS = {
+    "folio": "On the rule under the masthead",
+    "above": "Above the masthead",
+    "below": "Below the masthead",
+    "none": "Only where an ear shows it",
+}
+
+
+class EarBox(BaseModel):
+    """One of the two boxes either side of the masthead.
+
+    `kind` is what the box shows; the rest are the words the kinds that
+    need them are set from, and are kept whatever the kind is, so that
+    trying another one and coming back loses nothing.
+    """
+    kind: Literal[
+        "weather", "date", "monogram", "issue", "text",
+        "next_event", "sun", "countdown", "puzzle", "none",
+    ] = "none"
+    initials: str = ""            # monogram: the reader's own; empty means no line
+    lines: list[str] = Field(default_factory=list)   # monogram and text
+    countdown_date: str = ""      # YYYY-MM-DD
+    countdown_label: str = ""     # "Sarah's visit"
 
 
 # -------------------------------------------------------------- Layout
@@ -137,7 +188,17 @@ class Look(BaseModel):
     date_format: str = "long"
     imprint: str = "Printed at home before sunrise"
     price: str = "Single copy, free"
-    ear: Ear = Field(default_factory=Ear)
+    #: The two boxes either side of the masthead. The weather on the left
+    #: and the reader's line on the right are the paper as it has always
+    #: been set; either box may be set to any of `EAR_KINDS`.
+    ear_left: EarBox = Field(default_factory=lambda: EarBox(kind="weather"))
+    ear_right: EarBox = Field(default_factory=lambda: EarBox(
+        kind="monogram", initials="", lines=["Continued stories inside."]))
+    #: Where the date is printed, and how it is set there. The folio at 8pt
+    #: is the rule under the masthead; a line above or below it wants 10-14.
+    date_place: Literal["folio", "above", "below", "none"] = "folio"
+    date_font: str = "Old Standard"        # any FONT_CHOICES_HEAD entry
+    date_size_pt: float = Field(8.0, ge=6.0, le=24.0)
     masthead_font: str = "Maguntia"
     headline_font: str = "Old Standard"
     body_font: str = "PT Serif"
@@ -150,6 +211,29 @@ class Look(BaseModel):
     show_hourly: bool = True
     show_notes: bool = True
     layout: Layout = Field(default_factory=Layout)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ear_right_from_legacy(cls, data):
+        """A settings file from before either ear could be set.
+
+        It has one `ear`, the monogram and lines of the right-hand box; it
+        becomes `ear_right`, so the paper is set exactly as it was.
+        """
+        if not isinstance(data, dict) or "ear_right" in data:
+            return data
+        legacy = data.get("ear")
+        if hasattr(legacy, "model_dump"):
+            legacy = legacy.model_dump()
+        if not isinstance(legacy, dict):
+            return data
+        data = dict(data)
+        data["ear_right"] = {
+            "kind": "monogram",
+            "initials": legacy.get("initials", "") or "",
+            "lines": list(legacy.get("lines", ["Continued stories inside."]) or []),
+        }
+        return data
 
 
 # ------------------------------------------------------------- Sources
