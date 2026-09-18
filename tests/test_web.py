@@ -1567,3 +1567,11 @@ def test_the_queue_table_has_mark_buttons(client):
     html = client.get("/sources", auth=AUTH).text
     assert "Mark as printed" in html and "Mark as unread" in html
     assert "/sources/substack/mark" in html
+
+
+def test_the_look_further_back_option_saves(client):
+    client.post("/sources", auth=AUTH, data={"article_max_age_days": "7", "extend_window_when_empty": "on"})
+    assert Settings.load().sources.extend_window_when_empty is True
+    client.post("/sources", auth=AUTH, data={"article_max_age_days": "7"})
+    assert Settings.load().sources.extend_window_when_empty is False
+    assert "Look further back" in client.get("/sources", auth=AUTH).text

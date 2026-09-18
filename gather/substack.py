@@ -542,6 +542,32 @@ def _articles_for_source(source, seen: set[str], max_age_days: int) -> list[dict
     return [article for _, article in out]
 
 
+WINDOW_STEPS = (14, 30, 60, 90, 180, 365)
+
+
+def wider_windows(days: int) -> list[int]:
+    """The windows tried, in order, when the reader allows looking further back."""
+    return [d for d in WINDOW_STEPS if d > days]
+
+
+def _extends_window(settings) -> bool:
+    return bool(getattr(getattr(settings, "sources", None), "extend_window_when_empty", False))
+
+
+def _gather_window(sources, seen: set[str], max_age_days: int) -> list[dict]:
+    """Every unread post inside the window, in queue order."""
+    articles: list[dict] = []
+    for source in sources:
+        try:
+            found = _articles_for_source(source, seen, max_age_days)
+        except Exception:
+            logger.error("substack source %r failed", source.name, exc_info=True)
+            continue
+        logger.info("%s: %d post(s) waiting within %d days", source.name, len(found), max_age_days)
+        articles.extend(found)
+    return articles
+
+
 def _max_age_days(settings) -> int:
     """The window, from the Sources tab, clamped to the field's range."""
     try:
@@ -573,15 +599,13 @@ def fetch(settings) -> list[dict]:
 
     max_age_days = _max_age_days(settings)
     seen = _seen_guids()
-    articles: list[dict] = []
-    for source in sources:
-        try:
-            found = _articles_for_source(source, seen, max_age_days)
-        except Exception:
-            logger.error("substack source %r failed", source.name, exc_info=True)
-            continue
-        logger.info("%s: %d post(s) waiting", source.name, len(found))
-        articles.extend(found)
+    articles = _gather_window(sources, seen, max_age_days)
+    if not articles and _extends_window(settings):
+        for days in wider_windows(max_age_days):
+            articles = _gather_window(sources, seen, days)
+            if articles:
+                logger.info("nothing unread within %d days; looked back %d days", max_age_days, days)
+                break
 
     waiting = len(articles) - QUEUE_LIMIT
     if waiting > 0:
@@ -704,6 +728,26 @@ def queue_preview(settings) -> dict:
         result["printed"].extend(printed)
         for row in skipped:
             (too_old if row["status"] == "too-old" else result["skipped"]).append(row)
+
+    # With nothing unread in the window and the reader's leave to look
+    # further back, the paper would widen the window: show what it would find.
+    result["window_extended"] = False
+    if not result["queued"] and _extends_window(settings):
+        for days in wider_windows(max_age_days):
+            wider: list[dict] = []
+            for source in list(settings.sources.substacks or []):
+                try:
+                    queued, _, _ = _preview_for_source(source, seen, days)
+                except Exception:
+                    continue
+                wider.extend(queued)
+            if wider:
+                result["queued"] = wider
+                result["window_days"] = days
+                result["window_extended"] = True
+                found = {row.get("guid") for row in wider}
+                too_old = [row for row in too_old if row.get("guid") not in found]
+                break
 
     for index, row in enumerate(result["queued"]):
         if index < QUEUE_LIMIT:
