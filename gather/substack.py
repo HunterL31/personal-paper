@@ -150,6 +150,23 @@ def _seen_guids() -> set[str]:
         return set()
 
 
+def mark_unseen(guids: list[str]) -> None:
+    """Forget that posts were printed, so they queue again (the reader's
+    call from the Sources tab). Never raises."""
+    guids = {g for g in (guids or []) if g}
+    if not guids:
+        return
+    try:
+        import state
+
+        st = state.load_state()
+        st["seen_posts"] = [g for g in (st.get("seen_posts") or []) if g not in guids]
+        state.save_state(st)
+        logger.info("marked %d post(s) as unread", len(guids))
+    except Exception:
+        logger.exception("could not mark posts unread")
+
+
 def mark_seen(guids: list[str]) -> None:
     """
     Record posts as printed. Called by run.py **after** a successful run, so a
@@ -588,6 +605,7 @@ def _preview_row(entry, publication: str, dt: datetime, status: str,
     """One row of the queue view. No article text: the sheet prints that."""
     local = dt.astimezone(_local_tz())
     return {
+        "guid": _guid(entry),
         "publication": publication,
         "title": _clean(entry.get("title") or ""),
         "url": _url(entry),

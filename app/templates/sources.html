@@ -407,12 +407,23 @@ function queueRow(row, windowDays) {
     + "<td class=\"when\">" + esc(row.published) + " <span class=\"note\">"
     + esc(queueAge(row.age_days)) + "</span></td>"
     + "<td>" + queueStatusWord(row, windowDays) + "</td>"
+    + "<td class=\"mark\">" + queueMarkButton(row) + "</td>"
     + "</tr>";
+}
+
+// The reader's override: a printed post can be queued again, a waiting
+// one can be skipped as if it had printed. Old posts are past changing.
+function queueMarkButton(row) {
+  if (!row.guid || row.status === "too-old") return "";
+  const printed = row.status === "printed";
+  return '<button type="button" class="small" data-mark-guid="' + esc(row.guid)
+    + '" data-mark-printed="' + (printed ? "0" : "1") + '">'
+    + (printed ? "Mark as unread" : "Mark as printed") + "</button>";
 }
 
 function queueGroup(label, rows, windowDays) {
   if (!rows.length) return "";
-  return '<tr class="group"><td colspan="5">' + esc(label) + "</td></tr>"
+  return '<tr class="group"><td colspan="6">' + esc(label) + "</td></tr>"
     + rows.map(function (row) { return queueRow(row, windowDays); }).join("");
 }
 
@@ -434,7 +445,7 @@ function renderQueue(result) {
   html += "<table><thead><tr>"
     + '<th style="width:2.5rem">#</th><th style="width:22%">Publication</th>'
     + '<th>Title</th><th style="width:10rem">Published</th>'
-    + '<th style="width:16rem">Status</th></tr></thead><tbody>'
+    + '<th style="width:16rem">Status</th><th style="width:9rem"></th></tr></thead><tbody>'
     + queued.map(function (row) { return queueRow(row, days); }).join("")
     + "</tbody>"
     + '<tbody class="muted">'
@@ -445,7 +456,7 @@ function renderQueue(result) {
 }
 
 const queueButton = document.getElementById("show-queue");
-queueButton.addEventListener("click", function () {
+function loadQueue() {
   document.getElementById("queue_view").innerHTML = "";
   withButton(queueButton, document.getElementById("queue_result"),
     function () { return postJSON("/sources/substack/queue", {}); },
@@ -453,6 +464,22 @@ queueButton.addEventListener("click", function () {
       renderQueue(result);
       return "";
     });
+}
+queueButton.addEventListener("click", loadQueue);
+
+// Mark buttons are delegated (the table is rebuilt on every fetch); after a
+// mark the queue is fetched again so the row moves to its new group.
+document.getElementById("queue_view").addEventListener("click", function (event) {
+  const button = event.target.closest("[data-mark-guid]");
+  if (!button) return;
+  button.disabled = true;
+  postJSON("/sources/substack/mark", {
+    guid: button.dataset.markGuid,
+    printed: button.dataset.markPrinted === "1",
+  }).then(function (answer) {
+    if (!answer.ok) { button.disabled = false; button.textContent = answer.error || "Could not mark"; return; }
+    loadQueue();
+  }, function () { button.disabled = false; button.textContent = "Could not mark"; });
 });
 </script>
 {% endblock %}

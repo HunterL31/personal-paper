@@ -411,7 +411,7 @@ def test_queue_preview_matches_what_fetch_would_offer(feeds, no_imap, fake_state
     assert first["published"] == "2025-09-13"       # Sept 13 in America/Los_Angeles
     assert first["age_days"] == 3.0          # Sept 13 16:00 UTC, rounded
     assert set(first) == {
-        "publication", "title", "url", "published", "age_days", "position", "status",
+        "guid", "publication", "title", "url", "published", "age_days", "position", "status",
     }
 
 
@@ -484,3 +484,28 @@ def test_queue_preview_marks_the_posts_beyond_the_limit(feeds, no_imap, fake_sta
         ("beyond-limit", None), ("beyond-limit", None)
     ]
     assert [row["title"] for row in waiting] == ["Post 4", "Post 5"]
+
+
+def test_mark_unseen_puts_a_post_back_in_the_queue(data_dir):
+    import state
+    from gather.substack import mark_seen, mark_unseen
+
+    mark_seen(["a", "b", "c"])
+    mark_unseen(["b", "zzz"])
+    assert state.load_state()["seen_posts"] == ["a", "c"]
+    mark_unseen([])                                  # a no-op, never raises
+    assert state.load_state()["seen_posts"] == ["a", "c"]
+
+
+def test_queue_rows_carry_the_guid_for_marking(data_dir, monkeypatch, fixtures):
+    """Every row the page can mark carries the post's identifier."""
+    from app.settings import Settings, SubstackSource
+    from gather import substack
+
+    feed = (fixtures / "substack_feed.xml").read_bytes()
+    monkeypatch.setattr(substack, "_get", lambda url: feed)
+    s = Settings()
+    s.sources.substacks = [SubstackSource(name="slowkitchen")]
+    view = substack.queue_preview(s)
+    rows = view["queued"] + view["printed"] + view["skipped"]
+    assert rows and all(r.get("guid") for r in rows)

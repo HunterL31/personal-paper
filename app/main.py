@@ -739,6 +739,24 @@ async def substack_queue() -> JSONResponse:
     return await check_json(lambda: substack_gather.queue_preview(settings))
 
 
+@app.post("/sources/substack/mark")
+async def substack_mark(request: Request) -> JSONResponse:
+    """The reader's override: mark one post printed (skip it) or unread
+    (queue it again). Takes effect on the next paper."""
+    from gather import substack as substack_gather
+
+    body = await body_dict(request)
+    guid = str(body.get("guid") or "").strip()
+    if not guid:
+        return JSONResponse({"ok": False, "error": "No post given"})
+    printed = bool(body.get("printed"))
+    if printed:
+        substack_gather.mark_seen([guid])
+    else:
+        substack_gather.mark_unseen([guid])
+    return JSONResponse({"ok": True, "result": {"guid": guid, "printed": printed}})
+
+
 @app.post("/sources/crossword/check")
 async def crossword_check() -> JSONResponse:
     from gather import crossword as crossword_gather
