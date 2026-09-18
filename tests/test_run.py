@@ -510,3 +510,11 @@ def test_the_volume_counts_years_of_publication(data_dir, fake_gather, fake_deli
 def test_roman_numerals():
     from state import roman
     assert [roman(n) for n in (1, 2, 4, 5, 9, 10, 14, 40, 99)] == ["I", "II", "IV", "V", "IX", "X", "XIV", "XL", "XCIX"]
+
+
+def test_the_folio_date_follows_the_chosen_style(data_dir, fake_gather, fake_deliver):
+    s = Settings()
+    s.look.date_format = "iso"
+    result = run(s, dry_run=True)
+    written = json.loads((data_dir / "out" / result.date / "data.json").read_text())
+    assert written["paper"]["date"] == result.date          # YYYY-MM-DD

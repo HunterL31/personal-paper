@@ -410,8 +410,12 @@
   <div class="folio">
     <span>{{ paper.volume }}</span>
     <span>{{ paper.date }}</span>
+    {%- if look.imprint %}
     <span>{{ look.imprint }}</span>
+    {%- endif %}
+    {%- if look.price %}
     <span>{{ look.price }}</span>
+    {%- endif %}
   </div>
 
   <main class="front-grid{% if rail_left %} rail-left{% endif %}"{% if not rail_sections %} style="grid-template-columns: 1fr;"{% endif %}>

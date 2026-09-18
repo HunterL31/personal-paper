@@ -79,9 +79,11 @@ def _now() -> datetime:
         return datetime.now()
 
 
-def long_date(d: datetime) -> str:
-    """"Wednesday, September 16, 2026" — no %-d, which is glibc-only."""
-    return f"{d:%A, %B} {d.day}, {d.year}"
+def long_date(d: datetime, fmt: str | None = None) -> str:
+    """The folio date in the reader's chosen style (Look tab)."""
+    from app.dates import format_date
+
+    return format_date(d, fmt)
 
 
 def empty_data() -> dict[str, Any]:
@@ -262,7 +264,7 @@ def run(
             paper.update({
                 "name": look.paper_name,
                 "volume": f"Vol. {roman(volume_number(now.date()))}, No. {next_issue(now.date())}",
-                "date": long_date(now),
+                "date": long_date(now, getattr(look, "date_format", None)),
                 "imprint": look.imprint,
                 "price": look.price,
             })

@@ -1295,3 +1295,13 @@ def test_the_post_url_honours_a_tls_proxy(client):
     ).text
     assert 'href="https://paper.tail1234.ts.net/lists/tasks"' in body
     assert "127.0.0.1" not in body.split("Address the phone posts to")[0]
+
+
+def test_look_tab_offers_date_styles_and_saves_one(client):
+    html = client.get("/look", auth=AUTH).text
+    assert 'name="date_format" value="long" checked' in html
+    assert 'value="iso"' in html
+    client.post("/look", auth=AUTH, data={"paper_name": "Personal Paper", "date_format": "iso"})
+    assert Settings.load().look.date_format == "iso"
+    client.post("/look", auth=AUTH, data={"paper_name": "Personal Paper", "date_format": "bogus"})
+    assert Settings.load().look.date_format == "iso"          # unknown keys are ignored

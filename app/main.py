@@ -36,6 +36,7 @@ if str(REPO) not in sys.path:  # so `state`, `run` and `render` import cleanly
     sys.path.insert(0, str(REPO))
 
 from app import auth, jobs, scheduler  # noqa: E402
+from app.dates import DATE_FORMATS, samples as date_samples
 from app.settings import (  # noqa: E402
     DEFAULT_LIST_SLUG,
     PLACE_LABELS,
@@ -387,6 +388,7 @@ def look_get(request: Request) -> Response:
     return page(
         request, "look", "look.html",
         look=settings.look,
+        date_styles=date_samples(),
         fonts_masthead=font_cards(FONT_CHOICES_MASTHEAD, settings.look.masthead_font),
         fonts_head=font_cards(FONT_CHOICES_HEAD, settings.look.headline_font),
         fonts_body=font_cards(FONT_CHOICES_BODY, settings.look.body_font),
@@ -402,6 +404,9 @@ async def look_post(request: Request) -> RedirectResponse:
 
     look.paper_name = form_text(form, "paper_name") or look.paper_name
     look.imprint = form_text(form, "imprint")
+    chosen = form_text(form, "date_format")
+    if chosen in DATE_FORMATS:
+        look.date_format = chosen
     look.price = form_text(form, "price")
     look.ear.initials = form_text(form, "ear_initials")
     look.ear.lines = [ln.strip() for ln in form_text(form, "ear_lines").splitlines() if ln.strip()]

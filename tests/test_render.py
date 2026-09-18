@@ -470,3 +470,18 @@ def test_the_online_line_is_set_like_the_jump_line(rendered):
         assert rule in css, rule
     assert ".ending { break-inside: avoid; }" in result.laid_out_html
     assert ".page p.online .u { overflow-wrap: break-word; }" in result.laid_out_html
+
+
+def test_the_folio_drops_empty_imprint_and_price(sample_data, tmp_path):
+    """With nothing to say there, the rule under the masthead balances the
+    volume and date alone instead of leaving gaps for empty boxes."""
+    from bs4 import BeautifulSoup
+
+    def folio_spans(look):
+        result = render(sample_data, look, tmp_path / str(len(look)))
+        first = BeautifulSoup(result.laid_out_html, "html.parser").select_one("#page-1 .folio")
+        return [x.get_text(strip=True) for x in first.select("span")]
+
+    assert len(folio_spans({"imprint": "Printed at home", "price": "Free"})) == 4
+    assert len(folio_spans({"imprint": "", "price": "Free"})) == 3
+    assert len(folio_spans({"imprint": "", "price": ""})) == 2

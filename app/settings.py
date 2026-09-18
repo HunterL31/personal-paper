@@ -133,6 +133,8 @@ class Layout(BaseModel):
 
 class Look(BaseModel):
     paper_name: str = "Personal Paper"
+    #: a key of app.dates.DATE_FORMATS; how the folio line writes the date
+    date_format: str = "long"
     imprint: str = "Printed at home before sunrise"
     price: str = "Single copy, free"
     ear: Ear = Field(default_factory=Ear)

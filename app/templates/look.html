@@ -23,6 +23,18 @@
       <span class="note">The line a newspaper prints its price on, at the right of the same rule.</span></label>
   </div>
 
+  <h2>Date</h2>
+  <p class="note">How today's date is written on the rule under the masthead. Each choice shows today.</p>
+  <div class="fonts fonts-dates">
+    {%- for f in date_styles %}
+    <label class="fontcard datecard{{ ' on' if f.key == look.date_format else '' }}">
+      <input type="radio" name="date_format" value="{{ f.key }}"{{ ' checked' if f.key == look.date_format else '' }}>
+      <span class="sample">{{ f.sample }}</span>
+      <span class="note">{{ f.label }}</span>
+    </label>
+    {%- endfor %}
+  </div>
+
   <h2>Ears</h2>
   <p class="note">The two boxes either side of the masthead. The left one is
   today's weather; these set the right one.</p>
