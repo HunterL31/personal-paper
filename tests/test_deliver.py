@@ -85,6 +85,24 @@ def _ipp_response(status: int, groups: list[tuple[int, list[bytes]]]) -> bytes:
     return out + struct.pack(">b", IppTag.END.value)
 
 
+def _resolution_attribute(name: str, resolutions: list[tuple[int, int]]) -> bytes:
+    """An IPP resolution attribute: pyipp's serializer only does text and ints.
+
+    A resolution value is nine octets -- cross-feed, feed, then the units (3
+    is dots per inch) -- and repeated values carry an empty name, which is
+    how a printer sends a list of them.
+    """
+    out = b""
+    for index, (across, down) in enumerate(resolutions):
+        out += struct.pack(">b", IppTag.RESOLUTION.value)
+        if index == 0:
+            out += struct.pack(">h", len(name)) + name.encode()
+        else:
+            out += struct.pack(">h", 0)
+        out += struct.pack(">h", 9) + struct.pack(">iib", across, down, 3)
+    return out
+
+
 OPERATION_GROUP = (
     IppTag.OPERATION.value,
     [
@@ -147,11 +165,89 @@ PRINTER_ATTRIBUTES = _ipp_response(
 )
 
 
+# What the owner's Brother HL-L2460DW actually answers: no PDF anywhere in
+# its formats, raster instead.
+PRINTER_PWG_ONLY = _ipp_response(
+    0x0000,
+    [
+        OPERATION_GROUP,
+        (
+            IppTag.PRINTER.value,
+            [
+                construct_attribute("printer-name", "HL-L2460DW", IppTag.NAME),
+                construct_attribute(
+                    "printer-make-and-model", "Brother HL-L2460DW series", IppTag.TEXT
+                ),
+                construct_attribute("printer-state", 3, IppTag.ENUM),
+                construct_attribute("printer-state-reasons", "none", IppTag.KEYWORD),
+                construct_attribute("printer-up-time", 12345, IppTag.INTEGER),
+                construct_attribute(
+                    "printer-uri-supported", "ipp://printer/ipp/print", IppTag.URI
+                ),
+                construct_attribute(
+                    "document-format-supported",
+                    ["application/octet-stream", "image/urf", "image/pwg-raster"],
+                    IppTag.MIME_TYPE,
+                ),
+                construct_attribute(
+                    "sides-supported",
+                    ["one-sided", "two-sided-long-edge", "two-sided-short-edge"],
+                    IppTag.KEYWORD,
+                ),
+                _resolution_attribute(
+                    "pwg-raster-document-resolution-supported", [(300, 300), (600, 600)]
+                ),
+                construct_attribute(
+                    "pwg-raster-document-type-supported",
+                    ["black_1", "sgray_8", "srgb_8"],
+                    IppTag.KEYWORD,
+                ),
+                construct_attribute(
+                    "pwg-raster-document-sheet-back", "normal", IppTag.KEYWORD
+                ),
+            ],
+        ),
+    ],
+)
+
+
+# A printer that speaks only Apple's raster: nothing the paper can make yet.
+PRINTER_URF_ONLY = _ipp_response(
+    0x0000,
+    [
+        OPERATION_GROUP,
+        (
+            IppTag.PRINTER.value,
+            [
+                construct_attribute("printer-name", "AirPrinter", IppTag.NAME),
+                construct_attribute("printer-make-and-model", "AirPrinter", IppTag.TEXT),
+                construct_attribute("printer-state", 3, IppTag.ENUM),
+                construct_attribute("printer-state-reasons", "none", IppTag.KEYWORD),
+                construct_attribute(
+                    "printer-uri-supported", "ipp://printer/ipp/print", IppTag.URI
+                ),
+                construct_attribute(
+                    "document-format-supported",
+                    ["application/octet-stream", "image/urf"],
+                    IppTag.MIME_TYPE,
+                ),
+            ],
+        ),
+    ],
+)
+
+
 class _FakeIPPPrinter:
-    """A `http.server` thread that speaks just enough IPP."""
+    """A `http.server` thread that speaks just enough IPP.
+
+    `attributes` is the Get-Printer-Attributes reply, so a test can hand it
+    the printer it needs; None means the canned Brother reply above.
+    """
 
     def __init__(self) -> None:
         self.requests: list[tuple[dict, bytes]] = []
+        self.jobs: list[tuple[dict, bytes]] = []
+        self.attributes: bytes | None = None
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -167,9 +263,16 @@ class _FakeIPPPrinter:
 
                 operation = struct.unpack_from(">h", body, 2)[0]
                 if operation == IppOperation.PRINT_JOB.value:
+                    outer.jobs.append((dict(self.headers), body))
                     payload = PRINT_JOB_OK
                 elif operation == IppOperation.GET_PRINTER_ATTRIBUTES.value:
-                    payload = PRINTER_ATTRIBUTES
+                    # The global is read here, not captured, so a test may
+                    # swap it for another printer's answer.
+                    payload = (
+                        outer.attributes
+                        if outer.attributes is not None
+                        else PRINTER_ATTRIBUTES
+                    )
                 else:
                     self.send_error(400)
                     return
@@ -276,8 +379,8 @@ def _parse_request(body: bytes) -> dict:
 def test_print_pdf_sends_the_document_duplex(pdf, fake_printer):
     printer_route.print_pdf(pdf, fake_printer.host, duplex=True)
 
-    assert len(fake_printer.requests) == 1
-    headers, body = fake_printer.requests[0]
+    assert len(fake_printer.jobs) == 1
+    headers, body = fake_printer.jobs[0]
     assert headers["Content-Type"] == "application/ipp"
 
     request = _parse_request(body)
@@ -298,7 +401,7 @@ def test_print_pdf_sends_the_document_duplex(pdf, fake_printer):
 def test_print_pdf_job_name_uses_the_configured_paper_name(pdf, fake_printer):
     printer_route.print_pdf(pdf, fake_printer.host, paper_name="The Evening Ledger")
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     operation = _parse_request(body)["operation-attributes"]
     assert operation["job-name"] == "The Evening Ledger 2026-09-16"
 
@@ -306,11 +409,11 @@ def test_print_pdf_job_name_uses_the_configured_paper_name(pdf, fake_printer):
 def test_print_pdf_single_sided(pdf, fake_printer):
     printer_route.print_pdf(pdf, fake_printer.host, duplex=False)
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
 
 
-# ------------------------------------------------- the one-page paper
+# --------------------------------------------------------- choosing a format
 def _real_pdf(path: Path, pages: int) -> Path:
     """A PDF with `pages` US Letter pages, as the render would write it."""
     import pymupdf
@@ -322,13 +425,132 @@ def _real_pdf(path: Path, pages: int) -> Path:
     return path
 
 
+#: The attributes the owner's Brother answers with, as `pyipp` parses them:
+#: no PDF, raster instead, resolutions as (cross-feed, feed, units) triples.
+BROTHER = {
+    "document-format-supported": [
+        "application/octet-stream",
+        "image/urf",
+        "image/pwg-raster",
+    ],
+    "pwg-raster-document-resolution-supported": [(300, 300, 3), (600, 600, 3)],
+    "pwg-raster-document-type-supported": ["black_1", "sgray_8", "srgb_8"],
+    "pwg-raster-document-sheet-back": "normal",
+}
+
+
+def test_pick_format_prefers_pdf_when_the_printer_takes_one():
+    document_format, options = printer_route.pick_format(
+        {"document-format-supported": ["image/pwg-raster", "application/pdf"]}
+    )
+    assert document_format == "application/pdf"
+    assert options == {}
+
+
+def test_pick_format_falls_back_to_raster_for_the_brother():
+    document_format, options = printer_route.pick_format(BROTHER)
+
+    assert document_format == "image/pwg-raster"
+    assert options == {"dpi": 600, "color": "black_1", "sheet_back": "normal"}
+
+
+def test_pick_format_reads_resolutions_written_as_strings():
+    """Some printers send resolutions as text, not as IPP resolution values."""
+    attributes = dict(
+        BROTHER, **{"pwg-raster-document-resolution-supported": ["300dpi", "600x600dpi"]}
+    )
+    assert printer_route.pick_format(attributes)[1]["dpi"] == 600
+
+    # A single resolution arrives as one flat triple, not as a list of them.
+    one = dict(BROTHER, **{"pwg-raster-document-resolution-supported": (300, 300, 3)})
+    assert printer_route.pick_format(one)[1]["dpi"] == 300
+
+
+def test_pick_format_stays_under_600_dpi():
+    finer = dict(
+        BROTHER,
+        **{"pwg-raster-document-resolution-supported": [(300, 300, 3), (1200, 1200, 3)]},
+    )
+    assert printer_route.pick_format(finer)[1]["dpi"] == 300
+
+
+def test_pick_format_defaults_when_the_printer_only_names_the_format():
+    document_format, options = printer_route.pick_format(
+        {"document-format-supported": "image/pwg-raster"}
+    )
+    assert document_format == "image/pwg-raster"
+    assert options == {"dpi": 300, "color": "sgray_8", "sheet_back": "normal"}
+
+
+def test_pick_format_refuses_a_printer_that_takes_neither():
+    with pytest.raises(RuntimeError) as raised:
+        printer_route.pick_format(
+            {"document-format-supported": ["image/urf", "application/octet-stream"]}
+        )
+
+    said = str(raised.value)
+    assert "image/urf" in said  # the formats it did list, named
+    assert "not supported yet" in said
+
+
+def test_print_pdf_sends_pwg_raster_when_the_printer_refuses_pdf(tmp_path, fake_printer):
+    """The Brother's job: the same two pages, as raster the printer takes."""
+    from deliver import pwg
+
+    fake_printer.attributes = PRINTER_PWG_ONLY
+    two = _real_pdf(tmp_path / "2026-09-20.pdf", 2)
+
+    printer_route.print_pdf(two, fake_printer.host, duplex=True)
+
+    _, body = fake_printer.jobs[0]
+    request = _parse_request(body)
+    assert request["operation-attributes"]["document-format"] == "image/pwg-raster"
+    assert request["jobs"][0]["sides"] == "two-sided-long-edge"
+
+    raster = request["data"]
+    assert raster[:4] == b"RaS2"
+    pages = pwg.decode_pages(raster)
+    assert len(pages) == 2
+    header = pages[0].header
+    assert header.resolution == (600, 600)  # the finest it listed, up to 600
+    assert header.bits_per_pixel == 1  # black_1, the first type it listed
+    assert header.duplex is True and header.tumble is False
+    assert (header.width, header.height) == (5100, 6600)  # US Letter at 600 dpi
+
+
+def test_print_pdf_still_sends_a_pdf_to_a_pdf_printer(tmp_path, fake_printer):
+    two = _real_pdf(tmp_path / "2026-09-21.pdf", 2)
+
+    printer_route.print_pdf(two, fake_printer.host, duplex=True)
+
+    _, body = fake_printer.jobs[0]
+    request = _parse_request(body)
+    assert request["operation-attributes"]["document-format"] == "application/pdf"
+    assert request["data"] == two.read_bytes()
+
+
+def test_a_one_page_raster_job_is_not_duplex(tmp_path, fake_printer):
+    from deliver import pwg
+
+    fake_printer.attributes = PRINTER_PWG_ONLY
+    one = _real_pdf(tmp_path / "2026-09-22.pdf", 1)
+
+    printer_route.print_pdf(one, fake_printer.host, duplex=True)
+
+    _, body = fake_printer.jobs[0]
+    request = _parse_request(body)
+    assert request["jobs"][0]["sides"] == "one-sided"
+    assert pwg.decode_pages(request["data"])[0].header.duplex is False
+
+
+# ------------------------------------------------- the one-page paper
 def test_a_one_page_paper_is_printed_one_sided_even_with_duplex_on(tmp_path, fake_printer):
     """The morning with nothing queued: one page, and the job says so."""
     one = _real_pdf(tmp_path / "2026-09-16.pdf", 1)
 
     printer_route.print_pdf(one, fake_printer.host, duplex=True)
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
 
 
@@ -337,7 +559,7 @@ def test_a_two_page_paper_is_still_a_duplex_job(tmp_path, fake_printer):
 
     printer_route.print_pdf(two, fake_printer.host, duplex=True)
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     assert _parse_request(body)["jobs"][0]["sides"] == "two-sided-long-edge"
 
 
@@ -347,7 +569,7 @@ def test_the_page_count_the_render_reports_is_the_one_used(tmp_path, fake_printe
 
     printer_route.print_pdf(two, fake_printer.host, duplex=True, pages=1)
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
 
 
@@ -357,7 +579,7 @@ def test_a_pdf_that_cannot_be_counted_is_printed_as_asked(pdf, fake_printer):
 
     printer_route.print_pdf(pdf, fake_printer.host, duplex=True)
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     assert _parse_request(body)["jobs"][0]["sides"] == "two-sided-long-edge"
 
 
@@ -371,7 +593,7 @@ def test_deliver_passes_the_page_count_to_the_print_route(tmp_path, fake_printer
 
     assert deliver(one, settings, pages=1) == {"print": None}
 
-    _, body = fake_printer.requests[0]
+    _, body = fake_printer.jobs[0]
     assert _parse_request(body)["jobs"][0]["sides"] == "one-sided"
 
 
@@ -451,13 +673,49 @@ def test_diagnose_walks_every_step_when_the_printer_answers(fake_printer):
 
     assert diagnosis.ok is True
     assert [step.name for step in diagnosis.steps] == [
-        "resolve", "connect", "ipp", "pdf", "state"
+        "resolve", "connect", "ipp", "format", "state"
     ]
     assert all(step.ok for step in diagnosis.steps)
     assert diagnosis.failed is None
     assert diagnosis.info is not None and diagnosis.info.accepts_pdf is True
     assert "HL-L2460DW series" in diagnosis.summary
     assert "idle" in diagnosis.summary and "accepts PDF" in diagnosis.summary
+
+    format_step = next(s for s in diagnosis.steps if s.name == "format")
+    assert format_step.detail == "Will send PDF"
+
+
+def test_diagnose_says_it_will_send_raster_to_a_printer_without_pdf(fake_printer):
+    fake_printer.attributes = PRINTER_PWG_ONLY
+
+    diagnosis = printer_route.diagnose(fake_printer.host)
+
+    assert diagnosis.ok is True
+    format_step = next(s for s in diagnosis.steps if s.name == "format")
+    assert format_step.ok is True
+    assert format_step.detail == (
+        "Will send PWG Raster at 600 dpi, black_1 "
+        "(the printer does not take PDF directly)"
+    )
+    assert diagnosis.summary.endswith("idle, PWG Raster at 600 dpi")
+    assert diagnosis.info is not None and diagnosis.info.accepts_pdf is False
+
+
+def test_diagnose_stops_at_format_when_the_printer_takes_neither(fake_printer):
+    fake_printer.attributes = PRINTER_URF_ONLY
+
+    diagnosis = printer_route.diagnose(fake_printer.host)
+
+    assert diagnosis.ok is False
+    step = diagnosis.failed
+    assert step is not None and step.name == "format"
+    assert "image/urf" in step.detail  # what it did list
+    assert step.hint == (
+        "This printer only takes formats the paper cannot make yet; tell the "
+        "maintainer which ones it listed."
+    )
+    # The state is never reached: there is nothing to send it.
+    assert [s.name for s in diagnosis.steps] == ["resolve", "connect", "ipp", "format"]
 
 
 def test_diagnose_stops_at_resolve_when_the_name_is_unknown(monkeypatch):
@@ -505,7 +763,9 @@ def test_diagnose_reports_a_stopped_printer_in_words(fake_printer, monkeypatch):
     assert "Clear the printer's error" in step.hint
     assert diagnosis.summary.startswith("state: ")
     # The steps before it all passed, so the reader knows how far it got.
-    assert [s.name for s in diagnosis.steps] == ["resolve", "connect", "ipp", "pdf", "state"]
+    assert [s.name for s in diagnosis.steps] == [
+        "resolve", "connect", "ipp", "format", "state"
+    ]
     assert diagnosis.info is not None and diagnosis.info.state == "stopped"
 
 

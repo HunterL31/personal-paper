@@ -77,7 +77,8 @@ personal-paper/
     crossword.py        the day's NYT puzzle as data (see below)
   deliver/
     __init__.py         deliver(pdf, settings) -> runs every enabled route
-    printer.py          IPP print via pyipp; discover(); test()
+    printer.py          IPP print via pyipp; pick_format(); discover(); test()
+    pwg.py              PWG Raster encoder, for printers that refuse PDF
     email.py            SMTP, PDF attached
   run.py                one issue: gather → render → deliver → archive (also the CLI)
   app/
@@ -254,16 +255,27 @@ route is logged and shown on the Status strip and in the failure
 notification. The archive copy is written before any route runs.
 
 - **Print** (`deliver/printer.py`): direct IPP with `pyipp`, no CUPS.
-  `print(pdf, ip, duplex)` sends `application/pdf` with
-  `sides=two-sided-long-edge`, `media=na_letter`. `test(ip)` returns
-  model, state and `document-format-supported`. `discover()` browses
-  `_ipp._tcp.local.` with `zeroconf` for a few seconds and returns
-  (name, ip, model) tuples. mDNS only works if the container sees the LAN
-  broadcast domain: run it with `network_mode: host` (the Unraid template
-  default for this) or on a macvlan; on plain bridge networking discovery
-  returns nothing and the manual IP field is the way in. The Brother
-  HL-L2460DW is AirPrint-capable so it accepts PDF over IPP; keep the
-  CUPS route from the earlier draft as a documented fallback only.
+  `print_pdf(pdf, host, duplex, pages)` asks the printer once what it takes
+  (`pick_format`) and sends it with `sides=two-sided-long-edge`,
+  `media=na_letter`, `print-color-mode=monochrome`, `copies=1`:
+  - `application/pdf` when the printer lists it;
+  - `image/pwg-raster` (PWG 5102.4) otherwise, encoded by `deliver/pwg.py`
+    from the same PDF with pymupdf, at the finest resolution the printer
+    lists up to 600 dpi and in the plainest page type it lists (`black_1`,
+    else `sgray_8`). The Brother HL-L2460DW is AirPrint-capable but lists
+    only `application/octet-stream`, `image/urf` and `image/pwg-raster` —
+    no PDF — which is why the raster path exists. `image/urf` is not
+    written yet, and a printer that offers nothing else fails the check
+    with its list of formats in the message.
+
+  `test(ip)` returns model, state and `document-format-supported`.
+  `diagnose(ip)` is the Output tab's checklist: resolve, connect, ipp,
+  format, state. `discover()` browses `_ipp._tcp.local.` with `zeroconf`
+  for a few seconds and returns (name, ip, model) tuples. mDNS only works
+  if the container sees the LAN broadcast domain: run it with
+  `network_mode: host` (the Unraid template default for this) or on a
+  macvlan; on plain bridge networking discovery returns nothing and the
+  manual IP field is the way in.
 - **Email** (`deliver/email.py`): stdlib `smtplib` + `email.message`,
   STARTTLS, PDF attached, filename `<paper name> YYYY-MM-DD.pdf` from
   `settings.look.paper_name`.
@@ -428,11 +440,11 @@ Exit non-zero on failure.
 The template is measured and printed by headless Chromium, so the container
 needs Playwright's Chromium. Base the image on the official Playwright Python
 image (pin the current tag). Printing itself is the IPP route described
-under Output routes. The web page's "Test" button is the check that the
-chosen printer lists `application/pdf`; if some other printer does not,
-the fallback is CUPS in the container (`cupsd` in the entrypoint,
-`lpadmin -p <name> -E -v ipp://<ip>/ipp/print -m everywhere`, then `lp`),
-which negotiates the format. Not built unless needed.
+under Output routes. The web page's "Check the connection" button says which
+format the chosen printer will be sent: PDF if it lists one, PWG Raster if
+it does not. Nothing else is installed for printing — no CUPS in the
+container, no drivers — because the format negotiation and the raster
+encoder (`deliver/pwg.py`, pymupdf for the pixels) are in the app.
 
 ## Scheduling and deployment
 
@@ -486,8 +498,12 @@ which negotiates the format. Not built unless needed.
   settings file round-trips; an unknown font name falls back to the
   default instead of failing the run.
 - `tests/test_deliver.py`: email route against a local `aiosmtpd` server;
-  printer route against a fake IPP responder (or `pyipp`'s test fixtures);
-  one failed route does not block the other.
+  printer route against a fake IPP responder (or `pyipp`'s test fixtures),
+  whose Get-Printer-Attributes reply each test chooses, so both the PDF and
+  the PWG Raster job are exercised; one failed route does not block the other.
+- `tests/test_pwg.py`: the raster encoder, read back by its own decoder and
+  by the spec's field offsets — page headers, the bitmap, identical-line
+  compression, and the run-length encoding of section 4.4.
 - `tests/test_lists.py`: each list fetched per its own age limit, a stale
   one empty, the pre-lists `tasks.json` still read, slugs derived, the
   60-item cap.

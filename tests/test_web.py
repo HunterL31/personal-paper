@@ -967,7 +967,7 @@ def _diagnosis(ok: bool):
                 Step("resolve", True, "192.168.1.40:631"),
                 Step("connect", True, "192.168.1.40:631 answered"),
                 Step("ipp", True, "Brother HL-L2460DW answered Get-Printer-Attributes"),
-                Step("pdf", True, "Accepts application/pdf"),
+                Step("format", True, "Will send PDF"),
                 Step("state", True, "Idle."),
             ],
             info=PrinterInfo("Brother HL-L2460DW", "HL-L2460DW", "idle", True, []),
@@ -1008,7 +1008,7 @@ def test_printer_test_returns_the_whole_checklist(client, monkeypatch):
     assert result["ok"] is True
     assert result["summary"] == "Brother HL-L2460DW: idle, accepts PDF"
     assert [s["name"] for s in result["steps"]] == [
-        "resolve", "connect", "ipp", "pdf", "state"
+        "resolve", "connect", "ipp", "format", "state"
     ]
     assert set(result["steps"][0]) == {"name", "ok", "detail", "hint"}
     assert result["info"]["accepts_pdf"] is True

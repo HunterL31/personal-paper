@@ -1,9 +1,14 @@
 """The print route: direct IPP to an AirPrint-capable printer, no CUPS.
 
-Two halves, for one reason worth writing down:
+Three parts, each for a reason worth writing down:
 
 * **Attributes** (`test_printer`) go through `pyipp`'s async client, which
   already knows how to ask for and parse `Get-Printer-Attributes`.
+* **The format** (`pick_format`) is negotiated from those attributes.
+  AirPrint does not oblige a printer to take PDF: the owner's Brother
+  HL-L2460DW lists `image/pwg-raster` and `image/urf` and no PDF at all, so
+  the paper is rendered to PWG Raster by `deliver/pwg.py` for printers like
+  it, and sent as PDF to printers that say they take one.
 * **The print job itself** (`print_pdf`) is built here and POSTed with
   `requests`. `pyipp` 0.17 can carry a document body, but its serializer
   looks every attribute name up in `pyipp.tags.ATTRIBUTE_TAG_MAP` and
@@ -21,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 import socket
 import struct
 import time
@@ -37,6 +43,7 @@ from pyipp.models import Printer
 from pyipp.parser import parse as parse_ipp
 from pyipp.serializer import construct_attribute
 
+from . import pwg
 from ._util import DEFAULT_PAPER_NAME, issue_label, slug
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +55,20 @@ MEDIA = "na_letter_8.5x11in"
 SIDES_DUPLEX = "two-sided-long-edge"
 SIDES_SIMPLEX = "one-sided"
 SERVICE_TYPES = ["_ipp._tcp.local.", "_ipps._tcp.local."]
+
+#: The two document formats the paper can send.
+PDF_FORMAT = "application/pdf"
+PWG_FORMAT = "image/pwg-raster"
+
+#: Raster defaults, for a printer that lists the format without the details.
+DEFAULT_PWG_DPI = 300
+#: 600 is as fine as a black-and-white sheet of newsprint needs to be, and
+#: four times the bytes of 300 for nothing a reader would see.
+MAX_PWG_DPI = 600
+DEFAULT_PWG_TYPE = "sgray_8"
+#: In order of preference: 1-bit black is what a laser wants, and an eighth
+#: of the bytes of 8-bit gray.
+PWG_TYPES = ("black_1", "sgray_8")
 
 REQUESTED_ATTRIBUTES = [
     "printer-name",
@@ -63,6 +84,9 @@ REQUESTED_ATTRIBUTES = [
     "document-format-supported",
     "sides-supported",
     "media-supported",
+    "pwg-raster-document-resolution-supported",
+    "pwg-raster-document-type-supported",
+    "pwg-raster-document-sheet-back",
 ]
 
 
@@ -84,6 +108,92 @@ class DiscoveredPrinter:
     name: str
     host: str
     model: str
+
+
+# ----------------------------------------------------------- format picking
+#: "600dpi", "600x600dpi", "300", and the (x, y, units) triple pyipp parses a
+#: RESOLUTION attribute into. Units 3 is dots per inch, 4 dots per cm.
+_DPI_RE = re.compile(r"^(\d+)(?:\s*x\s*(\d+))?\s*(dpi|dpcm)?$")
+_UNITS_DPCM = 4
+
+
+def _dpi(value: Any) -> int | None:
+    """One resolution, in dots per inch, or None when it makes no sense."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) or None
+    if isinstance(value, (list, tuple)):
+        numbers = [v for v in value if isinstance(v, (int, float))]
+        if len(numbers) < 2:
+            return None
+        across = int(numbers[0])
+        units = int(numbers[2]) if len(numbers) > 2 else 3
+        if units == _UNITS_DPCM:
+            across = round(across * 2.54)
+        return across or None
+
+    match = _DPI_RE.match(str(value).strip().lower())
+    if not match:
+        return None
+    across = int(match[1])
+    if match[3] == "dpcm":
+        across = round(across * 2.54)
+    return across or None
+
+
+def _resolutions(value: Any) -> list[int]:
+    """Every resolution a printer listed, in dots per inch."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)) and value:
+        # One resolution arrives as a flat (x, y, units) triple; several
+        # arrive as a list of triples or of strings.
+        items = [value] if all(isinstance(v, (int, float)) for v in value) else list(value)
+    else:
+        items = [value]
+    return [dpi for dpi in (_dpi(item) for item in items) if dpi]
+
+
+def pick_format(attrs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """What to send this printer, and how to make it.
+
+    PDF when the printer takes one -- it is the paper as it was laid out.
+    Otherwise PWG Raster at the finest resolution the printer lists up to
+    600 dpi, in the plainest page type it takes. Raises when the printer
+    lists neither, naming what it did list.
+    """
+    formats = [f.strip().lower() for f in _as_list(attrs.get("document-format-supported"))]
+
+    if PDF_FORMAT in formats:
+        return PDF_FORMAT, {}
+
+    if PWG_FORMAT in formats:
+        offered = _resolutions(attrs.get("pwg-raster-document-resolution-supported"))
+        usable = [dpi for dpi in offered if dpi <= MAX_PWG_DPI]
+        if usable:
+            dpi = max(usable)
+        elif offered:
+            dpi = min(offered)  # a printer that only offers 1200 gets 1200
+        else:
+            dpi = DEFAULT_PWG_DPI
+
+        offered_types = _as_list(attrs.get("pwg-raster-document-type-supported"))
+        types = [t.strip().lower() for t in offered_types]
+        color = next((t for t in PWG_TYPES if t in types), DEFAULT_PWG_TYPE)
+
+        sheet_backs = _as_list(attrs.get("pwg-raster-document-sheet-back"))
+        back = next(iter(sheet_backs), "").strip().lower()
+        return PWG_FORMAT, {"dpi": dpi, "color": color, "sheet_back": back or "normal"}
+
+    listed = ", ".join(formats) if formats else "no document format at all"
+    said = (
+        f"The printer lists {listed}; the paper can send "
+        f"{PDF_FORMAT} or {PWG_FORMAT}"
+    )
+    if "image/urf" in formats:
+        said += " (image/urf, Apple's raster, is not supported yet)"
+    raise RuntimeError(said)
 
 
 # --------------------------------------------------------------- addressing
@@ -121,8 +231,15 @@ def _http_url(uri: str) -> str:
 
 
 # ------------------------------------------------------------- the print job
-def _encode_print_job(uri: str, pdf_bytes: bytes, *, job_name: str, duplex: bool) -> bytes:
-    """Encode an IPP Print-Job request with the PDF as the document body."""
+def _encode_print_job(
+    uri: str,
+    document: bytes,
+    *,
+    job_name: str,
+    duplex: bool,
+    document_format: str = PDF_FORMAT,
+) -> bytes:
+    """Encode an IPP Print-Job request with the document as the body."""
     request_id = random.randint(1, 0x7FFF)  # noqa: S311  (not a security value)
 
     out = struct.pack(">bb", *IPP_VERSION)
@@ -136,7 +253,7 @@ def _encode_print_job(uri: str, pdf_bytes: bytes, *, job_name: str, duplex: bool
     out += construct_attribute("printer-uri", uri, IppTag.URI)
     out += construct_attribute("requesting-user-name", "personal-paper", IppTag.NAME)
     out += construct_attribute("job-name", job_name, IppTag.NAME)
-    out += construct_attribute("document-format", "application/pdf", IppTag.MIME_TYPE)
+    out += construct_attribute("document-format", document_format, IppTag.MIME_TYPE)
 
     # Job attributes: the ones that make it a US Letter duplex newspaper.
     out += struct.pack(">b", IppTag.JOB.value)
@@ -145,9 +262,10 @@ def _encode_print_job(uri: str, pdf_bytes: bytes, *, job_name: str, duplex: bool
     out += construct_attribute(
         "sides", SIDES_DUPLEX if duplex else SIDES_SIMPLEX, IppTag.KEYWORD
     )
+    out += construct_attribute("print-color-mode", "monochrome", IppTag.KEYWORD)
 
     out += struct.pack(">b", IppTag.END.value)
-    return out + pdf_bytes
+    return out + document
 
 
 def page_count(pdf: Path) -> int | None:
@@ -186,9 +304,12 @@ def print_pdf(
     articles -- is sent `sides=one-sided` whatever the duplex setting: most
     printers would do the right thing with it anyway, but the sheet that
     comes out of a duplex queue is the reader's, so it is said explicitly.
+
+    The printer is asked once, up front, what it takes: a PDF printer gets
+    the PDF; one that takes only raster gets the same pages encoded as PWG
+    Raster (`deliver/pwg.py`).
     """
     pdf = Path(pdf)
-    data = pdf.read_bytes()
     uri = printer_uri(host)
     job_name = f"{slug(paper_name)} {issue_label(pdf)}"
 
@@ -196,11 +317,31 @@ def print_pdf(
         pages = page_count(pdf)
     two_sided = duplex and (pages is None or pages > 1)
 
-    body = _encode_print_job(uri, data, job_name=job_name, duplex=two_sided)
+    # One Get-Printer-Attributes per job: the answer decides the format and
+    # is not worth asking for twice.
+    document_format, options = pick_format(asyncio.run(_fetch_attributes(uri)))
+    if document_format == PWG_FORMAT:
+        data = pwg.encode(
+            pdf,
+            dpi=options["dpi"],
+            color=options["color"],
+            duplex=two_sided,
+            tumble=False,  # `sides` is two-sided-*long*-edge
+            sheet_back=options["sheet_back"],
+        )
+        made = f"PWG Raster at {options['dpi']} dpi, {options['color']}"
+    else:
+        data = pdf.read_bytes()
+        made = "PDF"
+
+    body = _encode_print_job(
+        uri, data, job_name=job_name, duplex=two_sided, document_format=document_format
+    )
 
     _LOGGER.info(
-        "printing %s (%d bytes, %s page(s)) to %s, %s",
+        "printing %s as %s (%d bytes, %s page(s)) to %s, %s",
         pdf.name,
+        made,
         len(data),
         pages if pages is not None else "?",
         uri,
@@ -314,9 +455,9 @@ HINT_IPP = (
     "The printer answered on the port but not to IPP. Try the path "
     "/ipp/print, or ipps:// if it only allows TLS."
 )
-HINT_PDF = (
-    "This printer does not accept PDF directly; the CUPS fallback in PLAN.md "
-    "is needed."
+HINT_FORMAT = (
+    "This printer only takes formats the paper cannot make yet; tell the "
+    "maintainer which ones it listed."
 )
 HINT_STOPPED = "Clear the printer's error (paper, cover, toner) and test again."
 
@@ -469,16 +610,26 @@ def diagnose(host: str, *, timeout: float = 5.0) -> Diagnosis:
     label = printer.info.name or printer.info.model or where
     steps.append(Step("ipp", True, f"{label} answered Get-Printer-Attributes"))
 
-    # 4. pdf ---------------------------------------------------------------
-    accepts_pdf = "application/pdf" in formats
-    if not accepts_pdf:
-        return failed(
-            "pdf",
-            f"{label} does not list application/pdf"
-            + (f" (it takes {', '.join(formats)})" if formats else ""),
-            HINT_PDF,
+    # 4. format ------------------------------------------------------------
+    try:
+        document_format, options = pick_format(attributes)
+    except RuntimeError as err:
+        return failed("format", str(err), HINT_FORMAT)
+
+    accepts_pdf = document_format == PDF_FORMAT
+    if accepts_pdf:
+        sending = "PDF"
+        steps.append(Step("format", True, "Will send PDF"))
+    else:
+        sending = f"PWG Raster at {options['dpi']} dpi"
+        steps.append(
+            Step(
+                "format",
+                True,
+                f"Will send PWG Raster at {options['dpi']} dpi, {options['color']} "
+                "(the printer does not take PDF directly)",
+            )
         )
-    steps.append(Step("pdf", True, "Accepts application/pdf"))
 
     # 5. state -------------------------------------------------------------
     raw_state = attributes.get("printer-state")
@@ -502,8 +653,11 @@ def diagnose(host: str, *, timeout: float = 5.0) -> Diagnosis:
         return done(info, f"state: {detail}")
 
     steps.append(Step("state", True, detail))
-    _LOGGER.info("printer %s: %s", uri, detail)
-    return done(info, f"{label}: {state}, accepts PDF")
+    _LOGGER.info("printer %s: %s (sending %s)", uri, detail, sending)
+    return done(
+        info,
+        f"{label}: {state}, accepts PDF" if accepts_pdf else f"{label}: {state}, {sending}",
+    )
 
 
 # ------------------------------------------------------- remembering a check
