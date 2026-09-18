@@ -1548,3 +1548,22 @@ def test_the_status_strip_names_the_latest_issue(client, archived):
     strip = client.get("/output", auth=AUTH).text.split(
         '<section class="status"', 1)[1].split("</section>", 1)[0]
     assert '<a href="/archive/2026-09-18.pdf">2026-09-18, No. 12</a>' in strip
+
+
+def test_the_reader_can_mark_a_post_printed_or_unread(client):
+    import state
+
+    r = client.post("/sources/substack/mark", auth=AUTH, json={"guid": "post-9", "printed": True})
+    assert r.status_code == 200 and r.json()["ok"]
+    assert "post-9" in state.load_state()["seen_posts"]
+    r = client.post("/sources/substack/mark", auth=AUTH, json={"guid": "post-9", "printed": False})
+    assert r.json()["ok"]
+    assert "post-9" not in state.load_state()["seen_posts"]
+    r = client.post("/sources/substack/mark", auth=AUTH, json={"guid": "", "printed": True})
+    assert not r.json()["ok"]
+
+
+def test_the_queue_table_has_mark_buttons(client):
+    html = client.get("/sources", auth=AUTH).text
+    assert "Mark as printed" in html and "Mark as unread" in html
+    assert "/sources/substack/mark" in html

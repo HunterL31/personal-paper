@@ -203,3 +203,6 @@ button.copy { font-size: 0.8em; padding: 0.1em 0.5em; margin-left: 0.6em; vertic
 .earcol { border: var(--rule); padding: 0.2rem 0.7rem 0.4rem; }
 .earcol h3.sub { margin-top: 0.5rem; }
 .earcol .ear-field[hidden] { display: none; }
+
+button.small { font-size: 0.8em; padding: 0.1em 0.5em; }
+.queue td.mark { white-space: nowrap; }
