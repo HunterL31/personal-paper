@@ -425,11 +425,18 @@ scheduler, by the web page's buttons, and by the CLI.
    whole or in part) and `partial` (article index → leading paragraphs
    printed). Every printed index's guid is marked seen, a partly printed one
    included; the rest are held for another morning and logged by title.
-5. Copy the PDF to `/data/archive/<date>.pdf`.
+5. Copy the PDF to `/data/archive/<date>.pdf`, or `<date>-2.pdf`, `-3.pdf`
+   when a paper was already made that day: an issue on file is never
+   written over. `/data/out/<date>/` is the day's scratch and is reused.
 6. `deliver()` over the enabled routes (skipped on `dry_run`).
-7. On success: bump the issue counter and write `last_success` to
-   `state.json`. On failure: write `last_error`, and send the failure
-   notification.
+7. On success: bump the issue counter and write `last_success`, `last_pdf`
+   and `last_issue` (the number that sheet carries) to `state.json`. On
+   failure: write `last_error`, and send the failure notification.
+
+`run.reprint(settings)` is the other way out: it hands the newest archived
+issue to the same routes again, with no gather, no render, no issue counted,
+no post marked seen and no state written — only a log line. It is what the
+Output tab's first button does.
 
 CLI: `python run.py [--dry-run] [--date YYYY-MM-DD]`; `--date` renders a
 past day from its archived `data.json` (useful for debugging layout).

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -1215,8 +1216,11 @@ def test_archive_rejects_odd_names(client, data_dir):
     archive.mkdir()
     (archive / "2026-09-16.pdf").write_bytes(b"%PDF-1.4 fake")
     (archive / "secret.txt").write_text("nope")
+    (archive / "2026-09-18-2.pdf").write_bytes(b"%PDF-1.4 the second of the day")
 
     assert client.get("/archive/2026-09-16.pdf", auth=AUTH).status_code == 200
+    assert client.get("/archive/2026-09-18-2.pdf", auth=AUTH).status_code == 200
+    assert client.get("/archive/2026-09-18-.pdf", auth=AUTH).status_code == 404
     assert client.get("/archive/secret.txt", auth=AUTH).status_code == 404
     assert client.get("/archive/2026-09-16.pdf.bak", auth=AUTH).status_code == 404
     assert client.get("/archive/../x", auth=AUTH).status_code == 404
@@ -1411,3 +1415,136 @@ def test_look_tab_offers_date_styles_and_saves_one(client):
     assert Settings.load().look.date_format == "iso"
     client.post("/look", auth=AUTH, data={"paper_name": "Personal Paper", "date_format": "bogus"})
     assert Settings.load().look.date_format == "iso"          # unknown keys are ignored
+
+
+# ------------------------------------------------------------------- reprint
+def escaped(text: str) -> str:
+    """As the template writes it: Jinja escapes the apostrophes."""
+    return text.replace("'", "&#39;")
+
+
+def right_now(body: str) -> str:
+    """The "Right now" section of the Output tab, on its own."""
+    return body.split("<h2>Right now</h2>", 1)[1].split("<h2>", 1)[0]
+
+
+@pytest.fixture
+def archived(data_dir):
+    """One issue on file, and the state the run that made it left behind."""
+    import state
+
+    archive = data_dir / "archive"
+    archive.mkdir()
+    pdf = archive / "2026-09-18.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    state.update_state(
+        last_pdf=str(pdf), last_pages=2, last_issue=12, issue=12,
+        seen_posts=["post-1"], last_run="2026-09-18T06:00:00-07:00",
+        last_success="2026-09-18T06:00:00-07:00",
+    )
+    return pdf
+
+
+@pytest.fixture
+def fake_routes(monkeypatch):
+    """`deliver.deliver` and the page counter, with no printer and no SMTP."""
+    import deliver
+    import deliver.printer
+
+    calls: dict[str, object] = {"pdfs": [], "pages": [], "result": {"print": None, "email": None}}
+
+    def fake_deliver(pdf, settings, *, test=False, pages=None):
+        calls["pdfs"].append(Path(pdf))
+        calls["pages"].append(pages)
+        return dict(calls["result"])
+
+    monkeypatch.setattr(deliver, "deliver", fake_deliver)
+    monkeypatch.setattr(deliver.printer, "page_count", lambda pdf: 2)
+    return calls
+
+
+def test_reprint_sends_the_latest_issue_again(client, data_dir, archived, fake_routes):
+    """Every enabled route, the archived PDF, and nothing else touched."""
+    import state
+
+    before = state.load_state()
+    body = client.post("/reprint", auth=AUTH).json()
+    assert body["ok"] is True
+
+    job = wait_for(body["job"], timeout=20)
+    assert job.status == "done", job.error
+    assert fake_routes["pdfs"] == [archived]
+    assert fake_routes["pages"] == [2]
+    assert job.result == {
+        "ok": True,
+        "file": "2026-09-18.pdf",
+        "pages": 2,
+        "error": "",
+        "delivery": {"print": "ok", "email": "ok"},
+    }
+    # No issue counted, no post marked seen, no run recorded.
+    assert state.load_state() == before
+    assert "reprinted 2026-09-18.pdf: print: ok; email: ok" in (
+        data_dir / "logs" / "run.log").read_text()
+
+
+def test_a_reprint_reports_a_route_that_failed(client, archived, fake_routes):
+    fake_routes["result"] = {"print": "RuntimeError: printer offline", "email": None}
+    body = client.post("/reprint", auth=AUTH).json()
+    job = wait_for(body["job"], timeout=20)
+
+    assert job.status == "done", job.error
+    assert job.result["delivery"] == {"print": "RuntimeError: printer offline", "email": "ok"}
+    assert "printer offline" in job.result["error"]
+    assert job.result["ok"] is True          # one good route is enough, as in a run
+
+
+def test_reprint_with_nothing_on_file_is_refused(client):
+    response = client.post("/reprint", auth=AUTH)
+    assert response.status_code == 409
+    assert response.json() == {"ok": False, "error": "No paper has been made yet."}
+
+    section = right_now(client.get("/output", auth=AUTH).text)
+    assert "disabled" in section
+    assert "No paper has been made yet." in section
+
+
+def test_the_right_now_buttons_say_what_each_one_does(client, archived):
+    settings = Settings()
+    settings.output.print.enabled = True
+    settings.save()
+
+    section = right_now(client.get("/output", auth=AUTH).text)
+    assert "disabled" not in section
+    wanted = [
+        escaped("Print this morning's paper again"),
+        "Sends the latest issue exactly as it was made: 2026-09-18, No. 12.",
+        "Make a new paper now",
+        escaped("Gathers the next stories from the queue, makes a new issue and "
+                "delivers it. The stories it prints are marked as printed."),
+        "Test run (nothing printed or emailed)",
+        "nothing is sent and no story is marked as printed",
+    ]
+    places = [section.index(text) for text in wanted]        # each one is there
+    assert places == sorted(places)                          # and in this order
+
+
+def test_the_reprint_button_names_the_routes_that_are_on(client, archived):
+    settings = Settings()
+    settings.save()
+    assert escaped("Deliver this morning's paper again") in client.get("/output", auth=AUTH).text
+
+    settings.output.email.enabled = True
+    settings.output.email.to = ["her@example.com"]
+    settings.save()
+    assert escaped("Send this morning's paper again") in client.get("/output", auth=AUTH).text
+
+    settings.output.print.enabled = True
+    settings.save()
+    assert escaped("Print this morning's paper again") in client.get("/output", auth=AUTH).text
+
+
+def test_the_status_strip_names_the_latest_issue(client, archived):
+    strip = client.get("/output", auth=AUTH).text.split(
+        '<section class="status"', 1)[1].split("</section>", 1)[0]
+    assert '<a href="/archive/2026-09-18.pdf">2026-09-18, No. 12</a>' in strip

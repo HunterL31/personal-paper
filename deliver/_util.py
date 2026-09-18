@@ -5,7 +5,8 @@ import re
 from datetime import date
 from pathlib import Path
 
-_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+#: `2026-09-18`, and `2026-09-18-2` -- the second issue filed that day.
+_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})(?:-\d+)?")
 
 #: What the paper is called when no settings are in hand. The reader's own
 #: name for it lives in `settings.look.paper_name` and is threaded in.
@@ -18,8 +19,9 @@ _UNSAFE_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 def issue_date(pdf: Path | None = None) -> date:
     """The issue date a PDF belongs to.
 
-    `run.py` writes the archive copy as `/data/archive/<YYYY-MM-DD>.pdf` and
-    the working copy under `/data/out/<YYYY-MM-DD>/paper.pdf`, so the date is
+    `run.py` writes the archive copy as `/data/archive/<YYYY-MM-DD>.pdf`
+    (`-2`, `-3` for a second or third issue made the same day) and the
+    working copy under `/data/out/<YYYY-MM-DD>/paper.pdf`, so the date is
     usually recoverable from the path; otherwise it is today's.
     """
     if pdf is not None:

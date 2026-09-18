@@ -25,7 +25,8 @@ scheduler ─▶ gather (calendar, weather, substack, lists) ─▶ render (Chro
 
 Everything persistent lives under `/data`: `settings.json` (the page's
 settings), `state.json` (issue counter, seen posts), `lists/<name>.json`,
-`archive/<date>.pdf`, `out/<date>/` (that day's data and HTML) and
+`archive/<date>.pdf` (`-2`, `-3` for another paper made the same day),
+`out/<date>/` (that day's data and HTML) and
 `logs/run.log`.
 
 ## Install on Unraid
@@ -48,7 +49,14 @@ settings), `state.json` (issue counter, seen posts), `lists/<name>.json`,
    - **Output**: pick the printer (**Find printers**, or type its address,
      then **Check the connection** and **Print a test page**), and/or tick
      **Email the paper every morning** with the addresses; set the time and
-     days under **When to make the paper**.
+     days under **When to make the paper**. **Right now**, at the foot of the
+     tab, has three buttons: the first sends the latest issue to those routes
+     again exactly as it was made, the second makes a new paper — the next
+     stories from the queue, a new issue number, and those stories marked as
+     printed — and the third makes that same new paper without sending it
+     anywhere, to look at on the Preview tab. Sending an issue again gathers
+     nothing, counts no issue and marks no story as printed, so it costs
+     nothing to press twice.
    - **Sources**: paste the calendar's secret address, list the Substack
      publications in priority order, set the weather location, switch the
      crossword on if you want one, and name your lists and follow the

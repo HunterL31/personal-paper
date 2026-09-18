@@ -23,7 +23,7 @@
     </dd></div>
     <div><dt>Last successful print</dt><dd>{{ status.last_success or "never" }}</dd></div>
     <div><dt>Latest paper</dt><dd>
-      {%- if status.archive_url %}<a href="{{ status.archive_url }}">{{ status.archive_name }}</a>
+      {%- if status.archive_url %}<a href="{{ status.archive_url }}">{{ status.archive_label or status.archive_name }}</a>
       {%- else %}none yet{% endif %}
     </dd></div>
     <div><dt>Next scheduled run</dt><dd>
