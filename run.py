@@ -10,6 +10,10 @@ One issue of the paper: gather -> data.json -> render -> archive -> deliver.
 Called by the scheduler and by the web page's buttons as
 `run(settings, dry_run=..., date=...) -> RunResult`.  Exits non-zero on
 failure.
+
+`reprint(settings) -> ReprintResult` is the other half of the page's
+"Right now": it hands the latest archived issue to the routes again, with
+nothing gathered, nothing rendered and nothing counted.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import traceback
@@ -34,7 +39,14 @@ if str(HERE) not in sys.path:  # so `python run.py` finds app/, gather/, render/
 from app.settings import DATA_DIR as _DEFAULT_DATA_DIR  # noqa: E402
 from app.settings import Env, Settings  # noqa: E402
 from render.render import render as render_paper  # noqa: E402
-from state import bump_issue, next_issue, roman, update_state, volume_number  # noqa: E402
+from state import (  # noqa: E402
+    bump_issue,
+    load_state,
+    next_issue,
+    roman,
+    update_state,
+    volume_number,
+)
 
 log = logging.getLogger("run")
 
@@ -66,10 +78,70 @@ class RunResult:
     error: Optional[str] = None
 
 
+@dataclass
+class ReprintResult:
+    """One archived issue sent to the routes again. No issue was made."""
+
+    pdf: Optional[Path] = None
+    #: pages counted in the PDF itself, or None when it could not be counted
+    pages: Optional[int] = None
+    delivery: dict[str, Optional[str]] = field(default_factory=dict)
+    ok: bool = False
+    error: Optional[str] = None
+
+
+#: What the page says when the archive is empty: there is nothing to send.
+NOTHING_TO_REPRINT = "No paper has been made yet."
+
+#: `<date>.pdf`, and `<date>-2.pdf` for a second issue made the same day.
+ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d+)?\.pdf$")
+
+
 # ------------------------------------------------------------------ helpers
 def data_dir() -> Path:
     """DATA_DIR, read fresh (tests and the web app move it)."""
     return Path(os.environ.get("DATA_DIR", str(_DEFAULT_DATA_DIR)))
+
+
+def archive_dir() -> Path:
+    """`<DATA_DIR>/archive`: every issue that was ever made, by date."""
+    return data_dir() / "archive"
+
+
+def archive_target(day: str) -> Path:
+    """Where today's issue is filed, never on top of one already there.
+
+    The first paper of the day is `<date>.pdf`; a second run the same day
+    is `<date>-2.pdf`, a third `-3.pdf`, and so on. An issue that was made
+    is an issue that was made: the morning's sheet is still there to open
+    after a new paper is made at noon.
+    """
+    folder = archive_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{day}.pdf"
+    nth = 2
+    while path.exists():
+        path = folder / f"{day}-{nth}.pdf"
+        nth += 1
+    return path
+
+
+def latest_archive() -> Optional[Path]:
+    """The newest issue on file, or None when none has been made yet.
+
+    `state.last_pdf` is the run's own word for it; when that file is gone
+    (or state was lost) the archive folder itself is asked, newest first.
+    """
+    stored = str(load_state().get("last_pdf") or "").strip()
+    if stored:
+        path = Path(stored)
+        if path.is_file():
+            return path
+    try:
+        pdfs = [p for p in archive_dir().iterdir() if p.is_file() and ARCHIVE_NAME.match(p.name)]
+    except OSError:
+        return None
+    return max(pdfs, key=lambda p: (p.stat().st_mtime, p.name), default=None)
 
 
 def _now() -> datetime:
@@ -171,7 +243,7 @@ def _crossword(settings: Settings) -> Optional[dict[str, Any]]:
     return puzzle or None
 
 
-def _deliver(pdf: Path, settings: Settings, pages: int) -> dict[str, Optional[str]]:
+def _deliver(pdf: Path, settings: Settings, pages: Optional[int]) -> dict[str, Optional[str]]:
     """Hand the issue to the routes. `pages` is what the render laid out:
     a one-page paper is not a duplex job, and the print route says so."""
     try:
@@ -313,9 +385,9 @@ def run(
             )
         log.info("rendered %s page(s) -> %s", rendered.pages, rendered.pdf)
 
-        # 5. archive (always, before any route runs)
-        archive = data_dir() / "archive" / f"{day}.pdf"
-        archive.parent.mkdir(parents=True, exist_ok=True)
+        # 5. archive (always, before any route runs). A second paper made
+        # the same day is filed beside the first, never over it.
+        archive = archive_target(day)
         shutil.copyfile(rendered.pdf, archive)
         result.pdf = archive
 
@@ -344,14 +416,63 @@ def run(
         fields = {"last_error": "", "last_pages": result.pages, "last_pdf": str(result.pdf or "")}
         if not (dry_run or replay):
             issue = bump_issue(day)
+            # The number this archived sheet carries, so a reprint can say
+            # which issue it is sending.
+            fields["last_issue"] = issue
             fields["last_success"] = now.isoformat(timespec="seconds")
             log.info("issue %s printed", issue)
             _mark_seen([g for i, g in enumerate(guids) if g and i in result.printed])
+        else:
+            # A test run or a replay files a sheet that was never counted as
+            # an issue, so the paper on file carries no number.
+            fields["last_issue"] = 0
         update_state(**fields)
     else:
         update_state(last_error=result.error or "unknown error")
         paper_name = settings.look.paper_name or "Personal Paper"
         _notify_failure(settings, f"{paper_name} failed on {day}: {result.error}")
+    return result
+
+
+# ------------------------------------------------------------------ reprint
+def _page_count(pdf: Path) -> Optional[int]:
+    """How many pages the archived PDF has, or None. Never raises."""
+    try:
+        from deliver.printer import page_count
+    except Exception as exc:
+        log.warning("cannot count pages: %s", exc)
+        return None
+    return page_count(pdf)
+
+
+def reprint(settings: Settings) -> ReprintResult:
+    """Send the latest archived issue to every enabled route again.
+
+    Nothing is gathered, nothing is rendered, no issue is counted and no
+    post is marked seen: this is the sheet that was already made, going out
+    a second time. `state.last_run` and `last_error` are the record of the
+    runs that make papers, so they are left exactly as they were; the only
+    trace is a line in the log.
+    """
+    _setup_file_logging()
+    result = ReprintResult()
+    pdf = latest_archive()
+    if pdf is None:
+        result.error = NOTHING_TO_REPRINT
+        log.warning("reprint: %s", result.error)
+        return result
+
+    result.pdf = pdf
+    result.pages = _page_count(pdf)
+    result.delivery = _deliver(pdf, settings, result.pages)
+    routes = "; ".join(f"{r}: {e or 'ok'}" for r, e in result.delivery.items())
+    log.info("reprinted %s: %s", pdf.name, routes or "no routes enabled")
+
+    # The same rule as a run: it failed only when every enabled route did.
+    failed = [r for r, e in result.delivery.items() if e]
+    result.ok = not (failed and len(failed) == len(result.delivery))
+    if failed:
+        result.error = "; ".join(f"{r}: {result.delivery[r]}" for r in failed)
     return result
 
 

@@ -13,6 +13,7 @@ last_success  str   ISO timestamp of the last successful run
 last_error    str   message of the last failure ("" once a run succeeds)
 last_pages    int   page count of the last successful paper
 last_pdf      str   path of the last archived PDF
+last_issue    int   the issue number that PDF carries (0 when it is not known)
 
 Everything is written atomically; a corrupt or missing file reads as defaults,
 because a bad state file must never stop the paper.
@@ -39,6 +40,7 @@ DEFAULT_STATE: dict[str, Any] = {
     "last_error": "",
     "last_pages": 0,
     "last_pdf": "",
+    "last_issue": 0,
 }
 
 

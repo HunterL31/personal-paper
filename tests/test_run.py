@@ -105,6 +105,54 @@ def test_a_real_run_delivers_and_bumps_the_issue(data_dir, fake_gather, fake_del
     assert state_module.load_state()["issue"] == 2
 
 
+def test_a_second_paper_the_same_day_is_filed_beside_the_first(data_dir, fake_gather,
+                                                              fake_deliver):
+    """Pressing the button again never writes over the morning's sheet."""
+    first = run(Settings())
+    day = first.date
+    morning = data_dir / "archive" / f"{day}.pdf"
+    assert first.pdf == morning
+    morning.write_bytes(b"%PDF-1.4 the morning's own sheet\n")
+
+    second = run(Settings())
+
+    assert second.date == day
+    assert second.pdf == data_dir / "archive" / f"{day}-2.pdf"
+    assert morning.read_bytes() == b"%PDF-1.4 the morning's own sheet\n"
+    assert fake_deliver["pdfs"][-1] == data_dir / "archive" / f"{day}-2.pdf"
+    state = state_module.load_state()
+    assert state["last_pdf"].endswith(f"{day}-2.pdf")
+    assert state["last_issue"] == 2
+
+    third = run(Settings())
+    assert third.pdf == data_dir / "archive" / f"{day}-3.pdf"
+
+
+def test_a_replay_files_its_own_copy_and_counts_nothing(data_dir, fake_gather, fake_deliver):
+    """A replay re-reads out/<date>/data.json as today, whatever is archived."""
+    first = run(Settings())
+    replay = run(Settings(), date=first.date)
+
+    assert replay.ok and replay.date == first.date
+    assert fake_gather["count"] == 1                        # the replay did not gather
+    assert (data_dir / "archive" / f"{first.date}.pdf").exists()
+    assert replay.pdf == data_dir / "archive" / f"{first.date}-2.pdf"
+    state = state_module.load_state()
+    assert state["issue"] == 1                              # one issue, one number
+    assert state["last_issue"] == 0                         # the replay carries none
+
+
+def test_the_latest_archive_is_the_newest_paper_on_file(data_dir, fake_gather, fake_deliver):
+    assert run_module.latest_archive() is None
+    first = run(Settings())
+    assert run_module.latest_archive() == first.pdf
+
+    # With state lost -- or `last_pdf` pointing at a file that is gone -- the
+    # archive folder itself is asked.
+    state_module.update_state(last_pdf="/nowhere/2026-01-01.pdf")
+    assert run_module.latest_archive() == first.pdf
+
+
 def test_all_routes_disabled_still_bumps(data_dir, fake_gather, fake_deliver):
     fake_deliver["result"] = {}                     # nothing enabled
     result = run(Settings())
@@ -518,3 +566,45 @@ def test_the_folio_date_follows_the_chosen_style(data_dir, fake_gather, fake_del
     result = run(s, dry_run=True)
     written = json.loads((data_dir / "out" / result.date / "data.json").read_text())
     assert written["paper"]["date"] == result.date          # YYYY-MM-DD
+
+
+# ------------------------------------------------------------------ reprint
+def test_reprint_hands_the_latest_issue_back_to_the_routes(data_dir, fake_substack,
+                                                           fake_deliver, monkeypatch, caplog):
+    """The sheet that was already made goes out again, and nothing is made:
+    no gather, no issue, no post marked seen, no state touched."""
+    first = run(Settings())
+    monkeypatch.setattr(run_module, "_page_count", lambda pdf: 2)
+    fake_deliver["pdfs"].clear()
+    fake_substack.clear()
+    before = state_module.load_state()
+
+    with caplog.at_level("INFO", logger="run"):
+        result = run_module.reprint(Settings())
+
+    assert result.ok and result.error is None
+    assert result.pdf == first.pdf and result.pages == 2
+    assert fake_deliver["pdfs"] == [first.pdf] and fake_deliver["pages"] == 2
+    assert fake_substack == []                              # nothing marked seen
+    assert state_module.load_state() == before              # and no state written
+    assert f"reprinted {first.pdf.name}: archive: ok" in caplog.text
+
+
+def test_reprint_without_an_archive_says_so(data_dir, fake_deliver):
+    result = run_module.reprint(Settings())
+    assert result.ok is False
+    assert result.error == run_module.NOTHING_TO_REPRINT
+    assert fake_deliver["pdfs"] == []
+
+
+def test_reprint_reports_the_route_that_failed(data_dir, fake_gather, fake_deliver, monkeypatch):
+    run(Settings())
+    monkeypatch.setattr(run_module, "_page_count", lambda pdf: None)
+    fake_deliver["result"] = {"print": "printer offline"}
+
+    result = run_module.reprint(Settings())
+
+    assert result.ok is False
+    assert result.pages is None                             # an uncounted PDF still goes
+    assert "printer offline" in (result.error or "")
+    assert state_module.load_state()["last_error"] == ""    # the run's record is its own

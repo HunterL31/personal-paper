@@ -80,11 +80,17 @@
 
 <h2>Right now</h2>
 <div class="actions">
-  <button type="button" id="run-now">{{ run_now_label }}</button>
-  <button type="button" id="dry-run">Test run (nothing printed or emailed)</button>
+  <button type="button" id="reprint" {{ "disabled" if not reprint_ready else "" }}>{{ reprint_label }}</button>
 </div>
-<p class="note">&ldquo;{{ run_now_label }}&rdquo;: {{ run_now_note }} The test run makes
-the same paper and keeps it, so you can look at it on the Preview tab first.</p>
+<p class="note">{{ reprint_note }}</p>
+<div class="actions">
+  <button type="button" id="run-now">{{ new_paper_label }}</button>
+</div>
+<p class="note">{{ new_paper_note }}</p>
+<div class="actions">
+  <button type="button" id="dry-run">{{ test_run_label }}</button>
+</div>
+<p class="note">{{ test_run_note }}</p>
 <p class="result" id="run_result"></p>
 
 <h2>Set on the container (Unraid)</h2>
@@ -231,8 +237,9 @@ emailButton.addEventListener("click", function () {
     function (result) { return "Test sent to " + result.sent_to.join(", "); });
 });
 
-/* Both run buttons: start the job, then poll until it reports back. */
+/* All three buttons: start the job, then poll until it reports back. */
 const runResult = document.getElementById("run_result");
+
 function startRun(button, dry) {
   button.disabled = true;
   runResult.className = "result";
@@ -262,5 +269,35 @@ function startRun(button, dry) {
 }
 document.getElementById("run-now").addEventListener("click", function () { startRun(this, false); });
 document.getElementById("dry-run").addEventListener("click", function () { startRun(this, true); });
+
+/* The reprint: the sheet that was already made, going out again. */
+const reprintButton = document.getElementById("reprint");
+reprintButton.addEventListener("click", function () {
+  const button = this;
+  button.disabled = true;
+  runResult.className = "result";
+  runResult.textContent = "Sending the latest issue again…";
+  postJSON("/reprint", {}).then(function (data) {
+    if (!data.ok) {
+      button.disabled = false;
+      show(runResult, data.error || "could not start", true);
+      return;
+    }
+    pollJob(data.job, null, function (job) {
+      button.disabled = false;
+      if (job.status === "error") {
+        show(runResult, job.error, true);
+        return;
+      }
+      const r = job.result;
+      const routes = Object.keys(r.delivery || {}).map(function (k) { return k + " " + r.delivery[k]; });
+      show(runResult,
+        "Reprinted " + r.file
+          + (r.pages ? " (" + r.pages + (r.pages === 1 ? " page" : " pages") + ")" : "")
+          + (routes.length ? ": " + routes.join(", ") : ": nothing is switched on to send it to"),
+        !r.ok);
+    });
+  });
+});
 </script>
 {% endblock %}

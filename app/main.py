@@ -72,7 +72,10 @@ SAMPLE_DATA = REPO / "render" / "sample_data.json"
 #: rest of the page.
 FONT_DIR = REPO / "render" / "fonts"
 TEMPLATES = Jinja2Templates(directory=str(HERE / "templates"))
-ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}\.pdf$")
+#: `2026-09-18.pdf`, and `2026-09-18-2.pdf` for a second issue that day.
+ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d+)?\.pdf$")
+#: The date a filed issue carries, for the strip and the reprint button.
+ARCHIVE_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 PREVIEW_FILE = re.compile(r"^(page-\d+\.png|paper\.html)$")
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -161,6 +164,18 @@ def _crossword_check(st: dict[str, Any]) -> dict[str, Any] | None:
     return {"ok": bool(check.get("ok")), "summary": str(check["summary"]), "when": stamp}
 
 
+def issue_label(pdf_name: str, issue: int) -> str:
+    """What to call a filed issue: "2026-09-18, No. 12".
+
+    The number is the one recorded when that sheet was made; without it
+    (a test run makes a sheet that was never counted) the date stands on
+    its own, and a name that is not a date at all is shown as it is.
+    """
+    match = ARCHIVE_DATE.match(pdf_name)
+    day = match[1] if match else pdf_name
+    return f"{day}, No. {issue}" if day and issue else day
+
+
 def _status() -> dict[str, Any]:
     """The strip at the top of every tab."""
     st = load_state()
@@ -176,6 +191,7 @@ def _status() -> dict[str, Any]:
         "issue": st.get("issue") or 0,
         "archive_url": f"/archive/{pdf_name}" if ARCHIVE_NAME.match(pdf_name) else "",
         "archive_name": pdf_name,
+        "archive_label": issue_label(pdf_name, int(st.get("last_issue") or 0)),
         "next_run": f"{when:%Y-%m-%d %H:%M %Z}".strip() if when else "",
         "login_off": not auth.enabled(),
         "scheduler_on": when is not None,
@@ -744,35 +760,53 @@ async def weather_check(request: Request) -> JSONResponse:
 
 
 # ------------------------------------------------------------- Output tab
-def run_now_label(settings: Settings) -> str:
-    """What the button that makes today's paper right now says.
+#: The button that makes a new issue, and the one that makes one nobody
+#: gets. Neither depends on the routes: what they do is the same either way.
+NEW_PAPER_LABEL = "Make a new paper now"
+NEW_PAPER_NOTE = (
+    "Gathers the next stories from the queue, makes a new issue and delivers it. "
+    "The stories it prints are marked as printed."
+)
+TEST_RUN_LABEL = "Test run (nothing printed or emailed)"
+TEST_RUN_NOTE = (
+    "Makes the same paper and keeps it, so you can look at it on the Preview tab "
+    "first; nothing is sent and no story is marked as printed."
+)
 
-    It delivers to every route that is switched on, so the button names
-    what the reader will actually get: paper, an email, or neither.
+
+def reprint_label(settings: Settings) -> str:
+    """What the button that sends this morning's sheet out again says.
+
+    It goes to every route that is switched on, so the button names what
+    the reader will actually get: paper, an email, or neither.
     """
     out = settings.output
     if out.print.enabled:
-        return "Print today's paper now"
+        return "Print this morning's paper again"
     if out.email.enabled:
-        return "Send today's paper now"
-    return "Make today's paper now"
+        return "Send this morning's paper again"
+    return "Deliver this morning's paper again"
 
 
-def run_now_note(settings: Settings) -> str:
-    """One sentence under the button saying where the paper will go."""
-    out = settings.output
-    if out.print.enabled and out.email.enabled:
-        return "Gathers this morning's sources, prints the sheet and emails the PDF."
-    if out.print.enabled:
-        return "Gathers this morning's sources and prints the sheet."
-    if out.email.enabled:
-        return "Gathers this morning's sources and emails the PDF."
-    return "Gathers this morning's sources and files the paper; nothing is sent anywhere."
+def reprint_note(pdf: Path | None, issue: int) -> str:
+    """One sentence under the button naming the issue it would send."""
+    if pdf is None:
+        from run import NOTHING_TO_REPRINT
+
+        return NOTHING_TO_REPRINT
+    return f"Sends the latest issue exactly as it was made: {issue_label(pdf.name, issue)}."
 
 
 @app.get("/output")
 def output_get(request: Request) -> Response:
+    from run import latest_archive
+
     settings = Settings.load()
+    latest = latest_archive()
+    st = load_state()
+    # The recorded number belongs to the recorded file; if the newest paper
+    # on file is some other one, it goes out under its date alone.
+    issue = int(st.get("last_issue") or 0) if str(latest) == (st.get("last_pdf") or "") else 0
     return page(
         request, "output", "output.html",
         output=settings.output,
@@ -780,8 +814,13 @@ def output_get(request: Request) -> Response:
         days=list(enumerate(DAY_LABELS)),
         env_rows=env_rows(ENV_ON_OUTPUT),
         smtp_user=Env.get("SMTP_USER") or "",
-        run_now_label=run_now_label(settings),
-        run_now_note=run_now_note(settings),
+        reprint_label=reprint_label(settings),
+        reprint_note=reprint_note(latest, issue),
+        reprint_ready=latest is not None,
+        new_paper_label=NEW_PAPER_LABEL,
+        new_paper_note=NEW_PAPER_NOTE,
+        test_run_label=TEST_RUN_LABEL,
+        test_run_note=TEST_RUN_NOTE,
     )
 
 
@@ -924,6 +963,35 @@ def run_now(dry: int = 0) -> JSONResponse:
         }
 
     job = jobs.start("run", work)
+    return JSONResponse({"ok": True, "job": job.id})
+
+
+@app.post("/reprint")
+def reprint_now() -> JSONResponse:
+    """Send the latest archived issue out again.
+
+    It makes nothing: no gather, no render, no issue counted and no story
+    marked as printed. It takes the same lock as a run, so it cannot
+    overlap the morning's paper.
+    """
+    from run import NOTHING_TO_REPRINT, latest_archive
+
+    if latest_archive() is None:
+        return JSONResponse({"ok": False, "error": NOTHING_TO_REPRINT}, status_code=409)
+
+    def work(job: jobs.Job) -> dict[str, Any]:
+        from run import reprint as reprint_paper
+
+        result = reprint_paper(Settings.load())
+        return {
+            "ok": result.ok,
+            "file": Path(result.pdf).name if result.pdf else "",
+            "pages": result.pages or 0,
+            "error": result.error or "",
+            "delivery": {k: (v or "ok") for k, v in (result.delivery or {}).items()},
+        }
+
+    job = jobs.start("reprint", work)
     return JSONResponse({"ok": True, "job": job.id})
 
 
