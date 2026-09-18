@@ -4,7 +4,10 @@ from __future__ import annotations
 import json
 import stat
 
-from app.settings import Env, Look, Settings, SubstackSource
+import pytest
+from pydantic import ValidationError
+
+from app.settings import EarBox, Env, Look, Settings, SubstackSource
 
 
 def test_defaults_with_an_empty_data_dir(data_dir):
@@ -12,7 +15,9 @@ def test_defaults_with_an_empty_data_dir(data_dir):
     s = Settings.load()
     assert s.look.paper_name == "Personal Paper"
     assert s.look.body_size_pt == 9.0
-    assert s.look.ear.initials == ""
+    assert s.look.ear_left.kind == "weather"
+    assert s.look.ear_right.kind == "monogram"
+    assert s.look.ear_right.initials == ""
     assert s.output.print.enabled is False
     assert s.output.schedule.time == "06:00"
 
@@ -22,7 +27,7 @@ def test_round_trip(data_dir):
     s.look.paper_name = "The Evening Gull"
     s.look.body_size_pt = 10.5
     s.look.body_font = "EB Garamond"
-    s.look.ear.lines = ["Stories continue inside."]
+    s.look.ear_right.lines = ["Stories continue inside."]
     s.sources.substacks.append(SubstackSource(name="astralcodexten", paid=True))
     s.output.email.to = ["reader@example.com"]
     s.save()
@@ -31,7 +36,7 @@ def test_round_trip(data_dir):
     assert again.look.paper_name == "The Evening Gull"
     assert again.look.body_size_pt == 10.5
     assert again.look.body_font == "EB Garamond"
-    assert again.look.ear.lines == ["Stories continue inside."]
+    assert again.look.ear_right.lines == ["Stories continue inside."]
     assert again.sources.substacks[0].name == "astralcodexten"
     assert again.sources.substacks[0].paid is True
     assert again.output.email.to == ["reader@example.com"]
@@ -67,3 +72,50 @@ def test_env_reports_what_is_set_without_leaking_it(monkeypatch):
     assert status["WEB_PASSWORD"] is True
     assert status["TASKS_TOKEN"] is False
     assert "hunter2" not in json.dumps(status)
+
+
+# --------------------------------------------------- the ears, old and new
+def test_a_settings_file_from_before_two_ears_still_has_its_monogram(data_dir):
+    """One `ear` is the right-hand box: the paper is set exactly as it was."""
+    (data_dir / "settings.json").write_text(json.dumps({
+        "look": {"ear": {"initials": "M. L.", "lines": ["Continued stories inside."]}}
+    }))
+    look = Settings.load().look
+    assert look.ear_right.kind == "monogram"
+    assert look.ear_right.initials == "M. L."
+    assert look.ear_right.lines == ["Continued stories inside."]
+    # ... and the left one is still the weather.
+    assert look.ear_left.kind == "weather"
+
+
+def test_the_legacy_ear_does_not_overwrite_a_box_that_is_already_set(data_dir):
+    (data_dir / "settings.json").write_text(json.dumps({"look": {
+        "ear": {"initials": "M. L.", "lines": ["Old"]},
+        "ear_right": {"kind": "sun"},
+    }}))
+    assert Settings.load().look.ear_right.kind == "sun"
+
+
+def test_an_ear_keeps_the_words_of_the_kinds_it_is_not_set_to(data_dir):
+    """Trying another kind and coming back loses nothing."""
+    s = Settings()
+    s.look.ear_left = EarBox(kind="countdown", initials="M. L.", lines=["A line"],
+                             countdown_date="2026-12-24", countdown_label="Christmas")
+    s.look.date_place = "above"
+    s.look.date_font = "Playfair Display"
+    s.look.date_size_pt = 12.5
+    s.save()
+
+    look = Settings.load().look
+    assert look.ear_left.kind == "countdown"
+    assert (look.ear_left.initials, look.ear_left.lines) == ("M. L.", ["A line"])
+    assert look.ear_left.countdown_date == "2026-12-24"
+    assert look.ear_left.countdown_label == "Christmas"
+    assert (look.date_place, look.date_font, look.date_size_pt) == ("above", "Playfair Display", 12.5)
+
+
+def test_the_date_size_is_clamped_to_the_sizes_the_tab_offers():
+    assert Look(date_size_pt=6.0).date_size_pt == 6.0
+    assert Look(date_size_pt=24.0).date_size_pt == 24.0
+    with pytest.raises(ValidationError):
+        Look(date_size_pt=48.0)

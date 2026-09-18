@@ -1,14 +1,28 @@
 {
   "look": {
     "paper_name": "Personal Paper",
+    "date_format": "long",
     "imprint": "Printed at home before sunrise",
     "price": "Single copy, free",
-    "ear": {
+    "ear_left": {
+      "kind": "weather",
+      "initials": "",
+      "lines": [],
+      "countdown_date": "",
+      "countdown_label": ""
+    },
+    "ear_right": {
+      "kind": "monogram",
       "initials": "",
       "lines": [
         "Continued stories inside."
-      ]
+      ],
+      "countdown_date": "",
+      "countdown_label": ""
     },
+    "date_place": "folio",
+    "date_font": "Old Standard",
+    "date_size_pt": 8.0,
     "masthead_font": "Maguntia",
     "headline_font": "Old Standard",
     "body_font": "PT Serif",
@@ -37,6 +51,7 @@
           "place": "rail"
         }
       ],
+      "rail_side": "right",
       "rail_width_in": 1.9,
       "front_stories": 4,
       "crossword_place": "bottom",

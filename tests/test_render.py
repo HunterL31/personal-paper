@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -485,3 +486,198 @@ def test_the_folio_drops_empty_imprint_and_price(sample_data, tmp_path):
     assert len(folio_spans({"imprint": "Printed at home", "price": "Free"})) == 4
     assert len(folio_spans({"imprint": "", "price": "Free"})) == 3
     assert len(folio_spans({"imprint": "", "price": ""})) == 2
+
+
+# ------------------------------------------------------------- the ears
+#: What each kind of ear puts in its box, drawn from the sample data. The
+#: countdown is the one that is not in the data: it is counted from the day
+#: the paper is made, so the test sets a date twelve days from now.
+IN_TWELVE_DAYS = (date.today() + timedelta(days=12)).isoformat()
+
+EAR_KINDS_AND_WORDS = [
+    ("weather", {}, ["Fog early, clearing by noon", "68", "W 12 mph"]),
+    ("date", {}, ["Wednesday, September 16, 2026"]),
+    ("monogram", {"initials": "M. L.", "lines": ["Continued stories inside."]},
+     ["M. L.", "Continued stories inside."]),
+    ("issue", {}, ["Vol. I", "No. 1"]),
+    ("text", {"lines": ["The crossword is on the back page.", "Bins out tonight."]},
+     ["The crossword is on the back page.", "Bins out tonight."]),
+    ("next_event", {}, ["7:30 Pilates"]),
+    ("sun", {}, ["6:53 a.m.", "7:15 p.m.", "12h 22m"]),
+    ("countdown", {"countdown_date": IN_TWELVE_DAYS, "countdown_label": "Sarah's visit"},
+     ["12 days", "Sarah's visit"]),
+    ("puzzle", {}, ["Low Tide", "By Dana Kestrel"]),
+    ("none", {}, []),
+]
+
+
+def nameplate_ears(html):
+    """The two boxes of page 1's nameplate, left and right, or None for a
+    side set to nothing (there is no box there at all)."""
+    from bs4 import BeautifulSoup
+
+    plate = BeautifulSoup(html, "html.parser").select_one("#page-1 .nameplate")
+    boxes = plate.find_all(recursive=False)
+    assert [b.name for b in boxes] == ["div", "h1", "div"], boxes
+    assert "masthead" in (boxes[1].get("class") or [])
+    return [b if "ear" in (b.get("class") or []) else None for b in (boxes[0], boxes[2])]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("kind, fields, words", EAR_KINDS_AND_WORDS,
+                         ids=[k for k, _f, _w in EAR_KINDS_AND_WORDS])
+def test_every_kind_of_ear_sets_its_own_side(sample_data, tmp_path, side, kind, fields, words):
+    """Whatever is in a box, the sheet is the same sheet and the stories on
+    it are still the authors' own."""
+    from app.settings import EarBox
+
+    look = {f"ear_{side}": EarBox(kind=kind, **fields).model_dump()}
+    result = render(sample_data, look, tmp_path / f"{kind}-{side}")
+
+    assert result.pages == 2
+    assert result.printed == SAMPLE_PRINTED
+    assert_verbatim(result, sample_data["articles"])
+
+    left, right = nameplate_ears(result.laid_out_html)
+    box, other = (left, right) if side == "left" else (right, left)
+    if kind == "none":
+        assert box is None, "a box set to nothing is no box"
+        # The masthead is still there, centred over what is left of the plate.
+        assert "grid-template-columns" in result.laid_out_html
+    else:
+        assert box is not None
+        text = box.get_text(" ", strip=True)
+        for word in words:
+            assert word in text, (kind, side, text)
+    # The other side is untouched: it is still the box it always was.
+    assert other is not None
+    wanted = "Fog early" if side == "right" else "Continued stories inside."
+    assert wanted in other.get_text(" ", strip=True)
+
+
+def test_an_ear_kind_the_template_does_not_know_is_an_empty_side(sample_data, tmp_path):
+    """An odd settings file still prints a paper."""
+    result = render(sample_data, {"ear_left": {"kind": "horoscope"}}, tmp_path / "odd")
+    assert result.pages == 2
+    left, right = nameplate_ears(result.laid_out_html)
+    assert left is None and right is not None
+
+
+def test_a_puzzleless_morning_says_so_in_the_ear(sample_data, tmp_path):
+    data = copy.deepcopy(sample_data)
+    data["crossword"] = None
+    result = render(data, {"ear_left": {"kind": "puzzle"}}, tmp_path / "nopuzzle")
+    left, _right = nameplate_ears(result.laid_out_html)
+    assert left.get_text(" ", strip=True) == "No puzzle today"
+
+
+def test_a_day_with_nothing_at_a_time_on_it_says_so_in_the_ear(sample_data, tmp_path):
+    data = copy.deepcopy(sample_data)
+    data["events"] = [{"time": "All day", "title": "Recycling goes out tonight"}]
+    result = render(data, {"ear_left": {"kind": "next_event"}}, tmp_path / "allday")
+    left, _right = nameplate_ears(result.laid_out_html)
+    assert left.get_text(" ", strip=True) == "Nothing scheduled"
+
+
+@pytest.mark.parametrize("days, expected", [(0, "Today"), (1, "1 day"), (12, "12 days"),
+                                            (-1, "1 day since"), (-5, "5 days since")])
+def test_the_countdown_counts_from_the_day_the_paper_is_made(days, expected):
+    from render.render import countdown
+
+    assert countdown((date.today() + timedelta(days=days)).isoformat()) == expected
+    assert countdown("not a date") == ""
+    assert countdown("") == ""
+
+
+def test_an_ear_too_full_for_its_box_is_set_smaller_never_cut(sample_data, tmp_path):
+    """The box is 1.3in by 1.12in of furniture: the words fit inside it."""
+    from bs4 import BeautifulSoup
+
+    lines = ["The crossword is on the back page today.",
+             "Recycling goes out tonight, and the compost too.",
+             "Remember the library books are due back on Thursday.",
+             "Extraordinarily unpronounceable supercalifragilistic."]
+    result = render(sample_data, {"ear_left": {"kind": "text", "lines": lines}},
+                    tmp_path / "toofull")
+    assert result.pages == 2
+    left, _right = nameplate_ears(result.laid_out_html)
+    text = left.get_text(" ", strip=True)
+    for line in lines:                       # every word of it is still there
+        assert line in text
+    # ... set smaller by the fitting script, which is the only thing it may do.
+    assert "font-size" in (left.get("style") or ""), left.get("style")
+    assert BeautifulSoup(result.laid_out_html, "html.parser").select_one("#page-1 .masthead")
+
+
+# ------------------------------------------------- where the date is printed
+def folio_of(html):
+    from bs4 import BeautifulSoup
+
+    folio = BeautifulSoup(html, "html.parser").select_one("#page-1 .folio")
+    return [x.get_text(strip=True) for x in folio.select("span")]
+
+
+def dateline_of(html):
+    from bs4 import BeautifulSoup
+
+    return BeautifulSoup(html, "html.parser").select_one("#page-1 .dateline")
+
+
+SAMPLE_DATE = "Wednesday, September 16, 2026"
+
+
+def test_the_date_is_on_the_folio_rule_by_default(rendered):
+    _data, result = rendered
+    assert SAMPLE_DATE in folio_of(result.laid_out_html)
+    assert dateline_of(result.laid_out_html) is None
+
+
+@pytest.mark.parametrize("place", ["above", "below"])
+def test_the_date_can_be_a_line_of_its_own(sample_data, tmp_path, place):
+    result = render(sample_data, {"date_place": place, "date_size_pt": 12.0},
+                    tmp_path / f"date-{place}")
+    assert result.pages == 2
+    line = dateline_of(result.laid_out_html)
+    assert line is not None and line.get_text(strip=True) == SAMPLE_DATE
+    # It is the only place the date is printed on the front: the rule drops it.
+    assert SAMPLE_DATE not in folio_of(result.laid_out_html)
+    assert folio_of(result.laid_out_html) == \
+        ["Vol. I, No. 1", "Printed at home before sunrise", "Single copy, free"]
+
+    # Above the masthead, or between it and the rule.
+    order = [t.name for t in line.parent.find_all(recursive=False)]
+    where = order.index("p")
+    assert (where < order.index("header")) == (place == "above"), order
+    assert where < order.index("div"), order        # always above the folio rule
+
+
+def test_the_date_can_be_left_to_an_ear(sample_data, tmp_path):
+    result = render(sample_data, {"date_place": "none", "ear_right": {"kind": "date"}},
+                    tmp_path / "date-ear")
+    assert dateline_of(result.laid_out_html) is None
+    assert SAMPLE_DATE not in folio_of(result.laid_out_html)
+    _left, right = nameplate_ears(result.laid_out_html)
+    assert right.get_text(" ", strip=True) == SAMPLE_DATE
+
+
+def test_the_date_can_be_printed_nowhere_at_all(sample_data, tmp_path):
+    result = render(sample_data, {"date_place": "none"}, tmp_path / "date-nowhere")
+    assert result.pages == 2
+    assert dateline_of(result.laid_out_html) is None
+    assert folio_of(result.laid_out_html) == \
+        ["Vol. I, No. 1", "Printed at home before sunrise", "Single copy, free"]
+
+
+@pytest.mark.parametrize("place", ["folio", "above", "below", "none"])
+def test_the_date_is_set_in_the_face_and_size_the_reader_chose(sample_data, tmp_path, place):
+    """Wherever it is printed, including the ear that shows it."""
+    look = {"date_place": place, "date_font": "Bodoni Moda", "date_size_pt": 13.5,
+            "ear_left": {"kind": "date"}}
+    result = render(sample_data, look, tmp_path / f"face-{place}")
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    set_in = [t["style"] for t in soup.select("#page-1 .dateline, #page-1 .ear-date")]
+    assert set_in, place
+    for style in set_in:
+        assert '"Bodoni Moda"' in style and "13.5pt" in style, style

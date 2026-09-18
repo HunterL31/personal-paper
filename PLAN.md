@@ -192,8 +192,13 @@ carries:
 Nothing here can change an article's words; it only changes how much fits,
 which is the fitting script's problem as before.
 
-**Look.** `paper.name`, the two ear texts (initials, the right-ear lines),
-imprint and price lines; masthead font, headline font, body font, each a
+**Look.** `paper.name`, the two ears (each a `kind` -- the weather, the
+date, a monogram, the volume and number, lines of her own, the next thing
+on today, sunrise and sunset, a countdown, the day's puzzle, or nothing at
+all -- and the words that kind is set from), where the date is printed
+(`date_place`: the folio rule, above or below the masthead, or only where
+an ear shows it) and the face and size it is set in (`date_font`,
+`date_size_pt`), imprint and price lines; masthead font, headline font, body font, each a
 group of radio cards, every card set in the face it names with a line of
 the text that face will set (the bundled OFL fonts, `render/fonts/`: a
 dozen and a half families, listed once in `render/fontlist.py`, which both

@@ -53,8 +53,9 @@ settings), `state.json` (issue counter, seen posts), `lists/<name>.json`,
      publications in priority order, set the weather location, switch the
      crossword on if you want one, and name your lists and follow the
      **How the phone sends this list** box beside each of them.
-   - **Look**: paper name, imprint, ears, the three fonts, body text size
-     and lead story depth.
+   - **Look**: paper name, imprint, what each ear shows and the words it
+     shows, where the date is printed and in what face, the three fonts,
+     body text size and lead story depth.
    - **Layout**: the **Sections** table — which page each section goes on,
      and in what order — plus **Rail side**, the rail's width, how many
      stories the front page may hold, and the crossword's place and size.

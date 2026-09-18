@@ -36,9 +36,14 @@ if str(REPO) not in sys.path:  # so `state`, `run` and `render` import cleanly
     sys.path.insert(0, str(REPO))
 
 from app import auth, jobs, scheduler  # noqa: E402
-from app.dates import DATE_FORMATS, samples as date_samples
+from app.dates import DATE_FORMATS, format_date, samples as date_samples
 from app.settings import (  # noqa: E402
+    DATE_PLACE_LABELS,
+    DATE_PLACES,
     DEFAULT_LIST_SLUG,
+    EAR_KIND_FIELDS,
+    EAR_KIND_LABELS,
+    EAR_KINDS,
     PLACE_LABELS,
     FONT_CHOICES_BODY,
     FONT_CHOICES_HEAD,
@@ -48,6 +53,7 @@ from app.settings import (  # noqa: E402
     RAIL_SIDES,
     SLUG_RE,
     CalendarSource,
+    EarBox,
     Env,
     ListSource,
     RailSection,
@@ -382,16 +388,54 @@ def font_cards(choices: list[str], current: str) -> list[dict[str, Any]]:
             for name in choices]
 
 
+def choice_rows(keys: list[str], labels: dict[str, str]) -> list[dict[str, str]]:
+    """One row per choice a select offers: the stored word and the reader's."""
+    return [{"key": key, "label": labels.get(key, key)} for key in keys]
+
+
+def iso_date(value: str) -> str:
+    """A date the reader typed, or "" if it is not one. Never raises."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return ""
+
+
+def ear_from_form(form: FormData, side: str, current: EarBox) -> EarBox:
+    """One ear box as the page submitted it.
+
+    Every field is submitted whatever the kind is, and every field is kept:
+    the reader may try another kind and come back to her monogram. An
+    unknown kind, or a countdown date that is not a date, is dropped rather
+    than saved.
+    """
+    kind = form_text(form, f"ear_{side}_kind")
+    return EarBox(
+        kind=kind if kind in EAR_KINDS else current.kind,
+        initials=form_text(form, f"ear_{side}_initials"),
+        lines=[ln.strip() for ln in form_text(form, f"ear_{side}_lines").splitlines() if ln.strip()],
+        countdown_date=iso_date(form_text(form, f"ear_{side}_countdown_date")),
+        countdown_label=form_text(form, f"ear_{side}_countdown_label"),
+    )
+
+
 @app.get("/look")
 def look_get(request: Request) -> Response:
     settings = Settings.load()
+    look = settings.look
     return page(
         request, "look", "look.html",
-        look=settings.look,
+        look=look,
         date_styles=date_samples(),
-        fonts_masthead=font_cards(FONT_CHOICES_MASTHEAD, settings.look.masthead_font),
-        fonts_head=font_cards(FONT_CHOICES_HEAD, settings.look.headline_font),
-        fonts_body=font_cards(FONT_CHOICES_BODY, settings.look.body_font),
+        # The date as it is written now, for the face cards to be set in.
+        date_today=format_date(datetime.now(), look.date_format),
+        date_places=choice_rows(DATE_PLACES, DATE_PLACE_LABELS),
+        ear_kinds=choice_rows(EAR_KINDS, EAR_KIND_LABELS),
+        ear_fields=EAR_KIND_FIELDS,
+        fonts_masthead=font_cards(FONT_CHOICES_MASTHEAD, look.masthead_font),
+        fonts_head=font_cards(FONT_CHOICES_HEAD, look.headline_font),
+        fonts_body=font_cards(FONT_CHOICES_BODY, look.body_font),
+        fonts_date=font_cards(FONT_CHOICES_HEAD, look.date_font),
         body_sizes=BODY_SIZES,
     )
 
@@ -408,8 +452,11 @@ async def look_post(request: Request) -> RedirectResponse:
     if chosen in DATE_FORMATS:
         look.date_format = chosen
     look.price = form_text(form, "price")
-    look.ear.initials = form_text(form, "ear_initials")
-    look.ear.lines = [ln.strip() for ln in form_text(form, "ear_lines").splitlines() if ln.strip()]
+    look.ear_left = ear_from_form(form, "left", look.ear_left)
+    look.ear_right = ear_from_form(form, "right", look.ear_right)
+    look.date_place = one_of(form_text(form, "date_place"), DATE_PLACES, look.date_place)
+    look.date_font = one_of(form_text(form, "date_font"), FONT_CHOICES_HEAD, look.date_font)
+    look.date_size_pt = form_number(form, "date_size_pt", look.date_size_pt, 6.0, 24.0)
     look.masthead_font = one_of(form_text(form, "masthead_font"), FONT_CHOICES_MASTHEAD, look.masthead_font)
     look.headline_font = one_of(form_text(form, "headline_font"), FONT_CHOICES_HEAD, look.headline_font)
     look.body_font = one_of(form_text(form, "body_font"), FONT_CHOICES_BODY, look.body_font)
