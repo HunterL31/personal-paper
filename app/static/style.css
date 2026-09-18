@@ -182,3 +182,7 @@ button.copy { font-size: 0.8em; padding: 0.1em 0.5em; margin-left: 0.6em; vertic
 .queue tbody.muted td, .queue tbody.muted a { color: #777; }
 .queue tr.group td { font-variant: small-caps; color: var(--grey);
   border-top: var(--rule); padding-top: 0.5rem; }
+
+/* date style picker: same cards as the fonts, in the page's own face */
+.datecard .sample { display: block; font-size: 1rem; }
+.fonts-dates .fontcard { padding: 0.45rem 0.6rem; }
