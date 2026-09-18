@@ -122,7 +122,9 @@
      title, its subtitle, or its byline. The pipeline hands this template
      the author's own paragraphs, in order, and the template prints them.
 
-  2. The paper is one sheet: page 1 and, on its back, page 2. The only
+  2. The paper is one sheet: page 1 and, on its back, page 2 -- except on a
+     morning with no stories to print, when there is nothing to continue and
+     the paper is page 1 alone, the crossword where the lead would be. The only
      thing the layout is allowed to do to an article is break the text
      after the last word that fits the front-page slot and carry the rest,
      unchanged, to page 2 under "Continued from Page 1". The sheet is
@@ -366,6 +368,17 @@
   .xw-clues h4.down { margin-top: 0.07in; }
   .xw-clues p { margin: 0; padding-left: 0.075in; text-indent: -0.075in; break-inside: avoid; }
   .xw-clues p b { font-variant-numeric: tabular-nums; }
+
+  /* ---------- The crossword on the front page ----------
+     A morning with nothing queued is a one-page paper, so there is no page 2
+     to carry the puzzle: the script moves it into the story column, where
+     the lead would have been, and sets it larger. Only the furniture changes;
+     the grid and the clues are the same section. */
+  .xword.front { flex: 0 0 auto; margin: 0; padding: 0; border: 0; }
+  .xword.front .xw-head {
+    margin: 0 0 0.11in; padding-bottom: 0.05in; border-bottom: 1px solid #000;
+  }
+  .xword.front .xw-under { margin-top: 0.13in; }
 </style>
 </head>
 <body>
@@ -509,8 +522,11 @@
 /*
   Fit the paper to one sheet, without touching the words.
 
-  The sheet is two pages and only two. Page 1 carries the front-page slots,
-  page 2 the continuations and, below them, the crossword. The articles come
+  The sheet is two pages, or one on a morning with nothing to print. Page 1
+  carries the front-page slots, page 2 the continuations and, below them, the
+  crossword; when the search ends with no article on the sheet there is
+  nothing to continue, so page 2 goes and the puzzle takes the front (see
+  `onePage`). The articles come
   in priority order and the sheet is filled, so the layout is a search: try
   the first k articles whole; if the continuations overrun page 2, try again
   with the last of them printed only as far as its last whole paragraph that
@@ -638,6 +654,97 @@
     window.__crosswordHeightIn = rect(xw).height / PX_PER_IN;
   }
 
+  // The same puzzle on the front page, on a morning with no stories: there
+  // is no page 2 for it, so it takes the story column whole. The grid grows
+  // to what the column holds beside one ladder of clues, and the clues start
+  // at 8pt -- bigger than page 2's, because the height is theirs -- and are
+  // shrunk only if the section would run off the page.
+  const FRONT_CLUE_IN = 1.35;    // the measure one ladder of clues wants
+  const FRONT_UNDER_IN = 2.8;    // ... and the widest the ones under it may be
+  const FRONT_GRID_IN = 4.2;     // a grid wider than this is not a newspaper's
+  const FRONT_CELL_IN = 0.32;    // ... and nor is a square this big
+  const FRONT_CLUE_PT = 8;       // where the clue ladder starts
+
+  function fitFrontCrossword(xw, slot) {
+    const grid = xw.querySelector('.xw-grid');
+    const across = grid.querySelectorAll('tr:first-child td').length || 1;
+    const cell0 = parseFloat(xw.style.getPropertyValue('--cell')) || 0.19;
+    const num0 = parseFloat(xw.style.getPropertyValue('--xw-num')) || 5;
+    const colIn = rect(slot).width / PX_PER_IN;
+
+    // The grid may take the column's width less one ladder of clues, and no
+    // more than 4.2in; it is never set smaller than it would have been on
+    // page 2. The clues follow it: one column beside the grid, and as many
+    // of the same measure under it as the column holds.
+    const big = Math.min(FRONT_GRID_IN, across * FRONT_CELL_IN,
+                         colIn - FRONT_CLUE_IN - 0.17) / across;
+    const small = Math.min(big, cell0);
+
+    function apply(cell, size) {
+      const besideIn = colIn - cell * across - 0.17;
+      xw.style.setProperty('--cell', cell.toFixed(4) + 'in');
+      xw.style.setProperty('--xw-num', Math.min(9, num0 * cell / cell0).toFixed(2) + 'pt');
+      xw.style.setProperty('--xw-cols', Math.max(1, Math.round(besideIn / FRONT_CLUE_IN)));
+      xw.style.setProperty('--xw-clue', size + 'pt');
+      // The clues that run on under the grid: the fewest columns, and so the
+      // tallest block, that the rest of the column still holds -- but never
+      // a column wider than the eye tracks down a list of clues.
+      for (let n = Math.ceil(colIn / FRONT_UNDER_IN); n <= 8; n++) {
+        xw.style.setProperty('--xw-cols-under', n);
+        spreadClues();
+        if (!spills(xw, slot)) return true;
+      }
+      return false;
+    }
+
+    // The biggest grid the column holds with the clues at their full size --
+    // a bigger grid leaves the clues less room, so this is the search that
+    // fills the page -- and, if even the smallest will not, the page-2 grid
+    // with the clues shrunk the way page 2 shrinks them.
+    for (let cell = big; cell > small + 1e-9; cell -= 0.005)
+      if (apply(cell, FRONT_CLUE_PT)) return measure();
+
+    for (let size = FRONT_CLUE_PT; size >= 4.5 - 1e-9; size -= 0.25)
+      if (apply(small, size)) break;
+    return measure();
+
+    function measure() { window.__crosswordHeightIn = rect(xw).height / PX_PER_IN; }
+  }
+
+  // ---- A morning with no stories ----
+  // Nothing was printed, so nothing is continued and page 2 has no work to
+  // do: the paper is a single page. The sections the reader put on page 2
+  // join the rail, in their own order after it, and the crossword -- if
+  // there is one -- is set where the lead would have been, in place of the
+  // "No new stories this morning." line.
+  function onePage() {
+    const page2 = document.getElementById('page-2');
+    const slot = front();
+
+    const p2rail = page2 && page2.querySelector('.page2-rail');
+    if (p2rail && p2rail.firstElementChild) {
+      let rail = document.querySelector('#page-1 .rail');
+      if (!rail) {                                       // the rail was empty
+        const grid = document.querySelector('#page-1 .front-grid');
+        rail = grid.appendChild(el('aside', 'rail'));
+        grid.style.gridTemplateColumns = '';
+      }
+      while (p2rail.firstChild) rail.appendChild(p2rail.firstChild);
+    }
+
+    const xw = document.getElementById('xword');
+    if (xw) {
+      const none = slot.querySelector('.no-stories');
+      if (none) none.remove();
+      xw.classList.remove('top');
+      xw.classList.add('front');
+      slot.appendChild(xw);
+      fitFrontCrossword(xw, slot);
+    }
+
+    if (page2) page2.remove();
+  }
+
   // ---- A pass ----
   // Rebuild page 1 from the untouched copy with the first `k` articles. When
   // `partial` is given, that story keeps only its first `partial.paras`
@@ -761,7 +868,11 @@
       }
       if (lo) { partial = { index: i, paras: lo }; printed = k; attempt(k, partial); break; }
     }
-    if (!printed) attempt(0, null);                   // a paper with no stories in it
+    //: The search may end with nothing on the sheet -- an empty queue, or a
+    //: queue where not even the lead's first paragraph fits. Either way the
+    //: paper is one page: it is decided here, from what was printed, and
+    //: never from the articles that were handed in.
+    if (!printed) { attempt(0, null); onePage(); }
 
     // Ruled lines for each notes box: as many whole lines as its space holds.
     for (const lines of document.querySelectorAll('.lines'))
@@ -773,6 +884,7 @@
     window.__printed = Array.from({ length: printed }, (_, i) => i);
     //: {index: paragraphs printed} for the one partial article, or {}.
     window.__partial = partial ? { [partial.index]: partial.paras } : {};
+    //: 2, or 1 on a morning with no stories, when page 2 has been removed.
     window.__pages = document.querySelectorAll('.page').length;
     window.__layoutDone = true;
   }

@@ -227,6 +227,9 @@ logged in with.
    wrong, or it is not the subscriber's), `NYT-S cookie expired or
    invalid` (copy a fresh one), or `no puzzle for <date> at <url>`.
 
+On a morning with no stories to print, the paper is a single page and the
+puzzle takes the front, set larger where the lead story would have been.
+
 Treat the cookie like a password: anyone with it is signed in as you.
 It lives only in the container's variables, never in `settings.json` and
 never in the browser.

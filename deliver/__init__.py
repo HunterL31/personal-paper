@@ -76,7 +76,7 @@ def _explained(host: str, err: Exception) -> Exception:
     return RuntimeError(f"{said} ({original})")
 
 
-def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
+def _print_route(pdf: Path, settings: "Settings", *, test: bool, pages: int | None = None) -> None:
     route = settings.output.print
     if not route.printer_host:
         raise RuntimeError("Print route is enabled but no printer is configured")
@@ -87,6 +87,7 @@ def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
             pdf,
             route.printer_host,
             duplex=route.duplex,
+            pages=pages,
             paper_name=_paper_name(settings),
         )
     except Exception as err:
@@ -97,7 +98,7 @@ def _print_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
     record_print_result(route.printer_host)
 
 
-def _email_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
+def _email_route(pdf: Path, settings: "Settings", *, test: bool, pages: int | None = None) -> None:
     route = settings.output.email
     if not route.to:
         raise RuntimeError("Email route is enabled but no recipients are configured")
@@ -113,8 +114,18 @@ def _email_route(pdf: Path, settings: "Settings", *, test: bool) -> None:
 _ROUTES = {"print": _print_route, "email": _email_route}
 
 
-def deliver(pdf: Path, settings: "Settings", *, test: bool = False) -> dict[str, str | None]:
+def deliver(
+    pdf: Path,
+    settings: "Settings",
+    *,
+    test: bool = False,
+    pages: int | None = None,
+) -> dict[str, str | None]:
     """Run every enabled route over `pdf`.
+
+    `pages` is how many pages the paper has (1 on a morning with no
+    articles, 2 otherwise); it is passed to the print route so a one-page
+    paper is not sent as a duplex job. None means "count the PDF".
 
     Returns one entry per *enabled* route: `None` when it succeeded, the
     error text when it did not. Never raises; a route that blows up is the
@@ -128,7 +139,7 @@ def deliver(pdf: Path, settings: "Settings", *, test: bool = False) -> dict[str,
         if not route.enabled:
             continue
         try:
-            run_route(pdf, settings, test=test)
+            run_route(pdf, settings, test=test, pages=pages)
         except Exception as err:  # noqa: BLE001 - every route is isolated
             _LOGGER.exception("%s route failed", name)
             results[name] = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__

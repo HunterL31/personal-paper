@@ -267,13 +267,121 @@ def test_a_missing_crossword_key_is_the_same_as_none(sample_data, tmp_path):
     assert 'id="xword"' not in result.laid_out_html
 
 
-def test_a_crossword_alone_still_prints_a_paper(sample_data, tmp_path):
+# ------------------------------------------ the morning with nothing queued
+#: With no article on the sheet there is nothing to continue: the paper is
+#: one page, and the crossword takes the front where the lead would have been.
+def test_a_crossword_alone_is_a_one_page_paper(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
     data = copy.deepcopy(sample_data)
     data["articles"] = []
-    result = render(data, None, tmp_path / "onlyxw")
-    assert result.pages == 2 and result.printed == []
-    assert "No new stories this morning." in result.laid_out_html
-    assert "The Crossword" in result.laid_out_html
+    result = render(data, None, tmp_path / "onlyxw", png=True)
+
+    assert result.pages == 1 and result.printed == []
+    assert len(result.pngs) == 1
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert soup.select_one("#page-2") is None, "there is no back of the sheet"
+    xw = soup.select_one("#page-1 .stories #xword")
+    assert xw is not None, "the puzzle is set where the lead would have been"
+    assert "front" in (xw.get("class") or [])
+    assert "The Crossword" in xw.get_text()
+    for field in ("title", "author"):
+        assert data["crossword"][field] in xw.get_text()
+    # The line about there being no stories belongs to the morning with no
+    # puzzle either; the puzzle is the front page, not an apology.
+    assert "No new stories" not in soup.select_one("#page-1").get_text()
+    assert_verbatim(result, data["articles"])
+
+
+def test_the_one_page_pdf_is_one_page(sample_data, tmp_path):
+    import pymupdf
+
+    data = copy.deepcopy(sample_data)
+    data["articles"] = []
+    result = render(data, None, tmp_path / "onepage")
+    with pymupdf.open(result.pdf) as doc:
+        assert doc.page_count == 1
+
+
+def test_every_clue_is_printed_on_the_front_page_too(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    data = copy.deepcopy(sample_data)
+    data["articles"] = []
+    result = render(data, None, tmp_path / "frontclues")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    text = " ".join(p.get_text(" ") for p in soup.select("#page-1 #xword .xw-clues p"))
+    for side in ("across", "down"):
+        for clue in data["crossword"][side]:
+            assert clue["clue"] in text
+    # Bigger than page 2's: the column is the puzzle's for the morning.
+    style = soup.select_one("#xword")["style"]
+    cell = float(style.split("--cell:")[1].split("in")[0])
+    assert cell > 0.19, style
+    assert "--xw-clue: 8pt" in style, style
+
+
+def test_a_section_the_reader_put_on_page_two_joins_the_rail(sample_data, tmp_path):
+    """There is no page 2 that morning, so its sections print on page 1."""
+    from bs4 import BeautifulSoup
+
+    data = copy.deepcopy(sample_data)
+    data["articles"] = []
+    look = {"layout": {"sections": [
+        {"key": "agenda", "place": "rail"},
+        {"key": "hourly", "place": "rail"},
+        {"key": "list:tasks", "place": "page2"},
+    ]}}
+    result = render(data, look, tmp_path / "p2section")
+
+    assert result.pages == 1
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert soup.select_one("#page-2") is None
+    # The rail's own sections first, then the ones page 2 would have held.
+    assert [h.get_text() for h in soup.select("#page-1 .rail h3")] == \
+        ["Today", "Hour by hour", "To do"]
+    items = [li.get_text() for li in soup.select("#page-1 .rail .todo li")]
+    assert items == sample_data["lists"][0]["items"]
+
+
+def test_without_a_crossword_the_one_page_paper_says_so(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    data = copy.deepcopy(sample_data)
+    data["articles"] = []
+    data["crossword"] = None
+    result = render(data, None, tmp_path / "onlynothing")
+
+    assert result.pages == 1 and result.printed == []
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert soup.select_one("#page-2") is None
+    assert "No new stories this morning." in soup.select_one("#page-1").get_text()
+    assert soup.select("#page-1 .rail h3"), "her own day is still printed"
+
+
+def test_a_queue_nothing_fits_is_a_one_page_paper(sample_data, tmp_path):
+    """One story, one paragraph, too long for the page it would open on.
+
+    Not even its first paragraph fits, so there is nothing to print partially
+    and nothing to hold the sheet open: the search ends with an empty front
+    page, and the paper is the crossword's.
+    """
+    from bs4 import BeautifulSoup
+
+    article = copy.deepcopy(sample_data["articles"][0])
+    article["title"] = "One paragraph, four thousand words"
+    article["paragraphs"] = [" ".join(f"word{i}" for i in range(4000))]
+    data = copy.deepcopy(sample_data)
+    data["articles"] = [article]
+    result = render(data, {"layout": {"front_stories": 1}}, tmp_path / "impossible")
+
+    assert result.printed == [] and result.partial == {}
+    assert result.pages == 1
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert soup.select_one("#page-2") is None
+    assert soup.select_one("#page-1 .stories #xword") is not None
+    assert article["title"] not in soup.select_one("#page-1").get_text()
+    assert_verbatim(result, data["articles"])
 
 
 # ------------------------------------------- the last story, printed partially

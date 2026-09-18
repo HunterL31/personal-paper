@@ -11,10 +11,11 @@ the paper's name is whatever its one reader types on the Look tab
    reword an article, title, deck, or byline. A paragraph is never altered
    and never split; the one exception is the front-page jump, where the
    fitting script breaks the text after the last word that fits the slot and
-   continues the rest, unchanged, on page 2. The paper is always exactly one
-   double-sided sheet, and the sheet is filled: the articles that fit whole
-   are printed whole, and the last article on the sheet may stop at a
-   paragraph boundary with a line pointing to the rest online
+   continues the rest, unchanged, on page 2. The paper is exactly one
+   double-sided sheet, printed one-sided on a morning with no articles (one
+   page, the crossword on the front), and the sheet is filled: the articles
+   that fit whole are printed whole, and the last article on the sheet may
+   stop at a paragraph boundary with a line pointing to the rest online
    (`RenderResult.partial` says how many of its paragraphs were printed).
    The paragraphs left behind are held for another day, never trimmed, and
    nothing anywhere is ever summarized or reworded.
