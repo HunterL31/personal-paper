@@ -488,11 +488,22 @@ def test_the_volume_counts_years_of_publication(data_dir, fake_gather, fake_deli
     assert state_mod.volume_number(date(y + 1, m, d)) == 2
     assert state_mod.volume_number(date(y + 3, m, d)) == 4
 
-    # The rendered line follows: pretend it is three years on.
+    # A second print in the same volume is No. 2.
+    second = run(Settings())
+    written = json.loads((data_dir / "out" / second.date / "data.json").read_text())
+    assert written["paper"]["volume"].startswith("Vol. I, No. 2")
+
+    # Three years on: a new volume, and the numbering starts again at 1.
     later = datetime(y + 3, m, d, 6, 0, tzinfo=datetime.now().astimezone().tzinfo)
     monkeypatch.setattr("run._now", lambda: later)
-    third = run(Settings(), dry_run=True)
+    third = run(Settings())
     written = json.loads((data_dir / "out" / third.date / "data.json").read_text())
+    assert written["paper"]["volume"].startswith("Vol. IV, No. 1")
+    st = state_mod.load_state()
+    assert st["volume"] == 4 and st["issue"] == 1 and st["issues_total"] == 3
+    # And the one after it is No. 2 of Vol. IV.
+    fourth = run(Settings())
+    written = json.loads((data_dir / "out" / fourth.date / "data.json").read_text())
     assert written["paper"]["volume"].startswith("Vol. IV, No. 2")
 
 

@@ -261,7 +261,7 @@ def run(
         if not replay:
             paper.update({
                 "name": look.paper_name,
-                "volume": f"Vol. {roman(volume_number(now.date()))}, No. {next_issue()}",
+                "volume": f"Vol. {roman(volume_number(now.date()))}, No. {next_issue(now.date())}",
                 "date": long_date(now),
                 "imprint": look.imprint,
                 "price": look.price,
