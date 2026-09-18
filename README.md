@@ -67,6 +67,25 @@ With `docker compose` instead: copy `.env.example` to `.env`, fill it in,
 Host networking is what lets the page discover the printer over mDNS. On
 bridge networking discovery finds nothing and the printer is entered by IP.
 
+## Printing
+
+The paper goes straight to the printer over IPP: no CUPS, no driver, nothing
+to install on the Unraid box. **Check the connection** asks the printer what
+it takes and the **Format** line says what will be sent:
+
+- **PDF**, when the printer lists `application/pdf` — the sheet exactly as it
+  was laid out.
+- **PWG Raster**, when it does not. Plenty of AirPrint printers (the Brother
+  HL-L2460DW among them) accept only raster pages, so the paper is rendered
+  to pixels here, at the finest resolution the printer lists up to 600 dpi
+  and in black and white: a two-page issue is about 600 KB at 300 dpi and
+  2 MB at 600 dpi. The printed sheet looks the same; only what goes over the
+  wire differs.
+
+A printer that lists neither fails the check and says which formats it did
+list. `image/urf`, Apple's own raster, is not written yet; if a printer offers
+nothing else, that is what to add.
+
 ## The phone: lists
 
 There is no API for the list apps, so the phone pushes. An iPhone Shortcut
