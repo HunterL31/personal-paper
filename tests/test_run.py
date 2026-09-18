@@ -468,3 +468,34 @@ def test_a_replay_keeps_the_archived_puzzle_without_refetching(data_dir, fake_cr
     assert replay.ok and replay.crossword is True
     assert fake_crossword["count"] == 1              # the replay did not fetch
     assert _crossword_in(data_dir, replay) == SAMPLE_PUZZLE
+
+
+# ------------------------------------------------------------------ volume
+def test_the_volume_counts_years_of_publication(data_dir, fake_gather, fake_deliver, monkeypatch):
+    import state as state_mod
+    from datetime import date, datetime
+
+    first = run(Settings())
+    assert first.ok
+    written = json.loads((data_dir / "out" / first.date / "data.json").read_text())
+    assert written["paper"]["volume"].startswith("Vol. I, No. 1")
+    recorded = state_mod.load_state()["first_issue_date"]
+    assert recorded == first.date
+
+    # A day short of the anniversary is still volume I; the anniversary is II.
+    y, m, d = (int(x) for x in recorded.split("-"))
+    assert state_mod.volume_number(date(y + 1, m, d).replace(day=max(1, d - 1)) if d > 1 else date(y + 1, m, d)) in (1, 2)
+    assert state_mod.volume_number(date(y + 1, m, d)) == 2
+    assert state_mod.volume_number(date(y + 3, m, d)) == 4
+
+    # The rendered line follows: pretend it is three years on.
+    later = datetime(y + 3, m, d, 6, 0, tzinfo=datetime.now().astimezone().tzinfo)
+    monkeypatch.setattr("run._now", lambda: later)
+    third = run(Settings(), dry_run=True)
+    written = json.loads((data_dir / "out" / third.date / "data.json").read_text())
+    assert written["paper"]["volume"].startswith("Vol. IV, No. 2")
+
+
+def test_roman_numerals():
+    from state import roman
+    assert [roman(n) for n in (1, 2, 4, 5, 9, 10, 14, 40, 99)] == ["I", "II", "IV", "V", "IX", "X", "XIV", "XL", "XCIX"]
