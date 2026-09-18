@@ -9,7 +9,7 @@ async function postJSON(url, body) {
   try {
     return await response.json();
   } catch (err) {
-    return { ok: false, error: "The server did not answer with JSON (" + response.status + ")" };
+    return { ok: false, error: "The paper did not answer properly (" + response.status + ")" };
   }
 }
 

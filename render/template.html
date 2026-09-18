@@ -20,9 +20,10 @@
 {#
   ---- The arrangement, from `look.layout` (app.settings.Look.layout) ----
 
-  Which sections are on the sheet, in what order, and on which side of it:
-  "rail" is the right-hand column of page 1, "page2" a column of the same
-  width down the right of page 2, "off" is not printed. Everything here is
+  Which sections are on the sheet, in what order, and on which page:
+  "rail" is page 1's reader column, "page2" a column of the same width
+  beside the continuations, "off" is not printed. `rail_side` says which
+  edge of the sheet both of those columns run down. Everything here is
   read defensively -- a key this template does not know is ignored, a
   `list:<slug>` whose list is not in the data is skipped, an out-of-range
   number is clamped -- because an odd settings file must still print a
@@ -37,7 +38,10 @@
   {"key": "notes",      "place": "rail"}
 ] %}
 {% set sections = LAYOUT.sections if (LAYOUT.sections is defined and LAYOUT.sections is not none) else DEFAULT_SECTIONS %}
-{% set rail_w   = [[LAYOUT.rail_width_in    | default(1.9,  true) | float, 1.5 ] | max, 2.8 ] | min %}
+{# `rail_left`: the reader's column runs down the right of the sheet unless
+   she asked for the left, when it is written first and the CSS mirrors it. #}
+{%- set rail_left = LAYOUT.rail_side is defined and LAYOUT.rail_side == 'left' %}
+{%- set rail_w   = [[LAYOUT.rail_width_in    | default(1.9,  true) | float, 1.5 ] | max, 2.8 ] | min %}
 {% set front_n  = [[LAYOUT.front_stories    | default(4,    true) | int,   1   ] | max, 4   ] | min %}
 {% set cell_pref= [[LAYOUT.crossword_cell_in| default(0.19, true) | float, 0.14] | max, 0.26] | min %}
 {% set xw_pct   = [[LAYOUT.crossword_max_pct| default(55,   true) | float, 25  ] | max, 75  ] | min %}
@@ -275,8 +279,15 @@
   .row .deck { font-size: var(--row-deck); }
   .row .body { flex: 1; min-height: 0; overflow: hidden; }
 
-  /* ---------- Right rail: her day ---------- */
+  /* ---------- The reader's rail: her day ---------- */
   .rail { border-left: 1px solid #000; padding-left: 0.14in; overflow: hidden; display: flex; flex-direction: column; }
+  /* Set to the left instead: the rail is written first, so only the columns
+     and the rule that separates them have to be mirrored. */
+  .front-grid.rail-left { grid-template-columns: var(--rail-w) 1fr; }
+  .rail-left .rail {
+    border-left: 0; border-right: 1px solid #000;
+    padding-left: 0; padding-right: 0.14in;
+  }
   .rail section.notes { flex: 1; min-height: 0.5in; display: flex; flex-direction: column; }
   .rail .lines { flex: 1; min-height: 0; overflow: hidden; }
   .rail .lines div { box-sizing: border-box; height: 0.235in; border-bottom: 1px solid #000; }
@@ -403,7 +414,12 @@
     <span>{{ look.price }}</span>
   </div>
 
-  <main class="front-grid"{% if not rail_sections %} style="grid-template-columns: 1fr;"{% endif %}>
+  <main class="front-grid{% if rail_left %} rail-left{% endif %}"{% if not rail_sections %} style="grid-template-columns: 1fr;"{% endif %}>
+    {%- if rail_sections and rail_left %}
+    <aside class="rail">
+      {%- for sec in rail_sections %}{{ rail_section(sec) }}{% endfor %}
+    </aside>
+    {% endif %}
     <div class="stories">
       {% set a = articles[0] %}
       {% if articles %}
@@ -429,7 +445,7 @@
       {% endif %}
     </div>
 
-    {% if rail_sections %}
+    {% if rail_sections and not rail_left %}
     <aside class="rail">
       {%- for sec in rail_sections %}{{ rail_section(sec) }}{% endfor %}
     </aside>
@@ -506,13 +522,20 @@
   </div>
   {% if puzzle and xw_top %}{{ xword_block() }}{% endif %}
   {%- if page2_sections %}
-  <div class="page2-main">
-  {%- endif %}
-  <div class="cols"></div>
-  {%- if page2_sections %}
+  <div class="page2-main{% if rail_left %} rail-left{% endif %}">
+    {%- if rail_left %}
     <aside class="rail page2-rail">
       {%- for sec in page2_sections %}{{ rail_section(sec) }}{% endfor %}
     </aside>
+    {%- endif %}
+  {%- endif %}
+  <div class="cols"></div>
+  {%- if page2_sections %}
+    {%- if not rail_left %}
+    <aside class="rail page2-rail">
+      {%- for sec in page2_sections %}{{ rail_section(sec) }}{% endfor %}
+    </aside>
+    {%- endif %}
   </div>
   {%- endif %}
   {% if puzzle and not xw_top %}{{ xword_block() }}{% endif %}
@@ -726,7 +749,10 @@
       let rail = document.querySelector('#page-1 .rail');
       if (!rail) {                                       // the rail was empty
         const grid = document.querySelector('#page-1 .front-grid');
-        rail = grid.appendChild(el('aside', 'rail'));
+        rail = el('aside', 'rail');
+        // It goes on the side the reader chose, which for a left rail means
+        // before the stories, not after them.
+        grid.insertBefore(rail, grid.classList.contains('rail-left') ? grid.firstChild : null);
         grid.style.gridTemplateColumns = '';
       }
       while (p2rail.firstChild) rail.appendChild(p2rail.firstChild);

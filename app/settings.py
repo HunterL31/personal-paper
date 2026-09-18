@@ -61,12 +61,28 @@ class Ear(BaseModel):
 
 
 # -------------------------------------------------------------- Layout
-#: The sections the rail can hold, besides the reader's own lists. A list
+#: The sections the paper can hold, besides the reader's own lists. A list
 #: is the key `list:<slug>` of one of `sources.lists`.
 FIXED_SECTIONS = ["agenda", "hourly", "notes"]
-SECTION_LABELS = {"agenda": "Today", "hourly": "Hour by hour", "notes": "Notes"}
+#: What the Layout tab calls each section: the reader's words, not the
+#: paper's. The heading actually printed is `PRINTED_HEADINGS` below, and
+#: the tab shows it under the name so the two are never confused.
+SECTION_LABELS = {
+    "agenda": "Today's agenda",
+    "hourly": "Hourly forecast",
+    "notes": "Notes",
+}
+#: The heading `render/template.html` sets over each section. Newspaper
+#: voice: it is the paper's, and nothing on the web page may change it.
+PRINTED_HEADINGS = {"agenda": "Today", "hourly": "Hour by hour", "notes": "Notes"}
+#: Where a section goes. The stored words are the paper's own ("rail" is
+#: page 1's reader column); the labels are what the Layout tab shows, so a
+#: settings file written before the tab was reworded still loads.
 PLACES = ["rail", "page2", "off"]
-PLACE_LABELS = {"rail": "Rail (page 1)", "page2": "Page 2", "off": "Off"}
+PLACE_LABELS = {"rail": "Page 1", "page2": "Page 2", "off": "Not shown"}
+#: Which edge of the sheet the reader's column runs down.
+RAIL_SIDES = ["right", "left"]
+RAIL_SIDE_LABELS = {"right": "Right", "left": "Left"}
 
 
 def list_key(slug: str) -> str:
@@ -105,6 +121,9 @@ class Layout(BaseModel):
     #: In order: the rail fills page 1's right column top to bottom, and
     #: `page2` sections go in a column beside the continuations.
     sections: list[RailSection] = Field(default_factory=default_sections)
+    #: Which edge of the sheet the reader's column runs down. "right" is
+    #: the paper as it has always been set.
+    rail_side: Literal["left", "right"] = "right"
     rail_width_in: float = Field(1.9, ge=1.5, le=2.8)
     front_stories: int = Field(4, ge=1, le=4)
     crossword_place: Literal["bottom", "top"] = "bottom"
@@ -259,8 +278,8 @@ class Settings(BaseModel):
     def sync_list_sections(self) -> None:
         """Keep `look.layout.sections` in step with `sources.lists`.
 
-        A list the reader has just added gets a section in the rail without
-        a trip to the Look tab; a list they removed loses its section. The
+        A list the reader has just added gets a section on page 1 without a
+        trip to the Layout tab; a list they removed loses its section. The
         fixed sections and the order of everything else are left alone.
         """
         slugs = self.sources.slugs()
@@ -277,8 +296,12 @@ class Settings(BaseModel):
         self.look.layout.sections = kept
 
     def known_sections(self) -> list[dict]:
-        """Every section the Look tab offers, in the layout's own order:
-        `{key, label, place}`, with the reader's list names as labels."""
+        """Every section the Layout tab offers, in the layout's own order.
+
+        `{key, label, prints_as, place, is_list}`: `label` is what the tab
+        calls the section and `prints_as` the heading the paper sets over
+        it, or "" when the two are the same word.
+        """
         names = {li.slug: li.name for li in self.sources.lists}
         places = {s.key: s.place for s in self.look.layout.sections}
         order = [s.key for s in self.look.layout.sections]
@@ -289,9 +312,13 @@ class Settings(BaseModel):
         rows = []
         for key in keys:
             slug = key_slug(key)
+            label = names.get(slug, key) if slug else SECTION_LABELS.get(key, key)
+            printed = label if slug else PRINTED_HEADINGS.get(key, label)
             rows.append({
                 "key": key,
-                "label": names.get(slug, SECTION_LABELS.get(key, key)) if slug else SECTION_LABELS.get(key, key),
+                "label": label,
+                # Only worth saying when the paper's heading is another word.
+                "prints_as": printed if printed != label else "",
                 "place": places.get(key, "rail"),
                 "is_list": bool(slug),
             })

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" action="/layout">
+
+  <h2>Sections</h2>
+  <p class="note">Your own column holds these, in this order, top to bottom:
+  page 1 is the front of the sheet, page 2 the back, beside the stories that
+  continue there. A section set to &ldquo;Not shown&rdquo; is left out of the paper
+  altogether.</p>
+  <table>
+    <thead><tr><th style="width:5rem">Order</th><th style="width:45%">Section</th><th>Page</th></tr></thead>
+    <tbody>
+      {% for section in sections %}
+      <tr>
+        <td>
+          <input type="hidden" name="sec_key" value="{{ section.key }}">
+          <input type="number" class="narrow" name="sec_order_{{ loop.index0 }}" min="1" max="99"
+                 value="{{ loop.index }}">
+        </td>
+        <td>{{ section.label }}{% if section.is_list %} <span class="note">(list)</span>{% endif %}
+          {%- if section.prints_as %}<span class="note printed-as">prints as: {{ section.prints_as }}</span>{% endif %}</td>
+        <td>
+          <select class="narrow" name="sec_place_{{ loop.index0 }}">
+            {% for value, label in places %}
+            <option value="{{ value }}" {{ "selected" if value == section.place else "" }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">Lists are added and named on the Sources tab; each one appears here
+  as soon as it is saved.</p>
+
+  <h2>Your column</h2>
+  <div class="grid">
+    <label class="field"><span>Rail side</span>
+      <select name="rail_side" class="narrow">
+        {% for value, label in rail_sides %}
+        <option value="{{ value }}" {{ "selected" if value == layout.rail_side else "" }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <span class="note">Which edge of both pages your column runs down.</span></label>
+    <label class="field"><span>Rail width (inches)</span>
+      <input type="number" class="narrow" name="rail_width_in" step="0.1" min="1.5" max="2.8"
+             value="{{ "%.1f"|format(layout.rail_width_in) }}">
+      <span class="note">Wider leaves the stories less room, never fewer words.</span></label>
+  </div>
+
+  <h2>Stories</h2>
+  <div class="grid">
+    <label class="field"><span>Stories on the front page</span>
+      <select name="front_stories" class="narrow">
+        {% for n in [1, 2, 3, 4] %}
+        <option value="{{ n }}" {{ "selected" if n == layout.front_stories else "" }}>{{ n }}</option>
+        {% endfor %}
+      </select>
+      <span class="note">The most that may share page 1. Fewer means more of each.</span></label>
+  </div>
+
+  <h2>Crossword</h2>
+  <p class="note">Where the puzzle sits on page 2 and how big it is set. Switch it
+  on, and pick which days get one, on the Sources tab.</p>
+  <div class="grid">
+    <label class="field"><span>Where on page 2</span>
+      <select name="crossword_place" class="narrow">
+        <option value="bottom" {{ "selected" if layout.crossword_place == "bottom" else "" }}>Bottom</option>
+        <option value="top" {{ "selected" if layout.crossword_place == "top" else "" }}>Top</option>
+      </select>
+      <span class="note">Above the continued stories, or below them.</span></label>
+    <label class="field"><span>Square size (inches)</span>
+      <input type="number" class="narrow" name="crossword_cell_in" step="0.01" min="0.14" max="0.26"
+             value="{{ "%.2f"|format(layout.crossword_cell_in) }}">
+      <span class="note">How big one square of the grid is printed.</span></label>
+    <label class="field"><span>Most of page 2 it may fill (%)</span>
+      <input type="number" class="narrow" name="crossword_max_pct" step="1" min="25" max="75"
+             value="{{ layout.crossword_max_pct }}">
+      <span class="note">The rest of the page is the continued stories'. A tight
+      limit sets the clues smaller.</span></label>
+  </div>
+
+  <div class="actions">
+    <button class="primary" type="submit">Save layout</button>
+    <a href="/preview">See it on the Preview tab &rarr;</a>
+  </div>
+</form>
+{% endblock %}

@@ -3,10 +3,11 @@
 <form method="post" action="/sources">
 
   <h2>Calendars</h2>
-  <p class="note">Google Calendar &rarr; the calendar &rarr; &ldquo;Secret address in iCal format&rdquo;.
-  Saved URLs are masked; leave a box empty to keep the URL that is already there.</p>
+  <p class="note">Today's events come from each calendar's secret address: in Google
+  Calendar, open the calendar's settings and copy &ldquo;Secret address in iCal
+  format&rdquo;. A saved address is hidden behind dots; leave its box empty to keep it.</p>
   <table>
-    <thead><tr><th style="width:38%">iCal URL</th><th style="width:30%">Name</th><th>Check</th><th style="width:5rem">Remove</th></tr></thead>
+    <thead><tr><th style="width:38%">Secret address</th><th style="width:30%">Name</th><th>Check</th><th style="width:5rem">Remove</th></tr></thead>
     <tbody>
       {% for cal in calendars %}
       <tr>
@@ -40,9 +41,11 @@
   </table>
   <p><button type="button" data-add-row="calendar">Add another calendar</button></p>
 
-  <h2>Substacks</h2>
-  <p class="note">The name in <code>&lt;name&gt;.substack.com</code>, or a full feed URL.
-  Order is front-page priority: 1 goes first.</p>
+  <h2>Substack publications</h2>
+  <p class="note">The name in front of <code>.substack.com</code>, or the address of a
+  feed. Order is front-page priority: number 1 is looked at first. Tick
+  &ldquo;Paid&rdquo; for a subscription you pay for, so the whole post is fetched
+  from the email route (IMAP) instead of the free preview.</p>
   <table>
     <thead><tr><th style="width:5rem">Order</th><th style="width:38%">Publication</th><th style="width:5rem">Paid</th><th>Check</th><th style="width:5rem">Remove</th></tr></thead>
     <tbody>
@@ -76,23 +79,28 @@
       </tr>
     </tbody>
   </table>
-  <p><button type="button" data-add-row="substack">Add another Substack</button></p>
+  <p><button type="button" data-add-row="substack">Add another publication</button></p>
   <div class="grid">
-    <label class="field"><span>Articles older than N days are skipped</span>
+    <label class="field"><span>Skip posts older than &hellip; days</span>
       <input type="number" class="narrow" name="article_max_age_days" min="1" max="60"
-             value="{{ sources.article_max_age_days }}"></label>
+             value="{{ sources.article_max_age_days }}">
+      <span class="note">How far back the paper looks, so switching a publication on
+      does not print its whole archive.</span></label>
   </div>
-  <p class="note">Posts are a queue: the oldest unprinted post of the first
-  publication goes first, and nothing jumps ahead of it. A post still waiting
-  when it passes that age is never printed.</p>
+  <p class="note">Posts wait their turn: the oldest unprinted post of the first
+  publication goes first, and nothing jumps ahead of it. A post still waiting when
+  it passes that age is never printed.</p>
   <p>
-    <button type="button" id="show-queue">Show queue</button>
+    <button type="button" id="show-queue">Show what&rsquo;s waiting</button>
     <span class="result" id="queue_result"></span>
   </p>
-  <p class="note">Fetches every feed now; nothing is marked.</p>
+  <p class="note">Fetches every publication now and shows what would print; nothing
+  is marked as printed and nothing is sent anywhere.</p>
   <div class="queue" id="queue_view"></div>
 
   <h2>Weather</h2>
+  <p class="note">Where the forecast is for. Right-click your house in a map and copy
+  the pair of numbers it gives you.</p>
   <div class="grid">
     <label class="field"><span>Latitude</span>
       <input type="text" class="narrow" name="lat" id="lat" value="{{ sources.weather.lat }}"></label>
@@ -104,17 +112,17 @@
     </div>
   </div>
 
-  <h2>Lists</h2>
-  <p class="note">Your own lists &mdash; to do, groceries, packing &mdash; each pushed
-  from the phone to its own address. The slug is the list's address; it is worked out
-  from the name when the list is first saved and then stays put, because it is half of
-  what the Shortcut is set up with. A list that has not been synced within its age
-  prints empty rather than stale.</p>
+  <h2>Lists from your phone</h2>
+  <p class="note">Your own lists &mdash; to do, groceries, packing &mdash; each sent
+  from the phone to its own address. The address name is worked out from the list's
+  name the first time it is saved and never changes after that, because it is half of
+  the address your phone is set up with. &ldquo;Empty after&rdquo; is how many hours
+  old the last sync may be before that list prints empty rather than stale.</p>
   <table>
     <thead><tr>
-      <th style="width:26%">Name</th><th style="width:18%">Slug</th>
-      <th style="width:22%">Style</th><th>Ignore the sync when older than (hours)</th>
-      <th style="width:5rem">Remove</th>
+      <th style="width:24%">Name</th><th style="width:20%">Address name</th>
+      <th style="width:20%">Style</th><th style="width:22%">Empty after (hours)</th>
+      <th>Remove</th>
     </tr></thead>
     <tbody>
       {% for li in lists %}
@@ -155,20 +163,20 @@
     </tbody>
   </table>
   <p><button type="button" data-add-row="list">Add another list</button></p>
-  <p class="note">A new list is added to the rail on the Look tab by itself; move it to
-  page 2 or switch it off there.</p>
+  <p class="note">A new list goes on page 1 by itself; move it to page 2, or leave it
+  out, on the Layout tab.</p>
 
   <div class="grid">
     <label class="field"><span>Address the phone posts to</span>
       <input type="text" name="tasks_post_url" value="{{ sources.tasks_post_url }}"
-             placeholder="{{ tasks_url_derived }}" autocomplete="off"></label>
+             placeholder="{{ tasks_url_derived }}" autocomplete="off">
+      <span class="note">Leave it empty unless the addresses below are not ones the
+      phone can reach &mdash; behind a proxy, or on a different port from outside.</span></label>
   </div>
-  <p class="note">Leave it empty unless the addresses below are not ones the phone
-  can reach &mdash; behind a reverse proxy, or on a different port outside the box.</p>
 
   {% for li in lists %}
   <div class="panel">
-    <p><strong>{{ li.name }}</strong> <span class="note">&mdash; slug <code>{{ li.slug }}</code></span></p>
+    <p><strong>How the phone sends this list: {{ li.name }}</strong></p>
     <p><strong>Last sync:</strong>
       {% if li.status.updated %}
         {{ li.status.updated }}
@@ -178,6 +186,7 @@
     </p>
     <p class="mono">POST <a href="{{ li.url }}">{{ li.url }}</a>
       <button type="button" class="copy" data-copy="{{ li.url }}">Copy URL</button></p>
+    <p class="note">The last part of that address is this list&rsquo;s address name.</p>
     <p class="mono">Authorization: Bearer {{ li.slug }}
       <button type="button" class="copy" data-copy="{{ li.auth_slug }}">Copy Authorization header</button></p>
     {%- if tasks_token_set %}
@@ -185,8 +194,8 @@
       <span class="note">&mdash; {{ tasks_token_hint }}</span>
       <button type="button" class="copy" data-copy="{{ tasks_auth_copy }}">Copy TASKS_TOKEN header</button></p>
     {%- if tasks_auth_locked %}
-    <p class="note">The TASKS_TOKEN copy button gives a placeholder because this page has no login.
-      Set <code>WEB_PASSWORD</code> and it copies the real header.</p>
+    <p class="note">That last copy button gives a placeholder because this page has no
+      password on it. Set <code>WEB_PASSWORD</code> on the container and it copies the real header.</p>
     {%- endif %}
     {%- else %}
     <p class="note">{{ tasks_token_hint }}, so a post with no Authorization header
@@ -195,16 +204,17 @@
     <p class="mono">Content-Type: application/json</p>
     <p class="mono">{{ li.example }}
       <button type="button" class="copy" data-copy='{{ li.example }}'>Copy example body</button></p>
-    <p class="note">A plain-text body with one item per line works too, and
-      <code>{"tasks": [...]}</code> is still read for Shortcuts built before lists had names.</p>
+    <p class="note">A plain body with one item per line works too, and
+      <code>{"tasks": [...]}</code> is still read for a Shortcut built before lists had names.</p>
   </div>
   {% endfor %}
 
   <h2>Crossword</h2>
-  <p class="note">The New York Times daily puzzle, typeset into the paper. It needs a
-  Games subscription and the <code>NYT_S</code> cookie from a logged-in browser, set as a
-  container variable (<code>NYT_S</code> is {{ "set in container" if nyt_cookie_set else "not set" }}).
-  Answers are never fetched or printed. Press Check to see today's puzzle before the first morning.</p>
+  <p class="note">The New York Times daily puzzle, set into the paper. It needs a Games
+  subscription and the <code>NYT_S</code> cookie from a browser you are signed in with,
+  set on the container (<code>NYT_S</code> is
+  {{ "set on the container" if nyt_cookie_set else "not set" }}). The answers are never
+  fetched or printed. Press Check to see today's puzzle before the first morning.</p>
   <p>
     <label class="inline"><input type="checkbox" name="crossword_enabled"
       {{ "checked" if crossword.enabled else "" }}> Print the crossword</label>
@@ -217,6 +227,7 @@
           {{ "checked" if index in crossword.days else "" }}> {{ label }}</label>
         {% endfor %}
       </p>
+      <span class="note">Untick a day and that morning's paper has no puzzle.</span>
     </div>
     <div class="field"><span>&nbsp;</span>
       <button type="button" id="check-crossword">Check</button>
@@ -224,16 +235,18 @@
     </div>
   </div>
 
-  <h2>Container variables</h2>
+  <h2>Set on the container (Unraid)</h2>
   <table class="env">
-    <thead><tr><th style="width:16rem">Variable</th><th>Status</th></tr></thead>
+    <thead><tr><th style="width:16rem">Setting</th><th>Status</th></tr></thead>
     <tbody>
       {% for row in env_rows %}
-      <tr><td>{{ row.name }}</td><td>{{ "set in container" if row.set else "not set" }}</td></tr>
+      <tr><td>{{ row.name }}</td><td>{{ "set on the container" if row.set else "not set" }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
-  <p class="note">Read-only here: these live in the container's variables, never in the browser.</p>
+  <p class="note">Credentials live in the container's settings, not on this page. The
+  three <code>IMAP_*</code> settings are the email route (IMAP) that fetches paid
+  Substack posts in full.</p>
 
   <div class="actions"><button class="primary" type="submit">Save sources</button></div>
 </form>
@@ -358,7 +371,7 @@ crosswordButton.addEventListener("click", function () {
 });
 
 // ------------------------------------------------------ the Substack queue
-// "Show queue" fetches every feed and lays the answer out as a table: what is
+// "Show what's waiting" fetches every feed and lays the answer out as a table: what is
 // waiting, what has already been printed, what will never print. Every string
 // that comes back from the server goes through esc() before it is written.
 function esc(value) {
@@ -375,9 +388,9 @@ function queueAge(days) {
 function queueStatusWord(row, windowDays) {
   switch (row.status) {
     case "queued": return row.position === 1 ? "next up" : "queued";
-    case "beyond-limit": return "waiting (more than 8 ahead)";
+    case "beyond-limit": return "waiting (more than 8 ahead of it)";
     case "printed": return "printed";
-    case "preview-only": return "preview only: needs the email route";
+    case "preview-only": return "only a preview: needs the email route (IMAP)";
     case "too-old": return "older than " + esc(windowDays) + " days";
     default: return esc(row.status);
   }
@@ -415,7 +428,7 @@ function renderQueue(result) {
   html += '<p class="queue-summary">' + esc(queued.length) + " waiting, "
     + esc(printed.length) + " printed this week, " + esc(skipped.length) + " skipped</p>";
   if (!queued.length && !printed.length && !skipped.length) {
-    view.innerHTML = html + '<p class="note">Nothing in any feed inside the window.</p>';
+    view.innerHTML = html + '<p class="note">Nothing new in any publication.</p>';
     return;
   }
   html += "<table><thead><tr>"

@@ -1,23 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Preview</h2>
-<p class="note">Rendering runs Chromium and takes a few seconds. A paper that spills
-off the sheet is the thing to catch here: the paper is two pages, or one page
-on a morning with nothing queued: the crossword then takes the front. A story
-that does not fit whole is held for another morning.</p>
+<p class="note">The sheet as it will be printed, page by page. It takes a few
+seconds to make. The paper is two pages, or one page on a morning with nothing
+queued, when the crossword takes the front. A story that will not fit whole is
+held for another morning.</p>
 
 <div class="actions">
   <form method="post" action="/preview?source=sample">
-    <button class="primary" type="submit">Render example</button>
+    <button class="primary" type="submit">Preview the sample issue</button>
   </form>
   <form method="post" action="/preview?source=today">
-    <button type="submit">Render today</button>
+    <button type="submit">Preview today&rsquo;s paper</button>
   </form>
-  <span class="note">&ldquo;Render today&rdquo; gathers real data (a dry run: nothing is printed or mailed).</span>
 </div>
+<p class="note">The sample issue is made-up stories, for judging the look. Today&rsquo;s
+paper gathers the real thing; nothing is printed or emailed either way.</p>
 
 {% if job %}
-<p class="result" id="preview_status">Rendering…</p>
+<p class="result" id="preview_status">Making the pages…</p>
 <div class="pages" id="pages"></div>
 {% else %}
 <p class="note">No preview yet.</p>
@@ -34,18 +35,18 @@ const pages = document.getElementById("pages");
 
 function renderJob(job) {
   if (job.status === "error") {
-    show(statusLine, job.error || "render failed", true);
+    show(statusLine, job.error || "the preview could not be made", true);
     return;
   }
   if (job.status !== "done") {
-    statusLine.textContent = "Rendering…";
+    statusLine.textContent = "Making the pages…";
     return;
   }
   const result = job.result;
   statusLine.innerHTML = '<span class="pagecount">' + result.pages + ' page'
     + (result.pages === 1 ? '' : 's') + '</span>'
     + (result.crossword ? ' with the crossword' : '')
-    + ' &middot; <a href="' + result.html + '">inspect the HTML</a>'
+    + ' &middot; <a href="' + result.html + '">open the pages in the browser</a>'
     + (result.held && result.held.length
         ? '<br><span class="warn">Held for another morning (did not fit whole): ' + result.held.map(escapeHtml).join('; ') + '</span>'
         : '');

@@ -17,35 +17,34 @@
   <dl>
     <div><dt>Last run</dt><dd>{{ status.last_run or "never" }}</dd></div>
     <div><dt>Result</dt><dd>
-      {%- if status.last_error %}<span class="bad">failed</span>
+      {%- if status.last_error %}<span class="bad">failed</span>: {{ status.last_error }}
       {%- elif status.last_run and status.last_pages %}<span class="good">ok</span>, {{ status.last_pages }} page{{ "" if status.last_pages == 1 else "s" }}
       {%- else %}&mdash;{% endif %}
     </dd></div>
-    <div><dt>Last success</dt><dd>{{ status.last_success or "never" }}</dd></div>
-    <div><dt>Last paper</dt><dd>
+    <div><dt>Last successful print</dt><dd>{{ status.last_success or "never" }}</dd></div>
+    <div><dt>Latest paper</dt><dd>
       {%- if status.archive_url %}<a href="{{ status.archive_url }}">{{ status.archive_name }}</a>
       {%- else %}none yet{% endif %}
     </dd></div>
-    <div><dt>Scheduler</dt><dd>
-      {%- if status.scheduler_on %}Next run: {{ status.next_run }}
-      {%- else %}Scheduler off{% endif %}
+    <div><dt>Next scheduled run</dt><dd>
+      {%- if status.scheduler_on %}{{ status.next_run }}
+      {%- else %}not scheduled{% endif %}
     </dd></div>
-    {%- if status.crossword_check %}
-    <div><dt>Crossword</dt><dd>
-      <span class="{{ 'good' if status.crossword_check.ok else 'bad' }}">{{ status.crossword_check.summary }}</span>
-      {%- if status.crossword_check.when %} (checked {{ status.crossword_check.when }}){% endif %}
-    </dd></div>
-    {%- endif %}
     {%- if status.printer_check %}
     <div><dt>Printer</dt><dd>
       <span class="{{ 'good' if status.printer_check.ok else 'bad' }}">{{ status.printer_check.summary }}</span>
       {%- if status.printer_check.when %} (checked {{ status.printer_check.when }}){% endif %}
     </dd></div>
     {%- endif %}
+    {%- if status.crossword_check %}
+    <div><dt>Crossword</dt><dd>
+      <span class="{{ 'good' if status.crossword_check.ok else 'bad' }}">{{ status.crossword_check.summary }}</span>
+      {%- if status.crossword_check.when %} (checked {{ status.crossword_check.when }}){% endif %}
+    </dd></div>
+    {%- endif %}
     <div><dt>Log</dt><dd><a href="/log">last 200 lines</a></dd></div>
   </dl>
-  {% if status.last_error %}<p class="error">Last error: {{ status.last_error }}</p>{% endif %}
-  {% if status.login_off %}<p class="error">No login: WEB_PASSWORD is not set, so anyone on the network can open this page. Set it in the container's variables to require a password.</p>{% endif %}
+  {% if status.login_off %}<p class="error">No password on this page: WEB_PASSWORD is not set, so anyone on your network can open it. Set it on the container to ask for one.</p>{% endif %}
 </section>
 
 <nav class="tabs">

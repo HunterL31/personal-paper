@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Log</h2>
-<p class="note">The last 200 lines of {{ log_path }}.</p>
+<p class="note">The last 200 lines of what the paper wrote down as it ran.</p>
 {% if lines %}
 <pre class="log">{% for line in lines %}{{ line }}
 {% endfor %}</pre>

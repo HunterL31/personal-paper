@@ -1,5 +1,5 @@
 """
-Personal Paper's web page: four tabs of settings, a preview, the task
+Personal Paper's web page: four tabs of settings, a preview, the list
 endpoint the iPhone Shortcut posts to, and the in-process scheduler.
 
     DATA_DIR=/data WEB_PASSWORD=... uvicorn app.main:app --host 0.0.0.0 --port 8080
@@ -43,6 +43,8 @@ from app.settings import (  # noqa: E402
     FONT_CHOICES_HEAD,
     FONT_CHOICES_MASTHEAD,
     PLACES,
+    RAIL_SIDE_LABELS,
+    RAIL_SIDES,
     SLUG_RE,
     CalendarSource,
     Env,
@@ -69,12 +71,20 @@ JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 #: body_size_pt choices: 8.0 to 11.0 in half points.
 BODY_SIZES = [8.0 + 0.5 * i for i in range(7)]
-TABS = [("look", "Look"), ("sources", "Sources"), ("output", "Output"), ("preview", "Preview")]
+TABS = [
+    ("look", "Look"),
+    ("layout", "Layout"),
+    ("sources", "Sources"),
+    ("output", "Output"),
+    ("preview", "Preview"),
+]
 #: How a list is set on paper, and what the Sources tab calls each choice.
 LIST_STYLES = [("checkbox", "Checkboxes"), ("plain", "Plain lines"), ("numbered", "Numbered")]
-#: Where a section goes, as the Look tab's dropdown puts it.
+#: Which page a section goes on, as the Layout tab's dropdown puts it.
 PLACE_CHOICES = [(place, PLACE_LABELS[place]) for place in PLACES]
-#: Which container variables each tab shows as "set in container / not set".
+#: Which edge of the sheet the reader's column runs down.
+RAIL_SIDE_CHOICES = [(side, RAIL_SIDE_LABELS[side]) for side in RAIL_SIDES]
+#: Which container variables each tab shows as "set on the container / not set".
 ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.NYT_S, Env.TZ]
 ENV_ON_OUTPUT = [*Env.SMTP]
 #: Host headers that tell the phone nothing: the page was opened on the box
@@ -377,57 +387,10 @@ def look_get(request: Request) -> Response:
     return page(
         request, "look", "look.html",
         look=settings.look,
-        layout=settings.look.layout,
-        # Every section the paper knows about, in the layout's own order,
-        # with the reader's own list names as labels.
-        sections=settings.known_sections(),
-        places=PLACE_CHOICES,
         fonts_masthead=font_cards(FONT_CHOICES_MASTHEAD, settings.look.masthead_font),
         fonts_head=font_cards(FONT_CHOICES_HEAD, settings.look.headline_font),
         fonts_body=font_cards(FONT_CHOICES_BODY, settings.look.body_font),
         body_sizes=BODY_SIZES,
-    )
-
-
-def _save_layout(form: FormData, settings: Settings) -> None:
-    """The Layout table: where each section goes, in the order it is given.
-
-    Only keys the paper knows about are kept, so a list removed on the
-    Sources tab cannot come back through a stale form.
-    """
-    layout = settings.look.layout
-    known = {row["key"] for row in settings.known_sections()}
-    rows: list[tuple[float, RailSection]] = []
-    for i, raw in enumerate(form.getlist("sec_key")):
-        key = raw.strip() if isinstance(raw, str) else ""
-        if key not in known or any(key == r.key for _, r in rows):
-            continue
-        place = one_of(form_text(form, f"sec_place_{i}"), PLACES, "rail")
-        order = form_number(form, f"sec_order_{i}", float(i + 1), 1.0, 99.0)
-        rows.append((order, RailSection(key=key, place=place)))
-    if rows:
-        layout.sections = [section for _, section in sorted(rows, key=lambda r: r[0])]
-
-    layout.rail_width_in = form_number(form, "rail_width_in", layout.rail_width_in, 1.5, 2.8)
-    layout.front_stories = int(form_number(form, "front_stories", float(layout.front_stories), 1.0, 4.0))
-    layout.crossword_place = one_of(
-        form_text(form, "crossword_place"), ["bottom", "top"], layout.crossword_place
-    )
-    layout.crossword_cell_in = form_number(
-        form, "crossword_cell_in", layout.crossword_cell_in, 0.14, 0.26
-    )
-    layout.crossword_max_pct = int(form_number(
-        form, "crossword_max_pct", float(layout.crossword_max_pct), 25.0, 75.0
-    ))
-
-    # The old section switches are what the template asked before there
-    # were places; keep them in step so nothing reading them disagrees
-    # with the Layout table.
-    place_of = {section.key: section.place for section in layout.sections}
-    settings.look.show_hourly = place_of.get("hourly", "off") != "off"
-    settings.look.show_notes = place_of.get("notes", "off") != "off"
-    settings.look.show_todo = any(
-        place != "off" for key, place in place_of.items() if key.startswith("list:")
     )
 
 
@@ -448,10 +411,76 @@ async def look_post(request: Request) -> RedirectResponse:
     look.body_size_pt = form_number(form, "body_size_pt", look.body_size_pt, 8.0, 11.0)
     look.lead_body_height_in = form_number(form, "lead_body_height_in", look.lead_body_height_in, 1.5, 5.0)
     look.justify = form_flag(form, "justify")
-    _save_layout(form, settings)
 
     settings.save()
     return saved("/look")
+
+
+# ------------------------------------------------------------- Layout tab
+@app.get("/layout")
+def layout_get(request: Request) -> Response:
+    settings = Settings.load()
+    return page(
+        request, "layout", "layout.html",
+        layout=settings.look.layout,
+        # Every section the paper knows about, in the layout's own order,
+        # with the reader's own list names as labels.
+        sections=settings.known_sections(),
+        places=PLACE_CHOICES,
+        rail_sides=RAIL_SIDE_CHOICES,
+    )
+
+
+def _save_layout(form: FormData, settings: Settings) -> None:
+    """The Sections table: where each section goes, in the order it is given.
+
+    Only keys the paper knows about are kept, so a list removed on the
+    Sources tab cannot come back through a stale form.
+    """
+    layout = settings.look.layout
+    known = {row["key"] for row in settings.known_sections()}
+    rows: list[tuple[float, RailSection]] = []
+    for i, raw in enumerate(form.getlist("sec_key")):
+        key = raw.strip() if isinstance(raw, str) else ""
+        if key not in known or any(key == r.key for _, r in rows):
+            continue
+        place = one_of(form_text(form, f"sec_place_{i}"), PLACES, "rail")
+        order = form_number(form, f"sec_order_{i}", float(i + 1), 1.0, 99.0)
+        rows.append((order, RailSection(key=key, place=place)))
+    if rows:
+        layout.sections = [section for _, section in sorted(rows, key=lambda r: r[0])]
+
+    layout.rail_side = one_of(form_text(form, "rail_side"), RAIL_SIDES, layout.rail_side)
+    layout.rail_width_in = form_number(form, "rail_width_in", layout.rail_width_in, 1.5, 2.8)
+    layout.front_stories = int(form_number(form, "front_stories", float(layout.front_stories), 1.0, 4.0))
+    layout.crossword_place = one_of(
+        form_text(form, "crossword_place"), ["bottom", "top"], layout.crossword_place
+    )
+    layout.crossword_cell_in = form_number(
+        form, "crossword_cell_in", layout.crossword_cell_in, 0.14, 0.26
+    )
+    layout.crossword_max_pct = int(form_number(
+        form, "crossword_max_pct", float(layout.crossword_max_pct), 25.0, 75.0
+    ))
+
+    # The old section switches are what the template asked before there
+    # were places; keep them in step so nothing reading them disagrees
+    # with the Sections table.
+    place_of = {section.key: section.place for section in layout.sections}
+    settings.look.show_hourly = place_of.get("hourly", "off") != "off"
+    settings.look.show_notes = place_of.get("notes", "off") != "off"
+    settings.look.show_todo = any(
+        place != "off" for key, place in place_of.items() if key.startswith("list:")
+    )
+
+
+@app.post("/layout")
+async def layout_post(request: Request) -> RedirectResponse:
+    form = await request.form()
+    settings = Settings.load()
+    _save_layout(form, settings)
+    settings.save()
+    return saved("/layout")
 
 
 # ------------------------------------------------------------ Sources tab
@@ -615,7 +644,7 @@ async def calendar_check(request: Request) -> JSONResponse:
         if 0 <= index < len(calendars):
             url = calendars[index].url
     if not url:
-        return JSONResponse({"ok": False, "error": "No calendar URL to check"})
+        return JSONResponse({"ok": False, "error": "No calendar address to check"})
 
     from gather import calendar as calendar_gather
 
@@ -663,6 +692,32 @@ async def weather_check(request: Request) -> JSONResponse:
 
 
 # ------------------------------------------------------------- Output tab
+def run_now_label(settings: Settings) -> str:
+    """What the button that makes today's paper right now says.
+
+    It delivers to every route that is switched on, so the button names
+    what the reader will actually get: paper, an email, or neither.
+    """
+    out = settings.output
+    if out.print.enabled:
+        return "Print today's paper now"
+    if out.email.enabled:
+        return "Send today's paper now"
+    return "Make today's paper now"
+
+
+def run_now_note(settings: Settings) -> str:
+    """One sentence under the button saying where the paper will go."""
+    out = settings.output
+    if out.print.enabled and out.email.enabled:
+        return "Gathers this morning's sources, prints the sheet and emails the PDF."
+    if out.print.enabled:
+        return "Gathers this morning's sources and prints the sheet."
+    if out.email.enabled:
+        return "Gathers this morning's sources and emails the PDF."
+    return "Gathers this morning's sources and files the paper; nothing is sent anywhere."
+
+
 @app.get("/output")
 def output_get(request: Request) -> Response:
     settings = Settings.load()
@@ -673,6 +728,8 @@ def output_get(request: Request) -> Response:
         days=list(enumerate(DAY_LABELS)),
         env_rows=env_rows(ENV_ON_OUTPUT),
         smtp_user=Env.get("SMTP_USER") or "",
+        run_now_label=run_now_label(settings),
+        run_now_note=run_now_note(settings),
     )
 
 
@@ -781,7 +838,7 @@ async def email_test(request: Request) -> JSONResponse:
         to = [a.strip() for a in str(raw or "").split(",") if a.strip()]
     to = to or list(Settings.load().output.email.to)
     if not to:
-        return JSONResponse({"ok": False, "error": "No recipients set"})
+        return JSONResponse({"ok": False, "error": "No address to send to"})
 
     import deliver
 
@@ -844,7 +901,7 @@ def preview_post(source: str = "sample") -> RedirectResponse:
                 raise RuntimeError(result.error or f"no data for {result.date}")
             # data.json carries today's puzzle under "crossword" when the
             # source is on; the template typesets it. The sample issue has
-            # a made-up puzzle so "Render example" shows the layout.
+            # a made-up puzzle so the sample issue shows the layout.
             data = json.loads(source_data.read_text())
         else:
             data = json.loads(SAMPLE_DATA.read_text())
@@ -902,7 +959,7 @@ def log_page(request: Request) -> Response:
         lines = path.read_text(errors="replace").splitlines()[-200:]
     except OSError:
         lines = []
-    return page(request, "log", "log.html", lines=lines, log_path=str(path))
+    return page(request, "log", "log.html", lines=lines)
 
 
 # ------------------------------------------------- POST /lists/<slug>

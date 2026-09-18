@@ -92,6 +92,7 @@ DEFAULT_LAYOUT = {
         {"key": "hourly", "place": "rail"},
         {"key": "notes", "place": "rail"},
     ],
+    "rail_side": "right",
     "rail_width_in": 1.9,
     "front_stories": 4,
     "crossword_place": "bottom",

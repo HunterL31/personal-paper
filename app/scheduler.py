@@ -3,8 +3,8 @@
 One APScheduler cron job built from `settings.output.schedule`. Saving the
 Output tab calls `reschedule()`, so a new print time takes effect without a
 restart. The job takes `jobs.RUN_LOCK`, the same lock the web page's
-buttons take, so "Run now" during the scheduled run waits rather than
-double-printing.
+buttons take, so a run started by hand during the scheduled one waits
+rather than double-printing.
 """
 from __future__ import annotations
 

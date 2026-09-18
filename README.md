@@ -24,7 +24,7 @@ scheduler ─▶ gather (calendar, weather, substack, lists) ─▶ render (Chro
 ```
 
 Everything persistent lives under `/data`: `settings.json` (the page's
-settings), `state.json` (issue counter, seen posts), `lists/<slug>.json`,
+settings), `state.json` (issue counter, seen posts), `lists/<name>.json`,
 `archive/<date>.pdf`, `out/<date>/` (that day's data and HTML) and
 `logs/run.log`.
 
@@ -38,22 +38,26 @@ settings), `state.json` (issue counter, seen posts), `lists/<slug>.json`,
    login on the page; leave it empty and the page is open to anyone on
    your network, which the page itself points out.
    `TASKS_TOKEN` guards the phone sync (optional: each list also accepts
-   its own slug as the token), the `SMTP_*` set for
+   its own address name as the token), the `SMTP_*` set for
    emailing the PDF, `NYT_S` for the crossword, and the `IMAP_*` set only
-   if a paid Substack needs the email route. See `.env.example` for each
-   one.
+   if a paid Substack needs the email route (IMAP). See `.env.example` for
+   each one.
 3. Open `http://<unraid-ip>:8080/`. With `WEB_PASSWORD` set the browser
    asks for a username and password: the username is ignored (type
    anything), the password is `WEB_PASSWORD`. Then work through the tabs:
-   - **Output**: pick the printer (Discover, or type its IP, then Test and
-     Print test page), and/or enable email with the recipients; set the
-     time and days.
-   - **Sources**: paste the calendar's secret iCal address, list the
-     Substacks in priority order, set the weather location, switch the
+   - **Output**: pick the printer (**Find printers**, or type its address,
+     then **Check the connection** and **Print a test page**), and/or tick
+     **Email the paper every morning** with the addresses; set the time and
+     days under **When to make the paper**.
+   - **Sources**: paste the calendar's secret address, list the Substack
+     publications in priority order, set the weather location, switch the
      crossword on if you want one, and name your lists and follow the
-     Shortcut instructions beside each of them.
-   - **Look**: fonts, size, name, ear text, and the Layout table that says
-     which sections go in the rail, which go on page 2 and which are off.
+     **How the phone sends this list** box beside each of them.
+   - **Look**: paper name, imprint, ears, the three fonts, body text size
+     and lead story depth.
+   - **Layout**: the **Sections** table — which page each section goes on,
+     and in what order — plus **Rail side**, the rail's width, how many
+     stories the front page may hold, and the crossword's place and size.
      Check it on **Preview**.
 
 With `docker compose` instead: copy `.env.example` to `.env`, fill it in,
@@ -76,12 +80,12 @@ Content-Type: application/json
 {"items": ["Return library books", "Water the fig tree"]}
 ```
 
-The bearer token is either the list's slug (as above — it is already in the
-URL, so it is no secret) or the container's `TASKS_TOKEN` if you set one;
-with no `TASKS_TOKEN` set, no header at all is accepted too. A plain-text
-body with one item per line works, and so does `{"tasks": [...]}`. If a
-list's file is older than the age set on the Sources tab, that section
-prints empty and the log says "list <slug> not synced" rather than
+The bearer token is either the list's address name (as above — it is
+already in the URL, so it is no secret) or the container's `TASKS_TOKEN` if
+you set one; with no `TASKS_TOKEN` set, no header at all is accepted too. A
+plain body with one item per line works, and so does `{"tasks": [...]}`. If
+a list's file is older than the age set on the Sources tab, that section
+prints empty and the log says it was not synced, rather than printing
 yesterday's list.
 
 `POST /tasks` is still the `tasks` list, so a Shortcut made before lists had
@@ -121,13 +125,13 @@ Each gatherer can be run alone: `python -m gather.weather`.
    `tests/test_look.py` check this on every render.
 2. No LLM calls anywhere.
 3. The paper prints every morning even when a source fails.
-4. Credentials live in container variables; everything the reader changes
+4. Credentials are set on the container; everything the reader changes
    lives on the settings page.
 
 ## Setting up each source
 
 All of this happens on the **Sources** tab except the two credentials
-that go in container variables. Every source has a Check button that
+that are set on the container. Every source has a Check button that
 fetches live and shows what it found, so you can confirm each one before
 the first morning.
 
@@ -166,22 +170,24 @@ the lead) and press Check on each to see its latest title.
   `platformer.substack.com`. A custom domain works too: paste the full
   feed URL, e.g. `https://www.example.com/feed`.
 - **Paid** should be ticked for any subscription you pay for. Paid posts
-  arrive in RSS as previews, and a preview is never printed. With Paid
+  arrive in the feed as previews, and a preview is never printed. With Paid
   ticked the gatherer fetches the full post from the email Substack sent
-  you instead, which needs the IMAP setup below.
+  you instead, over the email route (IMAP) set up below.
 
 Posts are a queue rather than a news feed: the oldest post you have not
 been given yet goes first, publication by publication in the order above,
-so nothing is skipped while newer posts jump ahead of it. **Articles
-older than N days are skipped** (7 by default, 1–60) is how far back that
-queue looks — a post still waiting when it passes that age is never
-printed, which is what keeps the first morning from printing the archive.
+so nothing is skipped while newer posts jump ahead of it. **Skip posts
+older than … days** (7 by default, 1–60) is how far back that queue looks —
+a post still waiting when it passes that age is never printed, which is
+what keeps the first morning from printing the archive. **Show what's
+waiting** fetches every publication and lists what would print, without
+marking anything.
 
 Each post prints once. Four stories fit a sheet at most, and a story is
 printed whole or held for a morning with room; when the last slot holds
 only the beginning of one, the paper prints the address of the rest.
 
-**Email route for paid posts (Gmail):**
+**The email route (IMAP), for paid posts (Gmail):**
 
 1. In Gmail, create a label, e.g. `Paper`, and a filter: From contains
    `substack.com`, apply label `Paper`. Optionally "Skip the Inbox".
@@ -192,7 +198,7 @@ only the beginning of one, the paper prints the address of the rest.
    `IMAP_USER=<your gmail address>`, `IMAP_PASSWORD=<the app password>`,
    `IMAP_MAILBOX=Paper` (the label name; `INBOX` if you skipped step 1).
    Apply, which restarts the container.
-4. The Sources tab shows each IMAP variable as "set in container".
+4. The Sources tab shows each `IMAP_*` setting as "set on the container".
 
 The gatherer matches the email by the post's title within the last 24
 hours and strips only email chrome (headers, footers, unsubscribe
@@ -214,8 +220,8 @@ logged in with.
    string, which is long and looks like nonsense. In Safari the same
    thing is under Develop → Show Web Inspector → Storage → Cookies.
 4. Set the container variable **`NYT_S`** to that value and apply, which
-   restarts the container. The Sources tab then shows `NYT_S` as "set in
-   container". The cookie is good for about a year; when it expires the
+   restarts the container. The Sources tab then shows `NYT_S` as "set on
+   the container". The cookie is good for about a year; when it expires the
    Check button says so and you repeat steps 1–3.
 5. On the **Sources** tab, tick **Print the crossword**, untick any day
    you would rather not have one (Saturday's is the hard one), and Save.
@@ -243,31 +249,32 @@ paper prints without a puzzle; nothing here can stop the morning's paper.
 
 ### Lists (from the phone)
 
-Each list is a row in the **Lists** table on the Sources tab: a name, the
-style it is set in (checkboxes, plain lines or numbers), and how old a sync
-may be before the section prints empty instead of stale. Saving the row
-works out its **slug** — "Weekend shopping" becomes `weekend-shopping` —
-and the slug never changes afterwards, because it is half of the address
-the phone is set up with. Under the table, each list has a box with its own
-address and the exact header, with copy buttons.
+Each list is a row in the **Lists from your phone** table on the Sources
+tab: a name, the style it is set in (checkboxes, plain lines or numbers),
+and how old a sync may be before the section prints empty instead of stale.
+Saving the row works out its **address name** — "Weekend shopping" becomes
+`weekend-shopping` — and that never changes afterwards, because it is half
+of the address the phone is set up with. Under the table, each list has a
+**How the phone sends this list** box with its own address and the exact
+header, with copy buttons.
 
-A new list is added to the rail by itself; move it to page 2, or switch it
-off, in the Layout table on the Look tab.
+A new list goes on page 1 by itself; move it to page 2, or leave it out, in
+the **Sections** table on the Layout tab.
 
 1. Optionally set the container variable `TASKS_TOKEN` to a long random
-   string and apply. It is not required: a list also accepts its own slug
-   as the token, and with no `TASKS_TOKEN` set a post with no Authorization
-   header at all is accepted.
-2. The Sources tab shows the exact URL and header for each list. They are:
+   string and apply. It is not required: a list also accepts its own
+   address name as the token, and with no `TASKS_TOKEN` set a post with no
+   Authorization header at all is accepted.
+2. The Sources tab shows the exact address and header for each list. They are:
 
    ```
-   POST http://<unraid-ip>:8080/lists/<slug>
-   Authorization: Bearer <slug>
+   POST http://<unraid-ip>:8080/lists/<address-name>
+   Authorization: Bearer <address-name>
    Content-Type: application/json
    {"items": ["first item", "second item"]}
    ```
 
-   A `text/plain` body with one item per line also works, and `{"tasks":
+   A plain body with one item per line also works, and `{"tasks":
    [...]}` is still read. The address is built from the address your
    browser is using, so if the box is behind a reverse proxy or answers on
    another port from the phone's side, type the right address into
@@ -283,9 +290,9 @@ off, in the Layout table on the Look tab.
      Shortcuts actions, use those instead.
    - **Get Contents of URL**: URL as above, Method POST, one header
      `Authorization` whose value is the word `Bearer`, a space, and the
-     slug or the token itself (no angle brackets: for the list
-     `groceries` the value is `Bearer groceries`; the Sources tab has a
-     button that copies the exact value), Request Body = File, pick the
+     list's address name or the token itself (no angle brackets: for the
+     list `groceries` the value is `Bearer groceries`; the Sources tab has
+     a button that copies the exact value), Request Body = File, pick the
      combined text. A Content-Type header is not needed; either text lines
      or JSON is accepted.
 4. Run it once by hand and look at the Sources tab: each box shows how many
@@ -293,16 +300,21 @@ off, in the Layout table on the Look tab.
 5. Automations tab, New, Time of Day, a few minutes before print time,
    Run Immediately (turn off "Ask Before Running"), and pick the shortcut.
 
-### Layout (on the Look tab)
+### Layout
 
-The **Layout** table is where each section of furniture goes: `Today`, the
-hours, the notes box and one row per list. Each row has an order number and
-a place. Sections in the **rail** fill page 1's right column top to bottom,
-in that order; sections on **page 2** go in a column beside the
-continuations; **off** leaves one out entirely. Beside the table are the
-rail's width, how many stories the front page may hold (1–4), and where the
-crossword sits on page 2 with its square size and the most of the page it
-may take.
+The **Sections** table is where each section of furniture goes: Today's
+agenda, the hourly forecast, the notes box and one row per list. Each row
+has an order number and a **Page**: **Page 1** puts it in your own column
+on the front of the sheet, **Page 2** in the same column on the back beside
+the continued stories, and **Not shown** leaves it out entirely. Under each
+name, in italics, is the heading the paper itself prints over that section —
+the hourly forecast prints as "Hour by hour", today's agenda as "Today" —
+because the paper keeps its own newspaper voice.
+
+**Rail side** runs your column down the right edge of both pages (the
+default) or the left. Below it are the rail's width, how many stories the
+front page may hold (1–4), and where the crossword sits on page 2 with its
+square size and the most of the page it may fill.
 
 Changing any of it changes how much fits, never a word of an article. Judge
 it on the **Preview** tab before it hits paper.
