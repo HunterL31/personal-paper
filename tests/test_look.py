@@ -321,6 +321,49 @@ def test_list_styles_set_their_own_markers(sample_data, tmp_path, style, marker)
             [f"{i}." for i in range(1, len(items) + 1)]
 
 
+def test_the_rail_can_be_set_down_the_left_of_the_sheet(sample_data, tmp_path):
+    """Rail side "left": the rail is written first on both pages, its rule
+    moves to its right edge, and the sheet is still one sheet."""
+    from bs4 import BeautifulSoup
+
+    result = _check(
+        sample_data,
+        _layout(rail_side="left", sections=[AGENDA, HOURLY, dict(NOTES, place="page2")]),
+        tmp_path, "leftrail",
+    )
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+
+    grid = soup.select_one("#page-1 .front-grid")
+    assert "rail-left" in (grid.get("class") or [])
+    kids = [k.name + "." + " ".join(k.get("class") or []) for k in grid.find_all(recursive=False)]
+    assert kids[0].startswith("aside.rail"), kids
+    assert any(k.startswith("div.stories") for k in kids[1:]), kids
+
+    page2 = soup.select_one("#page-2 .page2-main")
+    assert "rail-left" in (page2.get("class") or [])
+    p2kids = [k.name + "." + " ".join(k.get("class") or []) for k in page2.find_all(recursive=False)]
+    assert p2kids[0].startswith("aside.rail"), p2kids
+    assert p2kids[1].startswith("div.cols"), p2kids
+
+    # The columns swap and the rule between them swaps with them.
+    assert ".front-grid.rail-left { grid-template-columns: var(--rail-w) 1fr; }" \
+        in result.laid_out_html
+    assert "border-right: 1px solid #000" in result.laid_out_html
+    assert _rail(result.laid_out_html) == ["Today", "Hour by hour"]
+    assert _rail(result.laid_out_html, "#page-2 .page2-rail") == ["Notes"]
+
+
+def test_the_right_rail_is_the_default_and_is_written_last(sample_data, tmp_path):
+    """Nothing is mirrored unless the reader asks: the default is untouched."""
+    from bs4 import BeautifulSoup
+
+    result = _check(sample_data, _layout(rail_side="right"), tmp_path, "rightrail")
+    grid = BeautifulSoup(result.laid_out_html, "html.parser").select_one("#page-1 .front-grid")
+    assert "rail-left" not in (grid.get("class") or [])
+    kids = [k.name for k in grid.find_all(recursive=False)]
+    assert kids == ["div", "aside"], kids
+
+
 @pytest.mark.parametrize("width", [1.5, 2.8])
 def test_the_rail_is_as_wide_as_the_reader_asked(sample_data, tmp_path, width):
     result = _check(sample_data, _layout(rail_width_in=width), tmp_path, f"w{width}")

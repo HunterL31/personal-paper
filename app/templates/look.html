@@ -7,28 +7,35 @@
 <form method="post" action="/look">
 
   <h2>The paper</h2>
-  <p class="note">Nothing here can change an article's words. It sets the masthead,
-  the ears, the fonts and how much of the lead story fits on the front page.</p>
+  <p class="note">Nothing on this tab can change an article's words. It sets the
+  masthead, the ears, the type and how much of the lead story fits on the front
+  page. Where each section goes is on the Layout tab.</p>
 
   <div class="grid">
     <label class="field"><span>Paper name</span>
-      <input type="text" name="paper_name" value="{{ look.paper_name }}"></label>
+      <input type="text" name="paper_name" value="{{ look.paper_name }}">
+      <span class="note">Printed across the top of page 1, in the masthead face.</span></label>
     <label class="field"><span>Imprint</span>
-      <input type="text" name="imprint" value="{{ look.imprint }}"></label>
+      <input type="text" name="imprint" value="{{ look.imprint }}">
+      <span class="note">A small line under the masthead saying where the paper was made.</span></label>
     <label class="field"><span>Price line</span>
-      <input type="text" name="price" value="{{ look.price }}"></label>
+      <input type="text" name="price" value="{{ look.price }}">
+      <span class="note">The line a newspaper prints its price on, at the right of the same rule.</span></label>
   </div>
 
   <h2>Ears</h2>
+  <p class="note">The two boxes either side of the masthead. The left one is
+  today's weather; these set the right one.</p>
   <div class="grid">
-    <label class="field"><span>Initials (right ear)</span>
-      <input type="text" name="ear_initials" value="{{ look.ear.initials }}"></label>
-    <label class="field"><span>Ear lines (one per line)</span>
-      <textarea name="ear_lines">{{ look.ear.lines | join("\n") }}</textarea></label>
+    <label class="field"><span>Initials</span>
+      <input type="text" name="ear_initials" value="{{ look.ear.initials }}">
+      <span class="note">A monogram at the top of the right ear. Leave it empty for none.</span></label>
+    <label class="field"><span>Ear lines</span>
+      <textarea name="ear_lines">{{ look.ear.lines | join("\n") }}</textarea>
+      <span class="note">One line of the right ear per line here. With the crossword
+      switched on, &ldquo;The crossword is on the back page.&rdquo; is the line to add;
+      nothing writes it for you.</span></label>
   </div>
-  <p class="note">The ear says whatever you type. With the crossword switched on
-  (Sources tab), a line like &ldquo;The crossword is on the back page.&rdquo; is the
-  one to add; nothing writes it for you.</p>
 
   <h2>Type</h2>
   {#
@@ -49,92 +56,38 @@
   </div>
   {% endmacro %}
 
-  <h3 class="sub">Masthead</h3>
+  <h3 class="sub">Masthead font</h3>
   {{ picker("masthead_font", fonts_masthead, "masthead", look.paper_name) }}
 
-  <h3 class="sub">Headlines</h3>
+  <h3 class="sub">Headline font</h3>
   {{ picker("headline_font", fonts_head, "headline", "Council votes to widen the river path") }}
 
-  <h3 class="sub">Body</h3>
+  <h3 class="sub">Body font</h3>
   {{ picker("body_font", fonts_body, "body", "The quick brown fox jumps over the lazy dog") }}
 
-  <p class="note">Preview: these cards are set in the printer's own files, at
+  <p class="note">Each card is set in the printer's own file for that face, at
   screen size. The Preview tab shows the real sheet, at the real size, with
   today's stories in it.</p>
 
   <div class="grid">
-    <label class="field"><span>Body size (pt)</span>
+    <label class="field"><span>Body text size</span>
       <select name="body_size_pt" class="narrow">
         {% for size in body_sizes %}
-        <option value="{{ "%.1f"|format(size) }}" {{ "selected" if size == look.body_size_pt else "" }}>{{ "%.1f"|format(size) }}</option>
+        <option value="{{ "%.1f"|format(size) }}" {{ "selected" if size == look.body_size_pt else "" }}>{{ "%.1f"|format(size) }} pt</option>
         {% endfor %}
-      </select></label>
-    <label class="field"><span>Lead story body height (in)</span>
+      </select>
+      <span class="note">Bigger type means fewer stories on the sheet, never shorter ones.</span></label>
+    <label class="field"><span>Lead story depth on page 1 (inches)</span>
       <input type="number" class="narrow" name="lead_body_height_in" step="0.1" min="1.5" max="5.0"
-             value="{{ "%.1f"|format(look.lead_body_height_in) }}"></label>
-  </div>
-
-  <h2>Layout</h2>
-  <p class="note">Sections in the rail fill page 1&rsquo;s right column top to bottom;
-  sections on page 2 go in a column beside the continuations.</p>
-  <table>
-    <thead><tr><th style="width:5rem">Order</th><th style="width:40%">Section</th><th>Place</th></tr></thead>
-    <tbody>
-      {% for section in sections %}
-      <tr>
-        <td>
-          <input type="hidden" name="sec_key" value="{{ section.key }}">
-          <input type="number" class="narrow" name="sec_order_{{ loop.index0 }}" min="1" max="99"
-                 value="{{ loop.index }}">
-        </td>
-        <td>{{ section.label }}{% if section.is_list %} <span class="note">(list)</span>{% endif %}</td>
-        <td>
-          <select name="sec_place_{{ loop.index0 }}">
-            {% for value, label in places %}
-            <option value="{{ value }}" {{ "selected" if value == section.place else "" }}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <p class="note">Lists are added and named on the Sources tab; each one appears here
-  as soon as it is saved.</p>
-
-  <div class="grid">
-    <label class="field"><span>Rail width (in)</span>
-      <input type="number" class="narrow" name="rail_width_in" step="0.1" min="1.5" max="2.8"
-             value="{{ "%.1f"|format(layout.rail_width_in) }}"></label>
-    <label class="field"><span>Stories on the front page</span>
-      <select name="front_stories" class="narrow">
-        {% for n in [1, 2, 3, 4] %}
-        <option value="{{ n }}" {{ "selected" if n == layout.front_stories else "" }}>{{ n }}</option>
-        {% endfor %}
-      </select></label>
-  </div>
-
-  <h2>Crossword</h2>
-  <p class="note">Where the puzzle sits on page 2 and how big its squares are.
-  Switch it on, and pick which days get one, on the Sources tab.</p>
-  <div class="grid">
-    <label class="field"><span>Place on page 2</span>
-      <select name="crossword_place" class="narrow">
-        <option value="bottom" {{ "selected" if layout.crossword_place == "bottom" else "" }}>Bottom</option>
-        <option value="top" {{ "selected" if layout.crossword_place == "top" else "" }}>Top</option>
-      </select></label>
-    <label class="field"><span>Square size (in)</span>
-      <input type="number" class="narrow" name="crossword_cell_in" step="0.01" min="0.14" max="0.26"
-             value="{{ "%.2f"|format(layout.crossword_cell_in) }}"></label>
-    <label class="field"><span>Most of page 2 it may take (%)</span>
-      <input type="number" class="narrow" name="crossword_max_pct" step="1" min="25" max="75"
-             value="{{ layout.crossword_max_pct }}"></label>
+             value="{{ "%.1f"|format(look.lead_body_height_in) }}">
+      <span class="note">How deep the top story's text runs before the rest of it
+      continues on page 2.</span></label>
   </div>
 
   <h2>Columns</h2>
   <p>
-    <label class="inline"><input type="checkbox" name="justify" {{ "checked" if look.justify else "" }}> Justify article columns</label>
-    <span class="note">Newspaper style, with hyphenation at line ends. Untick for ragged-right columns.</span>
+    <label class="inline"><input type="checkbox" name="justify" {{ "checked" if look.justify else "" }}> Justify columns</label>
+    <span class="note">Straight edges both sides, as a newspaper sets them. Untick for a ragged right edge.</span>
   </p>
 
   <div class="actions">

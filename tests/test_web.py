@@ -1,7 +1,7 @@
 """
-The web layer: auth, the four tabs saving their own section, the Check
-endpoints never crashing the page, `POST /tasks`, the archive route's name
-check, a real sample preview, and the scheduler's trigger.
+The web layer: auth, each tab saving its own section, the Check endpoints
+never crashing the page, `POST /tasks`, the archive route's name check, a
+real sample preview, and the scheduler's trigger.
 
 Nothing here touches the network: every gatherer call is monkeypatched but
 the preview, which renders the sample issue in the bundled Chromium.
@@ -212,25 +212,26 @@ def test_the_look_tab_saves_a_newly_offered_face(client):
         ("Grenze Gotisch", "Oswald", "Merriweather")
 
 
-def test_the_look_tab_saves_the_layout(client):
+def test_the_layout_tab_saves_the_layout(client):
     settings = Settings()
     settings.sources.lists.append(ListSource(name="Groceries"))
     settings.sync_list_sections()
     settings.save()
 
-    # The table submits one `sec_key` per row, with the order and place
+    # The table submits one `sec_key` per row, with the order and page
     # boxes numbered by row.
-    client.post(
-        "/look",
+    response = client.post(
+        "/layout",
         auth=AUTH,
+        follow_redirects=False,
         data={
-            "paper_name": "The Evening Ledger",
             "sec_key": ["agenda", "list:tasks", "hourly", "notes", "list:groceries"],
             "sec_order_0": "2", "sec_place_0": "rail",
             "sec_order_1": "1", "sec_place_1": "rail",
             "sec_order_2": "4", "sec_place_2": "page2",
             "sec_order_3": "5", "sec_place_3": "off",
             "sec_order_4": "3", "sec_place_4": "page2",
+            "rail_side": "left",
             "rail_width_in": "2.4",
             "front_stories": "2",
             "crossword_place": "top",
@@ -238,6 +239,8 @@ def test_the_look_tab_saves_the_layout(client):
             "crossword_max_pct": "40",
         },
     )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/layout?saved=1"
 
     layout = Settings.load().look.layout
     assert [(s.key, s.place) for s in layout.sections] == [
@@ -247,16 +250,32 @@ def test_the_look_tab_saves_the_layout(client):
         ("hourly", "page2"),
         ("notes", "off"),
     ]
+    assert layout.rail_side == "left"
     assert layout.rail_width_in == 2.4
     assert layout.front_stories == 2
     assert layout.crossword_place == "top"
     assert layout.crossword_cell_in == 0.22
     assert layout.crossword_max_pct == 40
 
+    # And the tab shows it back: the saved side is the selected one.
+    body = client.get("/layout", auth=AUTH).text
+    assert '<option value="left" selected>Left</option>' in body
+
+
+def test_the_rail_side_defaults_to_the_right_and_a_nonsense_value_is_ignored(client):
+    Settings().save()
+    assert Settings.load().look.layout.rail_side == "right"
+    body = client.get("/layout", auth=AUTH).text
+    assert 'name="rail_side"' in body
+    assert '<option value="right" selected>Right</option>' in body
+
+    client.post("/layout", auth=AUTH, data={"rail_side": "sideways"})
+    assert Settings.load().look.layout.rail_side == "right"
+
 
 def test_the_layout_numbers_are_clamped_and_unknown_sections_ignored(client):
     client.post(
-        "/look",
+        "/layout",
         auth=AUTH,
         data={
             "sec_key": ["agenda", "list:nosuchlist", "hourly", "notes"],
@@ -282,20 +301,100 @@ def test_the_layout_numbers_are_clamped_and_unknown_sections_ignored(client):
     assert layout.crossword_max_pct == 25
 
 
-def test_the_look_tab_lists_every_section_with_its_list_name(client):
+def test_the_layout_tab_lists_every_section_with_its_list_name(client):
     settings = Settings()
     settings.sources.lists.append(ListSource(name="Weekend shopping"))
     settings.sync_list_sections()
     settings.save()
 
-    body = client.get("/look", auth=AUTH).text
-    assert "<h2>Layout</h2>" in body
+    body = client.get("/layout", auth=AUTH).text
+    assert "<h2>Sections</h2>" in body
     assert 'value="list:weekend-shopping"' in body
     assert "Weekend shopping" in body
-    assert "Hour by hour" in body and "Notes" in body
+    # The reader's words for the fixed sections, not the paper's.
+    assert "Today&#39;s agenda" in body or "Today's agenda" in body
+    assert "Hourly forecast" in body and "Notes" in body
     assert 'name="rail_width_in"' in body and 'name="front_stories"' in body
     assert 'name="crossword_cell_in"' in body and 'name="crossword_max_pct"' in body
-    assert "Sections in the rail fill page 1" in body
+
+
+def test_the_layout_table_says_what_each_section_prints_as(client):
+    """The paper keeps its newspaper voice; the tab says so in a muted line."""
+    Settings().save()
+    body = client.get("/layout", auth=AUTH).text
+    assert "prints as: Hour by hour" in body
+    assert "prints as: Today" in body
+    # Notes is the same word on paper, so there is nothing to explain.
+    assert "prints as: Notes" not in body
+
+
+def test_the_look_tab_no_longer_carries_the_layout(client):
+    """Layout is its own tab: nothing on Look may save a section's place."""
+    settings = Settings()
+    settings.sources.lists.append(ListSource(name="Groceries"))
+    settings.sync_list_sections()
+    settings.save()
+
+    body = client.get("/look", auth=AUTH).text
+    for field in ("sec_key", "sec_place_0", "sec_order_0", "rail_side",
+                  "rail_width_in", "front_stories", "crossword_place",
+                  "crossword_cell_in", "crossword_max_pct"):
+        assert f'name="{field}"' not in body, field
+    assert "<h2>Sections</h2>" not in body
+    assert 'action="/layout"' not in body
+
+    # A Look save that carries stale layout fields still cannot move a section.
+    client.post("/look", auth=AUTH, data={
+        "paper_name": "The Evening Ledger",
+        "sec_key": ["agenda"], "sec_order_0": "1", "sec_place_0": "off",
+        "rail_side": "left", "rail_width_in": "2.8",
+    })
+    layout = Settings.load().look.layout
+    assert [(s.key, s.place) for s in layout.sections] == [
+        ("agenda", "rail"), ("list:tasks", "rail"), ("hourly", "rail"),
+        ("notes", "rail"), ("list:groceries", "rail"),
+    ]
+    assert layout.rail_side == "right" and layout.rail_width_in == 1.9
+
+
+def test_the_tabs_are_in_order_on_every_page(client):
+    """Look, Layout, Sources, Output, Preview -- the order of the work."""
+    import re as _re
+
+    for tab in ("look", "layout", "sources", "output", "preview"):
+        body = client.get(f"/{tab}", auth=AUTH).text
+        nav = body.split('<nav class="tabs">')[1].split("</nav>")[0]
+        assert _re.findall(r'>([A-Za-z]+)</a>', nav) == [
+            "Look", "Layout", "Sources", "Output", "Preview"
+        ], tab
+        assert f'href="/{tab}" class="active"' in nav
+
+
+def test_the_status_strip_labels_every_item_plainly(client):
+    """No internal words in the strip: each line says what it is."""
+    import state
+
+    state.update_state(last_run="2026-09-17T06:00:00-07:00",
+                       last_success="2026-09-17T06:00:00-07:00", last_pages=2)
+    body = client.get("/output", auth=AUTH).text
+    strip = body.split('<section class="status"', 1)[1].split("</section>", 1)[0]
+    for label in ("Last run", "Result", "Last successful print", "Latest paper",
+                  "Next scheduled run", "Log"):
+        assert f"<dt>{label}</dt>" in strip, label
+    for gone in ("Last success<", "Last paper<", "Scheduler<"):
+        assert gone not in strip, gone
+    assert "ok</span>, 2 pages" in strip
+    assert "not scheduled" in strip               # PAPER_NO_SCHEDULER is set here
+
+
+def test_the_status_strip_says_why_a_run_failed(client):
+    import state
+
+    state.update_state(last_run="2026-09-17T06:00:00-07:00",
+                       last_error="no route to the printer")
+    strip = client.get("/output", auth=AUTH).text.split(
+        '<section class="status"', 1)[1].split("</section>", 1)[0]
+    assert "failed</span>: no route to the printer" in strip
 
 
 def test_saving_output_persists_and_reschedules(client, monkeypatch):
@@ -409,8 +508,10 @@ def test_adding_a_list_gives_it_a_slug_a_section_and_a_box(client):
     assert 'data-copy="http://unraid.local:8080/lists/weekend-shopping"' in body
     assert 'data-copy="Bearer weekend-shopping"' in body
     assert "Copy URL" in body and "Copy example body" in body
-    # The slug is shown, read-only, beside the name.
+    # The address name is shown, read-only, beside the list's name.
     assert 'name="list_slug_1" value="weekend-shopping" readonly' in body
+    assert "Address name" in body and ">Slug<" not in body
+    assert "How the phone sends this list: Weekend shopping!" in body
 
     # And it is a working address straight away.
     assert client.post(
@@ -526,7 +627,7 @@ def test_the_window_field_is_on_the_page(client):
     body = client.get("/sources", auth=AUTH).text
     assert 'name="article_max_age_days"' in body
     assert 'value="21"' in body
-    assert "Articles older than N days are skipped" in body
+    assert "Skip posts older than" in body
 
 
 def test_an_out_of_range_window_is_clamped(client):
@@ -667,8 +768,8 @@ def test_substack_queue_reports_errors(client, monkeypatch):
 def test_sources_page_has_the_show_queue_button(client):
     body = client.get("/sources", auth=AUTH).text
     assert 'id="show-queue"' in body
-    assert "Show queue" in body
-    assert "Fetches every feed now; nothing is marked." in body
+    assert "Show what&rsquo;s waiting" in body
+    assert "is marked as printed and nothing is sent anywhere" in body
     assert "/sources/substack/queue" in body
 
 
@@ -697,8 +798,12 @@ def test_crossword_check_ok(client, monkeypatch):
 def test_sources_page_shows_the_crossword_section(client):
     body = client.get("/sources", auth=AUTH).text
     assert "<h2>Crossword</h2>" in body
-    assert "NYT_S" in body                     # named in the note and in the env table
+    assert "NYT_S" in body                     # named in the note and in the table
     assert "crossword_day_0" in body
+    # The container's settings are named as such, never as "variables".
+    assert "<h2>Set on the container (Unraid)</h2>" in body
+    assert "Credentials live in the container's settings, not on this page." in body
+    assert "Container variables" not in body
 
 
 def test_saving_the_crossword_persists_the_days(client):

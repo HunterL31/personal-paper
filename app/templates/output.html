@@ -2,92 +2,102 @@
 {% block content %}
 <form method="post" action="/output">
 
-  <h2>Print</h2>
+  <h2>Printing</h2>
   <p>
     <label class="inline"><input type="checkbox" name="print_enabled" {{ "checked" if output.print.enabled else "" }}> Print every morning</label>
-    <label class="inline"><input type="checkbox" name="duplex" id="duplex" {{ "checked" if output.print.duplex else "" }}> Duplex (long edge)</label>
+    <label class="inline"><input type="checkbox" name="duplex" id="duplex" {{ "checked" if output.print.duplex else "" }}> Print both sides of one sheet</label>
   </p>
   <div class="grid">
-    <label class="field"><span>Printer host or IP</span>
-      <input type="text" name="printer_host" id="printer_host" value="{{ output.print.printer_host }}" placeholder="192.168.1.40"></label>
-    <label class="field"><span>Printer name (from discovery)</span>
-      <input type="text" name="printer_name" id="printer_name" value="{{ output.print.printer_name }}" readonly></label>
-    <div class="field"><span>Discovered on the LAN</span>
-      <select id="discovered"><option value="">—</option></select></div>
+    <label class="field"><span>Printer address</span>
+      <input type="text" name="printer_host" id="printer_host" value="{{ output.print.printer_host }}" placeholder="192.168.1.40">
+      <span class="note">The printer's name on your network, or its IP address.</span></label>
+    <label class="field"><span>Printer name</span>
+      <input type="text" name="printer_name" id="printer_name" value="{{ output.print.printer_name }}" readonly>
+      <span class="note">Filled in by the printer itself when it answers.</span></label>
+    <div class="field"><span>Printers found</span>
+      <select id="discovered"><option value="">—</option></select>
+      <span class="note">Pick one and its address is filled in for you.</span></div>
   </div>
   <div class="actions">
-    <button type="button" id="discover">Discover</button>
-    <button type="button" id="test-printer">Verify connection</button>
-    <button type="button" id="test-page">Print test page</button>
+    <button type="button" id="discover">Find printers</button>
+    <button type="button" id="test-printer">Check the connection</button>
+    <button type="button" id="test-page">Print a test page</button>
   </div>
   <p class="result" id="printer_result"></p>
   <div class="check" id="printer_check" hidden>
     <p class="check-summary" id="printer_summary"></p>
     <ul class="check-steps" id="printer_steps"></ul>
   </div>
-  <p class="note">Discovery needs the container on the host's network (mDNS); on bridge
-  networking type the printer's IP instead.</p>
+  <p class="note">Finding printers needs the container on your own network; if it
+  comes back empty, type the printer's address above instead.</p>
 
-  <h2>Email</h2>
+  <h2>Email the PDF</h2>
   <p>
-    <label class="inline"><input type="checkbox" name="email_enabled" {{ "checked" if output.email.enabled else "" }}> Email the PDF every morning</label>
+    <label class="inline"><input type="checkbox" name="email_enabled" {{ "checked" if output.email.enabled else "" }}> Email the paper every morning</label>
   </p>
   <div class="grid">
-    <label class="field"><span>To (comma separated)</span>
-      <input type="text" name="email_to" id="email_to" value="{{ email_to }}"></label>
-    <label class="field"><span>Subject ({date} is filled in)</span>
-      <input type="text" name="email_subject" value="{{ output.email.subject }}"></label>
+    <label class="field"><span>Send to</span>
+      <input type="text" name="email_to" id="email_to" value="{{ email_to }}">
+      <span class="note">One address, or several separated by commas.</span></label>
+    <label class="field"><span>Subject line</span>
+      <input type="text" name="email_subject" value="{{ output.email.subject }}">
+      <span class="note">Anything you like; {date} is replaced with the paper's date.</span></label>
   </div>
   <div class="actions">
-    <button type="button" id="send-test">Send test</button>
-    <span class="note">{% if smtp_user %}Sent from {{ smtp_user }}.{% else %}No SMTP account is configured.{% endif %}</span>
+    <button type="button" id="send-test">Send a test email</button>
+    <span class="note">{% if smtp_user %}Sent from {{ smtp_user }}.{% else %}No sending account is set on the container yet.{% endif %}</span>
   </div>
   <p class="result" id="email_result"></p>
 
-  <h2>Schedule</h2>
+  <h2>When to make the paper</h2>
   <div class="grid">
     <label class="field"><span>Time</span>
-      <input type="time" class="narrow" name="schedule_time" value="{{ output.schedule.time }}"></label>
+      <input type="time" class="narrow" name="schedule_time" value="{{ output.schedule.time }}">
+      <span class="note">Set it after the phone sends your lists and before you are up.</span></label>
     <div class="field"><span>Days</span>
       <p>
         {% for index, label in days %}
         <label class="inline"><input type="checkbox" name="day_{{ index }}" {{ "checked" if index in output.schedule.days else "" }}> {{ label }}</label>
         {% endfor %}
       </p>
+      <span class="note">Untick a day and no paper is made that morning.</span>
     </div>
   </div>
   <div class="grid">
-    <label class="field"><span>Notify on failure</span>
+    <label class="field"><span>If a morning fails, notify by</span>
       <select name="notify" class="narrow">
-        {% for option in ["none", "email", "unraid"] %}
-        <option value="{{ option }}" {{ "selected" if option == output.notify else "" }}>{{ option }}</option>
+        {% for option, label in [("none", "Nothing"), ("email", "Email"), ("unraid", "Unraid notification")] %}
+        <option value="{{ option }}" {{ "selected" if option == output.notify else "" }}>{{ label }}</option>
         {% endfor %}
       </select></label>
-    <label class="field"><span>Notification email</span>
-      <input type="text" name="notify_email" value="{{ output.notify_email }}"></label>
+    <label class="field"><span>Send that notice to</span>
+      <input type="text" name="notify_email" value="{{ output.notify_email }}">
+      <span class="note">Only used when the notice above is an email.</span></label>
   </div>
 
   <div class="actions"><button class="primary" type="submit">Save output</button></div>
 </form>
 
-<h2>Run</h2>
+<h2>Right now</h2>
 <div class="actions">
-  <button type="button" id="run-now">Run now</button>
-  <button type="button" id="dry-run">Dry run</button>
-  <span class="note">&ldquo;Run now&rdquo; delivers to every enabled route; a dry run only archives.</span>
+  <button type="button" id="run-now">{{ run_now_label }}</button>
+  <button type="button" id="dry-run">Test run (nothing printed or emailed)</button>
 </div>
+<p class="note">&ldquo;{{ run_now_label }}&rdquo;: {{ run_now_note }} The test run makes
+the same paper and keeps it, so you can look at it on the Preview tab first.</p>
 <p class="result" id="run_result"></p>
 
-<h2>Container variables</h2>
+<h2>Set on the container (Unraid)</h2>
 <table class="env">
-  <thead><tr><th style="width:16rem">Variable</th><th>Status</th></tr></thead>
+  <thead><tr><th style="width:16rem">Setting</th><th>Status</th></tr></thead>
   <tbody>
     {% for row in env_rows %}
-    <tr><td>{{ row.name }}</td><td>{{ "set in container" if row.set else "not set" }}</td></tr>
+    <tr><td>{{ row.name }}</td><td>{{ "set on the container" if row.set else "not set" }}</td></tr>
     {% endfor %}
   </tbody>
 </table>
-<p class="note">Read-only here: these live in the container's variables, never in the browser.</p>
+<p class="note">Credentials live in the container's settings, not on this page.
+The four above are the account the paper is emailed from.</p>
 {% endblock %}
 
 {% block scripts %}
@@ -110,7 +120,7 @@ discoverButton.addEventListener("click", function () {
         option.textContent = printer.name + " — " + printer.host + (printer.model ? " (" + printer.model + ")" : "");
         discovered.appendChild(option);
       });
-      return result.length ? result.length + " printer(s) found" : "none found (try the IP)";
+      return result.length ? result.length + (result.length === 1 ? " printer found" : " printers found") : "None found — type the printer\u2019s address instead";
     });
 });
 
@@ -121,7 +131,11 @@ discovered.addEventListener("change", function () {
   nameField.value = option.dataset.name || "";
 });
 
-/* The verification checklist: one line per step, ✓ or ✗, detail and hint. */
+/* The verification checklist: one line per step, ✓ or ✗, detail and hint.
+   The server's step names are the protocol's; these are the reader's. */
+const STEP_LABELS = {
+  resolve: "Address", connect: "Answer", ipp: "Printer", pdf: "PDF", state: "Ready",
+};
 const checkBox = document.getElementById("printer_check");
 const summaryLine = document.getElementById("printer_summary");
 const stepList = document.getElementById("printer_steps");
@@ -147,7 +161,7 @@ function showDiagnosis(result) {
     mark.textContent = step.ok ? "\u2713" : "\u2717";
     const name = document.createElement("span");
     name.className = "step-name";
-    name.textContent = step.name;
+    name.textContent = STEP_LABELS[step.name] || step.name;
     const detail = document.createElement("span");
     detail.className = "step-detail";
     detail.textContent = step.detail || "";
@@ -167,7 +181,7 @@ function showDiagnosis(result) {
 }
 
 function verifyPrinter(host) {
-  showChecking("Checking printer…");
+  showChecking("Checking the printer…");
   return postJSON("/output/printer/test", { host: host }).then(function (data) {
     if (data && data.ok) {
       showDiagnosis(data.result);
@@ -203,7 +217,7 @@ testPageButton.addEventListener("click", function () {
         duplex: document.getElementById("duplex").checked,
       });
     },
-    function (result) { return "Sent " + result.pages + " page(s) to " + result.host; })
+    function (result) { return "Sent " + result.pages + (result.pages === 1 ? " page" : " pages") + " to " + result.host; })
     .then(function (data) {
       /* A refused test page is a printer problem: re-run the checklist. */
       if (data && !data.ok && hostField.value.trim()) verifyPrinter(hostField.value.trim());
@@ -217,12 +231,12 @@ emailButton.addEventListener("click", function () {
     function (result) { return "Test sent to " + result.sent_to.join(", "); });
 });
 
-/* Run now / Dry run: start the job, then poll until it reports back. */
+/* Both run buttons: start the job, then poll until it reports back. */
 const runResult = document.getElementById("run_result");
 function startRun(button, dry) {
   button.disabled = true;
   runResult.className = "result";
-  runResult.textContent = dry ? "Dry run started…" : "Run started…";
+  runResult.textContent = dry ? "Test run started…" : "Started…";
   postJSON("/run" + (dry ? "?dry=1" : ""), {}).then(function (data) {
     if (!data.ok) {
       button.disabled = false;
@@ -238,7 +252,8 @@ function startRun(button, dry) {
       const r = job.result;
       const routes = Object.keys(r.delivery || {}).map(function (k) { return k + ": " + r.delivery[k]; });
       show(runResult,
-        (r.ok ? "Done" : "Failed") + " — " + r.date + ", " + r.pages + " page(s)"
+        (r.ok ? "Done" : "Failed") + " — " + r.date + ", " + r.pages
+          + (r.pages === 1 ? " page" : " pages")
           + (routes.length ? " — " + routes.join("; ") : "")
           + (r.error ? " — " + r.error : ""),
         !r.ok);

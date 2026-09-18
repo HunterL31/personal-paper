@@ -24,7 +24,8 @@ body {
 /* ------------------------------------------------------------ status */
 .status { border-bottom: var(--rule); padding: 0.5rem 0; font-size: 0.85rem; }
 .status dl { display: flex; flex-wrap: wrap; gap: 0.2rem 1.5rem; margin: 0; }
-.status dl div { display: flex; gap: 0.35rem; }
+.status dl div { display: flex; gap: 0.35rem; max-width: 100%; }
+.status dd { min-width: 0; overflow-wrap: anywhere; }
 .status dt { font-variant: small-caps; color: var(--grey); }
 .status dt::after { content: ":"; }
 .status dd { margin: 0; }
@@ -33,8 +34,10 @@ body {
 .error { margin: 0.4rem 0 0; font-size: 0.85rem; }
 
 /* -------------------------------------------------------------- tabs */
-.tabs { display: flex; gap: 1.25rem; border-bottom: var(--rule); padding: 0.5rem 0; margin-bottom: 1rem; }
+/* Five tabs; on a phone they wrap rather than running off the edge. */
+.tabs { display: flex; flex-wrap: wrap; gap: 0.3rem 1.25rem; border-bottom: var(--rule); padding: 0.5rem 0; margin-bottom: 1rem; }
 .tabs a { color: #000; text-decoration: none; font-variant: small-caps; font-size: 1.05rem; letter-spacing: 0.05em; }
+@media (max-width: 26rem) { .tabs { gap: 0.3rem 0.9rem; } .tabs a { font-size: 1rem; letter-spacing: 0.02em; } }
 .tabs a.active { font-weight: bold; border-bottom: 3px solid #000; }
 .tabs a:hover { text-decoration: underline; }
 
@@ -43,12 +46,22 @@ body {
 /* ----------------------------------------------------------- content */
 main h2 { font-size: 1.15rem; border-bottom: var(--rule); padding-bottom: 0.2rem; margin: 1.6rem 0 0.6rem; }
 main h2:first-child { margin-top: 0.4rem; }
-p.note { font-size: 0.85rem; color: var(--grey); margin: 0.2rem 0 0.8rem; }
+.note { font-size: 0.85rem; color: var(--grey); }
+p.note { margin: 0.2rem 0 0.8rem; }
 
 label { display: block; font-size: 0.85rem; }
 label.inline { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; margin-right: 1rem; }
-.field { margin-bottom: 0.7rem; }
+.field { margin-bottom: 0.9rem; }
 .field > span { display: block; font-variant: small-caps; color: var(--grey); font-size: 0.8rem; }
+/* The sentence under a field saying what it does: plain text, not another
+   label, and never wider than the box it explains. */
+.field > span.note {
+  font-variant: normal; font-size: 0.78rem; line-height: 1.3;
+  margin-top: 0.2rem; max-width: 28rem;
+}
+/* The heading the paper itself sets over a section, under its name in the
+   Layout table, so the two are visibly the same thing. */
+.printed-as { display: block; font-style: italic; font-size: 0.78rem; }
 
 input[type="text"], input[type="number"], input[type="time"], select, textarea {
   font-family: inherit;
