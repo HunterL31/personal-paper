@@ -62,6 +62,14 @@ pre-installed Chromium under `/opt/pw-browsers`; never run
 `playwright install`. Tests must run with the network off: use fixtures
 under `tests/fixtures/`.
 
+## Before you dig in
+
+`docs/AGENT-NOTES.md` holds what earlier sessions learned the hard way:
+tooling pins, test traps, the fitting script's pitfalls, what the printer
+really accepts, Docker Hub and Unraid gotchas, and how to split work
+between agents. Read it before changing the template, delivery or the
+workflow, and add to it when you hit something new.
+
 ## Style
 
 Python 3.11, type hints, stdlib logging (`logging.getLogger(__name__)`),
