@@ -1,0 +1,185 @@
+# Notes for whoever works on this next
+
+Things learned building Personal Paper that are not obvious from the code
+and cost time to rediscover. CLAUDE.md holds the rules; this holds the
+reasons and the traps. Add to it when you hit one.
+
+## Environment and tooling
+
+- **Playwright is pinned to 1.56** because the dev container ships Chromium
+  build 1194 under `/opt/pw-browsers`. A newer `pip install playwright`
+  wants a different build and fails to launch. Never run
+  `playwright install` here. `CHROMIUM_PATH` overrides the executable when
+  needed (the Docker image finds its own).
+- **`sgmllib3k`** (a feedparser dependency) does not build with current
+  setuptools. Install it first with
+  `SETUPTOOLS_USE_DISTUTILS=stdlib pip install sgmllib3k`; the CI workflow
+  does exactly this.
+- **Headless Chromium on Linux has no hyphenation dictionary**, so CSS
+  `hyphens: auto` does nothing and justified narrow columns get wide word
+  gaps. Hyphenation is done with `pyphen` at render time by inserting soft
+  hyphens (U+00AD) into the HTML only. The stored article text never
+  contains them; `tests/verbatim.py` strips them before comparing.
+- **pymupdf does everything PDF-shaped**: page PNGs for previews and tests,
+  page counting, rasterizing for the printer. There is no poppler in the
+  image.
+- The full suite takes about 2.5 to 3 minutes and needs `DATA_DIR` set;
+  `tests/conftest.py` gives every test a private one. A render is about
+  0.6 s, so keep render-heavy parametrizations modest.
+
+## Testing traps
+
+- **httpx's TestClient treats `data=[(k, v), ...]` as raw bytes**, not a
+  form. For repeated keys use a dict with list values:
+  `data={"cal_new": ["n0", "n1"], ...}`.
+- **`aiosmtpd.Controller(port=0)` does not work** (it dials the literal
+  port). Pick a free port first.
+- **Repeated paragraphs in test articles make the verbatim checks
+  ambiguous** (the same sentence is both printed and held back). Use
+  `tests.verbatim.lengthen()`, which prefixes each paragraph with an
+  ordinal.
+- **Logging an exception object (or `exc_info=True`) inside
+  `deliver.printer.page_count` kept the traceback, and through it the
+  open socket, alive** until the handler released the record, which hung
+  the fake IPP server's teardown. It logs a pre-formatted string on
+  purpose.
+- **Default output is locked by byte-identical PNG tests** for the default
+  Look and Layout. Any template change must leave the default render
+  unchanged; add new behaviour behind a setting whose default reproduces
+  today.
+
+## Rendering and the fitting script (`render/template.html`)
+
+- The script measures with `getBoundingClientRect()` against the slot's
+  real box under print media emulation, which is why `render.py` calls
+  `page.emulate_media(media="print")` before measuring.
+- `truncate()` mutates `textContent` while searching. Capture the original
+  text before calling it; an early version lost a paragraph when the first
+  word did not fit.
+- Article selection is a search: try k = front_stories..1 whole articles;
+  before dropping article k, try printing it partially (leading whole
+  paragraphs plus the "rest is online" line). Result is N whole plus at
+  most one partial, always the last.
+- A fourth front-page story narrows the row columns and pushes more of
+  stories 2 and 3 onto page 2, so adding a partial fourth story can fail
+  even when it looks like there is room. That is why the sample prints
+  three of four at 9 pt.
+- A lone story on the front (no second row) gets the `solo` class and its
+  body grows to the foot of the page; otherwise the fixed lead slot leaves
+  page 1 half blank.
+- `window.__pages` is 2 with articles and 1 with none (the crossword moves
+  to the front); `render()` asserts exactly that pairing.
+- Chromium's `break-inside: avoid` on a wrapper taller than a column pushes
+  the wrapper to a new column and overflows. The online-line wrapper
+  measures with `avoid` first and relaxes when it does not fit.
+- Plain `p.online` lost to the later `.cols p` rule on page 2; selectors
+  for page-2 overrides need `.page` or higher specificity.
+- Ears are 1.3 in by 1.12 in inside a fixed-height nameplate; an over-full
+  ear grows out of the plate rather than overflowing its box, so
+  `fitEars()` measures the box against the plate and scales fonts in 5%
+  steps.
+- All fonts are declared from one table, `render/fontlist.py`, used by both
+  the template and the web page's `/fonts.css`. Variable fonts are renamed
+  `Name-var.ttf` because `[wght]` in a filename breaks URLs.
+
+## Delivery and printing (`deliver/`)
+
+- **pyipp's serializer silently returns empty bytes for attribute names it
+  does not know**, and `sides` is one of them. The Print-Job request is
+  therefore built with pyipp's `construct_attribute` and explicit tags and
+  posted with `requests`; pyipp's client is used only for
+  Get-Printer-Attributes. Sessions use `trust_env=False` so a proxy
+  variable never applies to a LAN printer.
+- **The Brother HL-L2460DW does not accept `application/pdf` over IPP.** It
+  lists `application/octet-stream`, `image/urf`, `image/pwg-raster` at 300
+  and 600 dpi. `deliver/pwg.py` encodes PWG Raster (1-bit `black_1` by
+  default) and `pick_format()` prefers PDF, then PWG. `image/urf` alone is
+  not supported. The header offsets are documented in `pwg.py`; the
+  encoder has a matching decoder used by the tests. As of this writing it
+  has not been verified on the physical printer: check orientation, both
+  sides on one sheet, margins and text weight on the first real print.
+- A one-page PDF is sent `one-sided` regardless of the duplex setting.
+- mDNS printer discovery only works with host networking (or macvlan).
+- `diagnose()` runs resolve, connect, IPP, format, state in order and stops
+  at the first failure; its summaries are what the status strip shows.
+
+## Sources
+
+- **Substack RSS carries paid posts as previews.** A preview is never
+  printed; a paid publication needs the IMAP route (`IMAP_*` variables,
+  optional `IMAP_MAILBOX`) or the post is skipped with a warning.
+- The queue: window of `article_max_age_days` (optionally widened in steps
+  when empty), publications in Sources-tab order, oldest unread first,
+  up to `QUEUE_LIMIT` (8) offered to the layout. Posts are marked seen
+  only after a real successful run, and a partially printed post counts
+  as used. `guid` is stripped from `data.json`; `url` stays.
+- **NYT crossword**: `https://www.nytimes.com/svc/crosswords/v6/puzzle/daily/{YYYY-MM-DD}.json`
+  with the `NYT-S` cookie (`NYT_S` variable). Keys: `body[0].cells`
+  (`{}` is a black square), `body[0].clues` with `label`, `direction`,
+  `text[].plain`, `publicationDate`. Answers are never stored or printed.
+  Reference implementation: xword-dl's
+  `src/xword_dl/downloader/newyorktimesdownloader.py`.
+- Open-Meteo needs no key; the request is built with `forecast_days=2` so
+  arrays are selected by ISO date, not index, which is what makes the
+  `today=` test hook work.
+- Google Calendar's secret iCal address includes recurrences; declined
+  events are detected by matching the attendee against `X-WR-CALNAME`.
+- Substack blocks default user agents; the fetcher sends a browser-like
+  one.
+
+## Web page
+
+- Auth is one Basic-auth middleware so `/static` and `/fonts` are covered.
+  `POST /tasks` and `POST /lists/{slug}` are open (bearer token or the
+  list's slug), as is `/healthz`. No `WEB_PASSWORD` means no login, and
+  every page says so.
+- The real `TASKS_TOKEN` appears in HTML only inside the copy button's
+  data attribute and only when the page is behind `WEB_PASSWORD`;
+  otherwise the button copies a placeholder. Container variables are
+  otherwise shown as set or not set, never their values.
+- Copy buttons chain `navigator.clipboard` and a hidden-textarea
+  `execCommand` fallback because plain http on a LAN is not a secure
+  context.
+- The phone's post address is derived from `X-Forwarded-Proto` and
+  `X-Forwarded-Host` when present (Tailscale Serve, reverse proxies), then
+  the Host header, then the container's LAN IP; `tasks_post_url` overrides.
+- The footer prints `Build <sha>` from `APP_BUILD`, set by the publish
+  workflow. It is the fastest way to tell whether a container update took.
+
+## Deployment
+
+- **Docker Hub login rejects a mixed-case username** with the misleading
+  error `malformed HTTP Authorization header`. The workflow lowercases
+  `DOCKERHUB_USERNAME` and checks both secrets' shape (without printing
+  them) before logging in.
+- Manual builds: run the `docker` workflow from the Actions tab (or the
+  API) with the `tag` input, default `dev`. Pushes to `main` and `v*` tags
+  publish automatically.
+- **Unraid with host networking ignores port mappings**; the app listens on
+  8080 inside the container. With bridge networking, map any host port to
+  container 8080. **Per-container Tailscale**: the tailnet node lives in
+  the container's own network, so Tailscale Serve's port must be the
+  container's internal 8080, not the host mapping.
+- The Unraid template can be fetched with `wget` into
+  `/boot/config/plugins/dockerMan/templates-user/`; Unraid keeps its own
+  copy after the container is created, so image updates never need it
+  again.
+- State lives in `/data/state.json`: `issue`, `volume`, `issues_total`,
+  `first_issue_date`, `last_issue`, `seen_posts`, `last_*`,
+  `printer_check`, `crossword_check`. Same-day papers archive as
+  `<date>.pdf`, `<date>-2.pdf`, ... and never overwrite.
+
+## Working with agents on this repo
+
+- Split parallel work by file ownership and put the data or settings
+  contract in every brief; two agents editing `run.py` at once is how
+  things get lost.
+- A message sent to a running agent arrives appended to one of its tool
+  results, and a careful agent may treat it as untrusted and refuse it. Put
+  anything important in the initial brief, or do it yourself afterwards.
+- Every render-touching brief should demand the default-identical check
+  (md5 of the sample PNGs before and after) and a 150 dpi look at the
+  result; several layout bugs were only visible in the picture.
+- The stop hook complains about uncommitted files while agents are
+  mid-edit. Do not commit half-finished agent work; commit when the agent
+  reports and the suite is green.
