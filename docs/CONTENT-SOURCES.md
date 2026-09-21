@@ -113,11 +113,12 @@ covers whatever comes out.
 `seen()`, `mark_seen()`, `mark_unseen()` over `state.json["seen_posts"]`.
 The key keeps its name so an existing state file keeps working. Substack
 guids stay as they are; every new kind prefixes its own (`feed:<id>`,
-`wiki:<pageid>`, `book:<slug>:<from>-<to>`) so nothing collides.
+`wiki:<pageid>`, `reddit:<post id>`, `book:<slug>:<from>-<to>`) so nothing
+collides.
 
 ### Settings: what the reader sees
 
-The Sources tab grows from one table to four short groups, and the
+The Sources tab grows from one table to five short groups, and the
 settings follow them. Every knob that only an engineer would understand
 (per-kind window, sort order, chrome lists) is a default in code, not a
 field on the page.
@@ -140,6 +141,12 @@ class WikipediaSource(BaseModel):      # "Something to read every day"
 class SavedLinks(BaseModel):           # "Saved from your phone"
     enabled: bool = True               # the endpoint is always there; this is whether it prints
 
+class SubredditSource(BaseModel):      # "Subreddits"
+    name: str                          # "nosleep", with or without the r/
+    mode: Literal["posts", "answers"] = "posts"   # answers: the Q&A mode, v2
+    allow_over_18: bool = False
+    per_morning: int = Field(1, ge=1, le=4)
+
 class GuardianSource(BaseModel):       # "The news"
     enabled: bool = False
     api_key: str = ""                  # pasted on the tab, masked after save (see below)
@@ -152,9 +159,10 @@ class GuardianSource(BaseModel):       # "The news"
 to-do list from a pre-lists file.
 
 **Front-page priority** in v1 is fixed and stated on the tab: the reader's
-own picks first (saved links, then the websites table in its order), then
-the news, then Wikipedia, then the book — the book last because it is the
-story that continues tomorrow and so the right one to cut. A drag-to-order
+own picks first (saved links, then the websites table in its order, then
+the subreddits), then the news, then Wikipedia, then the book — the book
+last because it is the story that continues tomorrow and so the right one
+to cut. A drag-to-order
 list across groups is a later refinement if anyone wants it.
 
 ### Contract: one new field, defaulting to today
@@ -332,7 +340,92 @@ a feed body is the author's HTML and needs no guessing.
 again; the extractor is the new dependency. Fixtures: three saved pages
 (a plain blog post, a news article with heavy chrome, a paywalled stub).
 
-### 5. The news: The Guardian (`guardian`)
+### 5. Subreddits: yesterday's best (`reddit`)
+
+The reader types a subreddit name — `nosleep`, `AskHistorians` — and the
+paper prints the best of what it carried in the last day. Setting it up
+is a name in a box, the easiest thing on the tab after a switch. Whether
+the words belong on a broadsheet is the reader's call, subreddit by
+subreddit; the paper prints what it is pointed at, whole.
+
+**What Reddit hands out without an account.** Two doors, no key:
+
+- The listing, `https://www.reddit.com/r/<sub>/top.json?t=day&limit=25`:
+  one request, and for every post its title, author, score, `is_self`,
+  `selftext_html` (the body as Reddit rendered the author's Markdown),
+  `over_18`, `stickied`, `removed_by_category`, `permalink` and
+  `created_utc`.
+- The feed, `https://www.reddit.com/r/<sub>/top/.rss?t=day`: the same
+  posts as Atom, a text post's body inside the entry's content beside a
+  "submitted by" line of chrome. The feed is the door meant for feed
+  readers and the more likely to stay open; the listing carries the flags
+  the paper needs to choose well. Use the listing; fall back to the feed.
+
+Both want a descriptive `User-Agent` (`personal-paper/<version> (by
+u/<reader>)`; the `requests` default is refused) and both are held to
+about ten requests a minute without a login. A morning needs one request
+per subreddit, plus one per post in the Q&A mode.
+
+Neither door could be opened from the container this plan was written in:
+Reddit refuses most datacenter addresses, and the proxy here refuses the
+host, so the shapes above are from Reddit's documentation and are to be
+checked on the box. A home box on a residential connection is the normal
+case and the one to test. The failure is a 403 or a 429, which yields an
+empty section and a Check line in words ("Reddit refused the request; it
+usually allows a home connection"), never a broken paper. Should Reddit
+close the anonymous doors, a "script" app registered at
+`reddit.com/prefs/apps` — client id and secret as `REDDIT_CLIENT_ID` and
+`REDDIT_CLIENT_SECRET`, application-only OAuth, a hundred requests a
+minute on the free tier — is the fallback. It fails the easy test, so it
+is optional and documented, never required.
+
+**What is printable.** A subreddit is three kinds of post, and only the
+first prints as it is:
+
+- **Text posts** (`is_self`): the author's own words. r/nosleep, r/HFY,
+  r/shortscarystories, r/BestofRedditorUpdates, r/TrueOffMyChest, r/tifu —
+  subreddits that are, in effect, magazines of short fiction and
+  first-person essays. Title = the post's title; author = `u/<name>`;
+  publication = `r/<sub>`; paragraphs = the block walk over
+  `selftext_html` (entities decoded; Reddit's Markdown comes out as `p`,
+  `blockquote`, `li` and headings, which the extractor already reads);
+  `url` = the permalink; `published` from `created_utc`.
+- **Link posts**: a title and someone else's page. Nothing to print unless
+  that page is fetched and extracted, which is the saved-links extractor
+  with its paywall problem. Not in v1; Check counts them ("12 posts, 4 of
+  them text; the rest are links or pictures").
+- **Image and video posts**: nothing to print on a black-and-white sheet
+  of text.
+
+**Choosing.** "Top of the day" fetched at 6 a.m. is the last 24 hours, so
+the paper prints yesterday's best. Order is Reddit's own, by score; the
+window is one day; `per_morning` defaults to 1 a subreddit. Skipped, each
+with its reason in the queue view: stickied and moderator posts,
+`over_18` unless the row allows it, removed or deleted bodies, posts
+already printed, and bodies under a minimum (say 150 words) — a two-line
+post is not a story, and declining to print it is selection, not editing.
+Everything that prints, prints whole: "Edit: thanks for the gold" and all.
+
+**Q&A subreddits (v2).** On r/AskHistorians, r/explainlikeimfive or
+r/AskScience the post is a question and the meat is the best answer,
+which is a comment: one more request per post
+(`<permalink>.json?sort=top&depth=1`), skipping the moderators' stickied
+notice and anything removed, and taking the highest-scored top-level
+comment with enough text. The answer is the article, verbatim; the
+question is its headline; the byline names both ("Asked by u/x, answered
+by u/y"); the question's own body is the deck when it is one short
+paragraph (the `_deck` rule) and is otherwise not printed. Printing the
+answer and not the question is a choice of what to print, not an edit of
+anything, but it is the one judgment in this section to settle before
+building it.
+
+**Effort.** Small for text posts: one JSON fixture, the shared extractor,
+the "submitted by" chrome stripped on the feed fallback. A little more
+for Q&A. Fixtures: a listing with a text post, a link post, an image
+post, a stickied post, a removed post and an over-18 post; a comments
+listing; a feed.
+
+### 6. The news: The Guardian (`guardian`)
 
 Most news is off the table. The New York Times APIs return abstracts and
 URLs. AP and Reuters license their text; Reuters has no public feed since
@@ -368,7 +461,7 @@ calls, far below any tier.
 **Effort.** Small: one JSON fixture, the shared extractor on
 `fields.body`.
 
-### 6. Later, and for people who already have the thing
+### 7. Later, and for people who already have the thing
 
 - **A folder** (`<DATA_DIR>/inbox/*.md`, `*.txt`): anything dropped there
   prints as an article and moves to `inbox/printed/`. Tiny to build, and
@@ -404,9 +497,8 @@ calls, far below any tier.
 | AP, Reuters | Licensees only; no public full text. |
 | Apple News | No API at all. |
 | Medium members-only posts | Truncated in the feed; free posts work by address. |
-| Reddit | API terms and OAuth; self-posts are the only full text. |
 | X / Twitter | No. |
-| Hacker News, Lobsters | Links only: everything depends on the page extractor and hits paywalls; comments are not articles. |
+| Hacker News, Lobsters | Links only: everything depends on the page extractor and hits paywalls. (Reddit differs because text posts are whole articles; see source 5.) |
 | Kindle / Readwise highlights | Excerpts by definition, so rail material, never the front page. |
 | Pocket, Omnivore | Shut down. |
 
@@ -425,8 +517,10 @@ calls, far below any tier.
    talk about.
 5. **Saved from your phone** — the share-sheet Shortcut; brings in the
    page extractor, the one new dependency in the plan.
-6. **The Guardian** — news on the front page, behind the one key.
-7. The folder whenever it is convenient; services, verse and the rest
+6. **Subreddits** — a name in a box; text posts first, the Q&A mode
+   after. Test it from the box, not from a cloud container.
+7. **The Guardian** — news on the front page, behind the one key.
+8. The folder whenever it is convenient; services, verse and the rest
    later.
 
 ## Tests and fixtures
@@ -439,7 +533,10 @@ state. For feed discovery: a page with a feed link, one without, a
 Substack address routed to the Substack adapter. For the book: the
 bookmark advances by exactly the paragraphs printed, including zero, and
 the end of the book is handled. For saved links: a paywalled stub is
-flagged and never printed. For the merged queue: priority order across
+flagged and never printed. For subreddits: a link post, an image post, a
+stickied post, a removed post and an over-18 post are each skipped with
+a reason, the text post prints whole, and a 403 from Reddit is an empty
+section with a log line. For the merged queue: priority order across
 kinds, `per_morning` caps, `QUEUE_LIMIT`, and a run whose
 `record_printed` reaches the right adapter. For the template: `rest`
 wording, and the default render unchanged.
@@ -449,6 +546,9 @@ wording, and the default render unchanged.
 - Which sites and newsletters, beyond the Substacks already listed, so
   the discovery step and the chrome lists are built against real feeds?
 - Which book first, and about how many paragraphs a morning?
+- Which subreddits, if any — and is the box on a home connection? Reddit
+  refuses most datacenter addresses, so the anonymous route has to be
+  tried from where the paper actually runs.
 - Does the news belong on the front page at all, and if so which Guardian
   sections?
 - The Guardian key: on the Sources tab, or a container variable?

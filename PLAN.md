@@ -555,7 +555,8 @@ encoder (`deliver/pwg.py`, pymupdf for the pixels) are in the app.
 9. **More than Substack on the front page.** `docs/CONTENT-SOURCES.md` is
    the plan: one merged queue with an adapter per kind (any website or
    newsletter by address, Wikipedia's featured article, a public-domain
-   book in installments, links saved from the phone, The Guardian), each
+   book in installments, links saved from the phone, a subreddit's top
+   text posts, The Guardian), each
    one a thing the reader can switch on from the Sources tab without a
    credential, and the refactor they all need first.
 
