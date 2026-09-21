@@ -203,13 +203,25 @@ reasons and the traps. Add to it when you hit one.
   `?v={{ build }}` on the stylesheet and the script so a container update is
   a new address as well. Any future CSS or JS change depends on both; a
   symptom that "the new page has the old styling" is this, not the cascade.
+- **Never set a control's `background` without its `color` in the same
+  rule.** The stylesheet had `button { background: #fff }` and no `color`
+  from the beginning, which left the text to the user agent. On a device
+  whose system is dark the agent paints `buttontext` white — white on an
+  explicitly white button — so the theme switch rendered as three empty
+  boxes, reported as "the text inside the buttons isn't showing up". It
+  needed a dark phone *and* the stale stylesheet above to show up, which is
+  why no amount of desktop screenshotting found it.
+  `test_no_control_sets_a_background_without_its_ink` fails the build for
+  the whole class. Declaring `color-scheme` on `:root` (both branches) is
+  the other half: the agent then draws its own widgets to match the page
+  instead of guessing from the system.
 - **Judge any UI control at `device_scale_factor=1`.** The theme switch was
   first set as grey small caps at 0.85rem, which looked fine in a 3x
-  screenshot and was unreadable on the actual page — small caps shrinks the
-  letterforms again on top of the size. It is a segmented control now, every
-  choice in full `--ink` with a real border, the chosen one reversed
-  (`background: var(--ink); color: var(--paper)`), which is the only marking
-  that reads the same in both themes.
+  screenshot and was thin and captionish on the actual page — small caps
+  shrinks the letterforms again on top of the size. It is a segmented
+  control now, every choice in full `--ink` with a real border, the chosen
+  one reversed (`background: var(--ink); color: var(--paper)`), which is the
+  only marking that reads the same in both themes.
 - The theme is tested where it is actually decided: `test_the_page_is_painted_the_way_she_set_it`
   loads the real page and the real stylesheet in Chromium across the four
   (choice, machine) pairs and asserts the painted background. Structural CSS

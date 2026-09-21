@@ -1768,3 +1768,51 @@ def test_the_page_is_painted_the_way_she_set_it(client, tmp_path, theme, machine
     # The choices she has not made stay as readable as the one she has:
     # dimming them to grey small caps is what made the switch unreadable.
     assert channels(painted["offColor"]) == channels(painted["ink"])
+
+
+#: Selectors that reach a form control, which the browser draws with its own
+#: colours unless told otherwise.
+CONTROL_SELECTORS = ("button", "input", "select", "textarea")
+
+
+def test_no_control_sets_a_background_without_its_ink():
+    """The blank-buttons bug, pinned at the cause.
+
+    `button { background: #fff }` with no `color` leaves the text to the
+    user agent, which paints `buttontext` white on a device whose system is
+    dark -- white on an explicitly white button, so the switch rendered as
+    three empty boxes. A control that claims its background claims its
+    foreground in the same breath.
+    """
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    offenders = []
+    for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        selector = selector.strip()
+        if selector.startswith("@") or ":root" in selector:
+            continue
+        if not any(re.search(rf"(^|[\s,>+~]){c}\b", selector) for c in CONTROL_SELECTORS):
+            continue
+        if re.search(r"(^|[;\s])background(-color)?\s*:", body) and not re.search(r"(^|[;\s])color\s*:", body):
+            # A :hover that only re-tints an already-inked rule is fine.
+            if ":hover" in selector or ":focus" in selector:
+                continue
+            offenders.append(selector)
+    assert offenders == [], f"controls with a background but no colour: {offenders}"
+
+
+def test_the_page_declares_which_scheme_its_controls_are_drawn_in():
+    """The other half of that defence: with `color-scheme` declared, the
+    browser draws its own widgets -- checkboxes, radios, the time picker --
+    to match the page instead of guessing from the system."""
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    root = css.split("* { box-sizing: border-box; }", 1)[0]
+    assert "color-scheme: light" in root
+    # The declaration, not the `prefers-color-scheme: dark` query around it.
+    declared = re.findall(r"(?<!-)color-scheme:\s*dark", root)
+    assert len(declared) == 2, "both ways into the dark palette declare it"
