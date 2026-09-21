@@ -127,8 +127,27 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Personal Paper", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.middleware("http")(auth.middleware)
-app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
-app.mount("/fonts", StaticFiles(directory=str(FONT_DIR)), name="fonts")
+class Revalidated(StaticFiles):
+    """Static files the browser must ask about before reusing.
+
+    Starlette sends an ETag and a Last-Modified and no `Cache-Control`, so a
+    browser is free to guess how long the file stays fresh and reuse it
+    without asking. It guessed wrong once already: a reader whose browser
+    still held the stylesheet from the container before an update got the
+    new page with the old CSS, and the dark theme she had just chosen did
+    nothing. `no-cache` does not mean "do not store" — it means "ask first",
+    and the answer is almost always a 304 with no body, which on one
+    reader's LAN costs nothing.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", Revalidated(directory=str(HERE / "static")), name="static")
+app.mount("/fonts", Revalidated(directory=str(FONT_DIR)), name="fonts")
 
 
 # ----------------------------------------------------------------- helpers

@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ paper_name }} — {{ tab|capitalize }}</title>
-<link rel="stylesheet" href="/static/style.css">
+{# The build is on the url so that a container update is a new address:
+   a browser holding the last image's stylesheet cannot serve it for this
+   one, whatever it decided about freshness. #}
+<link rel="stylesheet" href="/static/style.css?v={{ build }}">
 {% block head %}{% endblock %}
 </head>
 <body>
@@ -74,7 +77,7 @@
 <footer>
   <p>Every article is printed exactly as its author wrote it. <span class="note">Build {{ build }}</span></p>
 </footer>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{ build }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

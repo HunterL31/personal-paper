@@ -9,6 +9,7 @@ the preview, which renders the sample issue in the bundled Chromium.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -1665,3 +1666,105 @@ def test_the_two_dark_blocks_are_the_same_palette():
     tokens = [dict(re.findall(r"(--[\w-]+):\s*([^;]+);", b)) for b in blocks]
     assert tokens[0] == tokens[1]
     assert tokens[0], "the dark blocks actually set something"
+
+
+# --------------------------------------------- the page actually going dark
+#: Two ways the theme quietly failed on a real container, both fixed here.
+def test_the_browser_must_ask_before_reusing_a_static_file(client):
+    """The white-page bug.
+
+    Starlette sends an ETag and no `Cache-Control`, so a browser may decide
+    for itself how long a file stays fresh. One did: it served the previous
+    image's stylesheet with the new page, and the dark theme the reader had
+    just chosen did nothing at all, because that stylesheet had no dark
+    palette in it. `no-cache` makes it ask every time.
+    """
+    response = client.get("/static/style.css", auth=AUTH)
+    assert response.headers["cache-control"] == "no-cache"
+    # ... and asking is cheap: the answer is a 304 with no body.
+    again = client.get("/static/style.css", auth=AUTH,
+                       headers={"If-None-Match": response.headers["etag"]})
+    assert again.status_code == 304
+
+
+def test_a_container_update_is_a_new_address_for_the_stylesheet(client, monkeypatch):
+    """Belt and braces: even a browser that ignores the header cannot reuse
+    the last image's file, because the url it was stored under is gone."""
+    monkeypatch.setenv("APP_BUILD", "abc123def4567890")
+    html = client.get("/look", auth=AUTH).text
+    assert 'href="/static/style.css?v=abc123def456"' in html
+    assert 'src="/static/app.js?v=abc123def456"' in html
+
+
+def test_the_theme_switch_is_legible_in_both_themes():
+    """It was grey small caps once: at 0.85rem that is not a control, it is
+    a caption nobody can read. Every choice is in full ink now, and the one
+    that is on is printed in reverse, which reads either way round."""
+    from pathlib import Path
+
+    css = Path("app/static/style.css").read_text()
+    rule = css.split(".theme button {", 1)[1].split("}", 1)[0]
+    assert "color: var(--ink)" in rule, "the words are set in the page's own ink"
+    assert "var(--grey)" not in rule and "small-caps" not in rule
+    assert "border: var(--rule)" in rule, "it has an edge, so it reads as a control"
+    on = css.split(".theme button.on {", 1)[1].split("}", 1)[0]
+    assert "background: var(--ink)" in on and "color: var(--paper)" in on
+
+
+#: The contract the palette has to keep, checked where it is actually
+#: decided: in a browser, with the real stylesheet and the real cascade.
+#: "dark" and "light" are the reader overruling her machine, so each is
+#: tried against the machine set the other way.
+THEME_CASES = [
+    ("auto", "light", False),      # no choice made: follow the machine
+    ("auto", "dark", True),
+    ("light", "dark", False),      # her choice beats the machine, both ways
+    ("dark", "light", True),       # ... this one is the bug that was reported
+]
+
+
+@pytest.mark.parametrize("theme,machine,expect_dark", THEME_CASES)
+def test_the_page_is_painted_the_way_she_set_it(client, tmp_path, theme, machine, expect_dark):
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    client.post("/theme", auth=AUTH, data={"theme": theme, "next": "/look"})
+    html = client.get("/look", auth=AUTH).text
+    assert f'data-theme="{theme}"' in html
+
+    # The page and its stylesheet, side by side, so the cascade is the real
+    # one and no server is needed.
+    page_file = tmp_path / "look.html"
+    page_file.write_text(re.sub(r'href="/static/style\.css[^"]*"', 'href="style.css"', html))
+    (tmp_path / "style.css").write_text(Path("app/static/style.css").read_text())
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(color_scheme=machine)
+        page = context.new_page()
+        page.goto(page_file.as_uri())
+        painted = page.evaluate("""() => {
+          const body = getComputedStyle(document.body);
+          const off = [...document.querySelectorAll('.theme button')]
+              .find(b => !b.classList.contains('on'));
+          return {bg: body.backgroundColor, ink: body.color,
+                  offColor: getComputedStyle(off).color};
+        }""")
+        browser.close()
+
+    def channels(css_colour):
+        return [int(n) for n in re.findall(r"\d+", css_colour)[:3]]
+
+    background = sum(channels(painted["bg"])) / 3
+    ink = sum(channels(painted["ink"])) / 3
+    if expect_dark:
+        assert background < 60, f"{theme} on a {machine} machine painted {painted['bg']}"
+        assert ink > 180, "and the type has to be light on it"
+    else:
+        assert background > 200, f"{theme} on a {machine} machine painted {painted['bg']}"
+        assert ink < 60
+
+    # The choices she has not made stay as readable as the one she has:
+    # dimming them to grey small caps is what made the switch unreadable.
+    assert channels(painted["offColor"]) == channels(painted["ink"])

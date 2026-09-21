@@ -192,6 +192,28 @@ reasons and the traps. Add to it when you hit one.
   before the page paints — no flash of the wrong theme, and no script. The
   switch is plain submit buttons and a `next` path, sanitised by `_own_path`
   so a posted form cannot turn it into an open redirect.
+- **Starlette's `StaticFiles` sends no `Cache-Control`**, only an ETag and a
+  Last-Modified, which leaves the browser free to guess how long a file
+  stays fresh and reuse it without asking. It guessed wrong the first time
+  the theme shipped: a reader's browser served the *previous* image's
+  `style.css` with the new page, so `<html data-theme="dark">` was right and
+  the page stayed white, because that stylesheet had no dark palette in it.
+  Static files are mounted through `Revalidated` (`Cache-Control: no-cache`
+  — "ask first", answered by a 304 with no body) and `base.html` hangs
+  `?v={{ build }}` on the stylesheet and the script so a container update is
+  a new address as well. Any future CSS or JS change depends on both; a
+  symptom that "the new page has the old styling" is this, not the cascade.
+- **Judge any UI control at `device_scale_factor=1`.** The theme switch was
+  first set as grey small caps at 0.85rem, which looked fine in a 3x
+  screenshot and was unreadable on the actual page — small caps shrinks the
+  letterforms again on top of the size. It is a segmented control now, every
+  choice in full `--ink` with a real border, the chosen one reversed
+  (`background: var(--ink); color: var(--paper)`), which is the only marking
+  that reads the same in both themes.
+- The theme is tested where it is actually decided: `test_the_page_is_painted_the_way_she_set_it`
+  loads the real page and the real stylesheet in Chromium across the four
+  (choice, machine) pairs and asserts the painted background. Structural CSS
+  assertions did not catch the caching bug and would not catch a cascade one.
 
 ## Deployment
 

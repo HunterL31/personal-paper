@@ -259,17 +259,26 @@ button.small { font-size: 0.8em; padding: 0.1em 0.5em; }
 .queue td.mark { white-space: nowrap; }
 
 /* ------------------------------------------------- the theme switch
-   Three words at the end of the tab row, set like the tabs, because this
-   is page furniture and not one of the paper's own settings. Plain submit
-   buttons: it works with no script at all, and the chosen one is marked
-   the way the chosen font card is. */
-.theme { display: flex; align-items: baseline; gap: 0.5rem; margin-left: auto; }
+   One segmented control at the end of the tab row: page furniture, not one
+   of the paper's own settings. Plain submit buttons, so it works with no
+   script at all.
+
+   Every choice is set in full ink, and the one that is on is the one
+   printed in reverse -- a newspaper's own way of marking a selection, and
+   the only one that survives both themes. An earlier version dimmed the
+   two she had not chosen to grey small caps, which at this size is
+   unreadable and looks like a caption rather than something to press. */
+.theme { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
 .theme .note { font-variant: small-caps; letter-spacing: 0.04em; }
 .theme button {
-  border: 0; background: none; color: var(--grey); cursor: pointer;
-  font-family: inherit; font-size: 0.85rem; font-variant: small-caps;
-  letter-spacing: 0.04em; padding: 0 0.1rem;
+  font-family: inherit; font-size: 0.85rem; line-height: 1.1;
+  padding: 0.22rem 0.5rem;
+  border: var(--rule); background: var(--paper); color: var(--ink);
+  cursor: pointer;
 }
-.theme button:hover { background: none; text-decoration: underline; }
-.theme button.on { color: var(--ink); font-weight: bold; border-bottom: 2px solid var(--ink); }
+/* Joined into one control, so the three read as a single choice. */
+.theme button + button { margin-left: -1px; }
+.theme button:hover { background: var(--hover); }
+.theme button.on { background: var(--ink); color: var(--paper); font-weight: bold; }
+.theme button.on:hover { background: var(--ink); }
 @media (max-width: 26rem) { .theme { margin-left: 0; width: 100%; } }
