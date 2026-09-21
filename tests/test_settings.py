@@ -119,3 +119,31 @@ def test_the_date_size_is_clamped_to_the_sizes_the_tab_offers():
     assert Look(date_size_pt=24.0).date_size_pt == 24.0
     with pytest.raises(ValidationError):
         Look(date_size_pt=48.0)
+
+
+# ------------------------------------------------------- enhanced logging
+def test_enhanced_logging_is_off_and_keeps_seven_runs():
+    logs = Settings().logs
+    assert logs.enhanced is False
+    assert logs.keep_runs == 7
+
+
+def test_a_settings_file_from_before_enhanced_logging_still_loads(data_dir):
+    (data_dir / "settings.json").write_text(json.dumps({"look": {"paper_name": "The Gull"}}))
+    settings = Settings.load()
+    assert settings.look.paper_name == "The Gull"
+    assert settings.logs.enhanced is False
+
+
+def test_enhanced_logging_round_trips(data_dir):
+    s = Settings()
+    s.logs.enhanced = True
+    s.save()
+    assert Settings.load().logs.enhanced is True
+
+
+def test_the_number_of_runs_kept_is_clamped():
+    with pytest.raises(ValidationError):
+        Settings(logs={"keep_runs": 0})
+    with pytest.raises(ValidationError):
+        Settings(logs={"keep_runs": 31})

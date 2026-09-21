@@ -167,6 +167,25 @@ reasons and the traps. Add to it when you hit one.
 - Substack blocks default user agents; the fetcher sends a browser-like
   one.
 
+## Logging
+
+- `run.py` sets up two handlers' worth of logging: `run.log` for good
+  (appended once per process per path) and, when
+  `settings.logs.enhanced` is on, a per-run file under `logs/runs/`.
+  `_enhanced_log` is a context manager around the whole run: it puts the
+  root logger at DEBUG and *pins the handlers that were already there* to
+  the level they were running at, so run.log and the container's stdout
+  keep their INFO diet while the run's own file gets everything.
+- **Never let urllib3 loose at DEBUG in that file.** It logs whole URLs,
+  and a Google Calendar iCal address is a credential; the file is
+  downloadable from the web page. `QUIET_LOGGERS` in `run.py` holds it and
+  its friends at INFO for the duration. Any new chatty library goes there.
+- The run file is named for the paper's own clock (`_now()`, the container
+  `TZ`), while the lines inside carry `logging`'s local time; on a box
+  running UTC those differ, as they already do in run.log.
+- `run()` is now a wrapper: `_run()` is the issue itself. Anything that
+  must be inside the run's log (or timed as part of it) goes in `_run`.
+
 ## Web page
 
 - Auth is one Basic-auth middleware so `/static` and `/fonts` are covered.

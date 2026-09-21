@@ -376,6 +376,25 @@ THEMES = ["auto", "light", "dark"]
 THEME_LABELS = {"auto": "Auto", "light": "Light", "dark": "Dark"}
 
 
+# ------------------------------------------------------------- Logging
+#: How many past runs enhanced logging keeps a file for.
+KEEP_RUNS_DEFAULT = 7
+
+
+class Logs(BaseModel):
+    """Enhanced logging: a file of its own for each of the last few runs.
+
+    Off (the default), a run logs what it always has: a line an event,
+    appended to `<DATA_DIR>/logs/run.log`, which the Log page tails. On,
+    the run also writes `<DATA_DIR>/logs/runs/<date>-<time>.log` at debug
+    level, with what it was set to and what each step did, and the page
+    offers that file and the `keep_runs - 1` before it for download. Older
+    ones are deleted as each run ends, so the directory never grows.
+    """
+    enhanced: bool = False
+    keep_runs: int = Field(KEEP_RUNS_DEFAULT, ge=1, le=30)
+
+
 class Settings(BaseModel):
     look: Look = Field(default_factory=Look)
     sources: Sources = Field(default_factory=Sources)
@@ -383,6 +402,7 @@ class Settings(BaseModel):
     #: How this page is set. A settings file written before there was a
     #: choice has no `web` key and gets "auto", which is the page as it was.
     web: Web = Field(default_factory=Web)
+    logs: Logs = Field(default_factory=Logs)
 
     def sync_list_sections(self) -> None:
         """Keep `look.layout.sections` in step with `sources.lists`.

@@ -43,7 +43,10 @@ the paper's name is whatever its one reader types on the Look tab
   `look.layout.sections`, not the data.
 - `app/settings.py` is the settings contract. Extend it deliberately.
   `settings.web` is the settings page's own furniture (the light/dark
-  theme); nothing under it may ever reach the sheet.
+  theme); nothing under it may ever reach the sheet. `settings.logs` is
+  enhanced logging: a debug file per run under `<DATA_DIR>/logs/runs/`,
+  the newest `keep_runs` kept and offered on the Log page. That file is
+  downloadable, so nothing secret is ever written to it.
 - The reader's rail is one flow: page 1's column continues into a column of
   the same width on page 2, made only when it is needed, and breaking only
   between whole items. The continuations give up the width for it. What no

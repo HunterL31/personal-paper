@@ -317,7 +317,11 @@ def fetch(settings: Settings, *, today: Optional[dt.date] = None) -> dict:
     day = today or dt.datetime.now(ZoneInfo(tz_name)).date()
     where = settings.sources.weather
     payload = _request(where.lat, where.lon, tz_name)
-    return _build(payload, day)
+    forecast = _build(payload, day)
+    log.debug("forecast for %s at %s,%s: %s, high %s, low %s, wind %s",
+              day, where.lat, where.lon, forecast["summary"],
+              forecast["high"], forecast["low"], forecast["wind"])
+    return forecast
 
 
 def unavailable() -> dict:

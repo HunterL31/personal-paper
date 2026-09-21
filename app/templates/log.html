@@ -8,4 +8,40 @@
 {% else %}
 <p class="note">Nothing logged yet.</p>
 {% endif %}
+
+<h2>Enhanced logging</h2>
+<form method="post" action="/log">
+  <p>
+    <label class="inline"><input type="checkbox" name="enhanced" {{ "checked" if logs.enhanced else "" }}> Keep a full log of every run</label>
+  </p>
+  <p class="note">With this on, every run writes a file of its own with far more
+  detail than the lines above: what the paper was set to, what each source
+  answered or why it did not, what the layout did with the stories, and how
+  long the morning took. The last {{ logs.keep_runs }} runs are kept here to
+  download; older ones are deleted as each run ends. Nothing the container
+  keeps secret is written down, but the file does say what you have switched
+  on, so treat it as yours.</p>
+  <div class="actions"><button class="primary" type="submit">Save logging</button></div>
+</form>
+
+<h3>The last {{ logs.keep_runs }} runs</h3>
+{% if runs %}
+<table>
+  <thead><tr><th style="width:45%">Run</th><th style="width:6rem">Size</th><th>File</th></tr></thead>
+  <tbody>
+    {% for run in runs %}
+    <tr>
+      <td>{{ run.when }}</td>
+      <td>{{ run.size }}</td>
+      <td><a href="{{ run.url }}" download>{{ run.name }}</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif logs.enhanced %}
+<p class="note">No run has finished since enhanced logging was switched on. The
+next paper, scheduled or made by hand, writes the first file.</p>
+{% else %}
+<p class="note">Enhanced logging is off, so no run has a file of its own.</p>
+{% endif %}
 {% endblock %}
