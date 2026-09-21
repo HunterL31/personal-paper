@@ -552,6 +552,10 @@ encoder (`deliver/pwg.py`, pymupdf for the pixels) are in the app.
 8. **Later** (not v1): inline italics/links preserved through the extractor
    (paragraphs become restricted HTML, template stops escaping); extra posts
    beyond four; custom font upload.
+9. **More than Substack on the front page.** `docs/CONTENT-SOURCES.md` is
+   the plan: one merged queue with an adapter per kind (full-text feeds,
+   email newsletters, a public-domain serial, Wikipedia, The Guardian, the
+   reader's reading list, a folder), and the refactor they all need first.
 
 ## Things to ask the owner before starting the relevant milestone
 
