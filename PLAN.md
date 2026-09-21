@@ -464,6 +464,14 @@ encoder (`deliver/pwg.py`, pymupdf for the pixels) are in the app.
 - Process: `uvicorn app.main:app --host 0.0.0.0 --port 8080` is the
   container command. Logs to stdout (Docker keeps them) and to
   `/data/logs/run.log`.
+- Enhanced logging (`settings.logs.enhanced`, the Log page's one switch):
+  each run also writes `/data/logs/runs/<date>-<time>.log` at debug level,
+  with the settings the run used, what every gatherer answered and how long
+  it took, and what came of the routes. The newest `keep_runs` (7) files are
+  kept and the Log page offers each for download; older ones are deleted as
+  a run ends. The libraries that put credentials in their debug lines
+  (urllib3 and friends) stay at INFO, so no secret is ever written to a file
+  the page hands out.
 - `docker-compose.yml`: `network_mode: host` (for printer discovery; port
   8080 must then be free on the box) or bridge with `8080:8080` and manual
   printer IP; volume `./data:/data`, `env_file: .env`,

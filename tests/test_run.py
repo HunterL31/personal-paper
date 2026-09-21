@@ -8,6 +8,7 @@ wiring test, not their test.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import types
 from pathlib import Path
@@ -608,3 +609,119 @@ def test_reprint_reports_the_route_that_failed(data_dir, fake_gather, fake_deliv
     assert result.pages is None                             # an uncounted PDF still goes
     assert "printer offline" in (result.error or "")
     assert state_module.load_state()["last_error"] == ""    # the run's record is its own
+
+
+# ----------------------------------------------------------- enhanced logging
+@pytest.fixture
+def enhanced() -> Settings:
+    """Settings with the Log page's one switch turned on."""
+    settings = Settings()
+    settings.logs.enhanced = True
+    return settings
+
+
+def run_log_files(data_dir: Path) -> list[Path]:
+    return sorted((data_dir / "logs" / "runs").glob("*.log"))
+
+
+def test_no_run_files_until_enhanced_logging_is_on(data_dir, fake_gather, fake_deliver):
+    result = run(Settings(), dry_run=True)
+    assert result.ok and result.log is None
+    assert not (data_dir / "logs" / "runs").exists()
+
+
+def test_enhanced_logging_writes_a_file_for_the_run(data_dir, fake_gather, fake_deliver, enhanced):
+    result = run(enhanced, dry_run=True)
+
+    files = run_log_files(data_dir)
+    assert len(files) == 1 and result.log == files[0]
+    assert run_module.RUN_LOG_NAME.match(files[0].name)
+    text = files[0].read_text()
+    assert "enhanced logging on" in text
+    assert "dry run, nothing delivered" in text     # what it was asked for
+    assert "data dir:" in text and "timezone:" in text
+    assert "state: issue 0" in text
+    assert "run finished in" in text                # and what came of it
+    assert "ok=True pages=2" in text
+
+
+def test_the_everyday_log_is_not_flooded_with_debug(data_dir, fake_gather, fake_deliver, enhanced):
+    run(enhanced, dry_run=True)
+    run_log = (data_dir / "logs" / "run.log").read_text()
+    assert "rendered 2 page(s)" in run_log          # still the record it was
+    assert "DEBUG" not in run_log
+
+
+def test_a_gatherer_failure_is_written_down_in_full(data_dir, fake_gather, fake_deliver, enhanced):
+    fake_gather["errors"] = {"weather": "HTTPError: 503 Server Error: Service Unavailable"}
+    result = run(enhanced, dry_run=True)
+    text = result.log.read_text()
+    assert "gatherer weather: HTTPError: 503" in text
+    assert "reported nothing: HTTPError: 503" in text
+
+
+def test_only_the_last_runs_are_kept(data_dir, fake_gather, fake_deliver, enhanced):
+    enhanced.logs.keep_runs = 3
+    old = data_dir / "logs" / "runs"
+    old.mkdir(parents=True)
+    for day in range(1, 6):
+        (old / f"2026-09-{day:02d}-060000.log").write_text("an older morning")
+
+    result = run(enhanced, dry_run=True)
+
+    kept = [p.name for p in run_log_files(data_dir)]
+    assert len(kept) == 3
+    assert result.log.name in kept                  # this morning's, and
+    assert "2026-09-05-060000.log" in kept          # the two newest before it
+    assert "2026-09-04-060000.log" in kept
+    assert "2026-09-01-060000.log" not in kept
+
+
+def test_seven_is_what_a_paper_keeps_by_default(data_dir, fake_gather, fake_deliver, enhanced):
+    old = data_dir / "logs" / "runs"
+    old.mkdir(parents=True)
+    for day in range(1, 11):
+        (old / f"2026-09-{day:02d}-060000.log").write_text("an older morning")
+
+    run(enhanced, dry_run=True)
+
+    assert len(run_log_files(data_dir)) == 7
+
+
+def test_the_run_puts_the_logging_back_as_it_found_it(data_dir, fake_gather, fake_deliver, enhanced):
+    root = logging.getLogger()
+    level = root.level
+    handlers = list(root.handlers)
+
+    run(enhanced, dry_run=True)
+
+    assert root.level == level
+    # The run's own handler is gone; run.log's (added on the first run in a
+    # fresh DATA_DIR) is the only one that may be new.
+    added = [h for h in root.handlers if h not in handlers]
+    assert all(Path(h.baseFilename).name == "run.log" for h in added)
+    assert all(h.level == logging.NOTSET for h in handlers)
+
+
+def test_a_chatty_library_is_kept_out_of_the_run_log(data_dir, fake_gather, fake_deliver,
+                                                     enhanced, monkeypatch):
+    """urllib3 writes whole URLs at debug, and a calendar address is a secret."""
+    levels: dict[str, int] = {}
+    gather_mod = sys.modules["gather"]
+    inner = gather_mod.run_all
+
+    def run_all(settings):
+        levels["urllib3"] = logging.getLogger("urllib3.connectionpool").getEffectiveLevel()
+        levels["gather"] = logging.getLogger("gather.weather").getEffectiveLevel()
+        logging.getLogger("urllib3.connectionpool").debug(
+            "GET https://calendar.google.com/calendar/ical/private-abcdef/basic.ics")
+        logging.getLogger("gather.weather").debug("forecast for today: Fog early")
+        return inner(settings)
+
+    monkeypatch.setattr(gather_mod, "run_all", run_all)
+    result = run(enhanced, dry_run=True)
+
+    assert levels == {"urllib3": logging.INFO, "gather": logging.DEBUG}
+    text = result.log.read_text()
+    assert "private-abcdef" not in text
+    assert "Fog early" in text

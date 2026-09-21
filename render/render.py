@@ -230,6 +230,13 @@ class RenderResult:
     #: `n` of the author's, unchanged, followed by a line saying where the
     #: rest of the story is.
     partial: dict[int, int] = field(default_factory=dict)
+    #: `{section key: rows}` for the reader's own sections that ran on into
+    #: page 2's column, and for the rows no column had room for. The keys are
+    #: `look.layout.sections` keys (`agenda`, `list:tasks`, ...). A key in
+    #: `rail_dropped` with 0 rows is a section that has no rows to count --
+    #: the notes block -- and was left off whole.
+    rail_continued: dict[str, int] = field(default_factory=dict)
+    rail_dropped: dict[str, int] = field(default_factory=dict)
     pngs: list[Path] = field(default_factory=list)
     #: `document.documentElement.outerHTML` after the fitting script ran, i.e.
     #: the pages as they were printed.  The verbatim test parses this.
@@ -348,7 +355,7 @@ def render(
     html_path.write_text(html)
     pdf_path = out / "paper.pdf"
 
-    def _do(br) -> tuple[int, list[int], dict[int, int], str]:
+    def _do(br) -> tuple[int, list[int], dict[int, int], dict[str, dict[str, int]], str]:
         page = br.new_page()
         try:
             page.emulate_media(media="print")     # measure in the same mode we print in
@@ -357,22 +364,26 @@ def render(
             n = page.evaluate("window.__pages")
             printed = page.evaluate("window.__printed")
             partial = page.evaluate("window.__partial") or {}
+            rail = page.evaluate("window.__rail") or {}
             laid_out = page.evaluate("document.documentElement.outerHTML")
             page.pdf(path=str(pdf_path), prefer_css_page_size=True, print_background=True)
             return (int(n), [int(i) for i in printed],
-                    {int(k): int(v) for k, v in dict(partial).items()}, laid_out)
+                    {int(k): int(v) for k, v in dict(partial).items()},
+                    {part: {str(k): int(v) for k, v in dict(rail.get(part) or {}).items()}
+                     for part in ("continued", "dropped")},
+                    laid_out)
         finally:
             page.close()
 
     if browser is not None:
-        pages, printed, partial, laid_out_html = _do(browser)
+        pages, printed, partial, rail, laid_out_html = _do(browser)
     else:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
             br = _launch(p)
             try:
-                pages, printed, partial, laid_out_html = _do(br)
+                pages, printed, partial, rail, laid_out_html = _do(br)
             finally:
                 br.close()
 
@@ -391,8 +402,17 @@ def render(
     given = len(data.get("articles") or [])
     log.info("rendered %s page(s) -> %s (%s of %s article(s) printed%s)", pages, pdf_path, len(printed), given,
              "".join(f", article {i} partial: {n} paragraph(s)" for i, n in partial.items()))
+    # Her own sections are the one part of the sheet she cannot see the rest
+    # of online, so what a column could not hold is said out loud.
+    if rail["continued"]:
+        log.info("rail continued on page 2: %s",
+                 ", ".join(f"{k} ({n} row(s))" for k, n in rail["continued"].items()))
+    if rail["dropped"]:
+        log.warning("rail did not fit the sheet: %s",
+                    ", ".join(f"{k} ({n} row(s))" for k, n in rail["dropped"].items()))
     return RenderResult(pdf=pdf_path, html=html_path, pages=pages, printed=printed,
-                        partial=partial, pngs=pngs, laid_out_html=laid_out_html)
+                        partial=partial, rail_continued=rail["continued"],
+                        rail_dropped=rail["dropped"], pngs=pngs, laid_out_html=laid_out_html)
 
 
 def _look_from_settings_file(path: str) -> Any:

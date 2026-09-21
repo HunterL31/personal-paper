@@ -82,6 +82,30 @@ reasons and the traps. Add to it when you hit one.
   the template and the web page's `/fonts.css`. Variable fonts are renamed
   `Name-var.ttf` because `[wght]` in a filename breaks URLs.
 
+### The rail (`layoutRail` and friends)
+
+- **The rail is fitted before the stories, and that order is load-bearing.**
+  A section that overruns page 1 continues into a column on page 2, which is
+  made on demand by wrapping `.cols` in `.page2-main`. That narrows the
+  continuations, so the article search has to run after it and not before.
+  `onePage()` lays the rail out again with `layoutRail(false)`, before
+  `fitFrontCrossword`, because the column decides how wide the story slot is.
+- Every pass rebuilds the rail from clones taken at script start (`RAIL_P1`,
+  `RAIL_P2`), the way the article search rebuilds page 1 from `pristine`.
+  Measuring a section while the ones below it are still in the column gives
+  the wrong answer: flex shrinks them.
+- Sections break between `li` and `tr`, so lists, the agenda and the hourly
+  table all run on; the notes box has no rows and moves whole or not at all.
+  `railFoot()` is what keeps the hourly table's sunrise line with the part
+  that carries its last row.
+- When nothing overflows, the rebuild is a no-op down to the pixel — which
+  is what keeps the default render byte-identical. Check it that way
+  (`md5sum` of the sample PNGs) after touching any of this.
+- `RenderResult.rail_dropped` is the one thing the sheet cannot show the
+  reader an "online" line for, so it is logged at WARNING. `railTally()`
+  counts from the finished page, not from the passes, so the report cannot
+  drift from the paper.
+
 ## Delivery and printing (`deliver/`)
 
 - **pyipp's serializer silently returns empty bytes for attribute names it
@@ -129,10 +153,38 @@ reasons and the traps. Add to it when you hit one.
 - Open-Meteo needs no key; the request is built with `forecast_days=2` so
   arrays are selected by ISO date, not index, which is what makes the
   `today=` test hook work.
+- **Open-Meteo answers a momentary 503** now and then, and the 6 a.m. run
+  gets only one shot at the forecast: a morning's ear box read "Forecast
+  unavailable" while the Sources tab's Check button, run by hand an hour
+  later, worked fine. `_request` therefore retries a transient failure
+  (connection error, timeout, or a code in `RETRY_STATUS`) up to `ATTEMPTS`
+  times with `BACKOFF_SECONDS` between tries, inside `BUDGET_SECONDS` (25),
+  which stays under `gather.TIMEOUT_SECONDS` (30) — that budget is the
+  thing to keep in mind if the attempts or the backoff ever grow. A 4xx is
+  the API saying no and is not retried.
 - Google Calendar's secret iCal address includes recurrences; declined
   events are detected by matching the attendee against `X-WR-CALNAME`.
 - Substack blocks default user agents; the fetcher sends a browser-like
   one.
+
+## Logging
+
+- `run.py` sets up two handlers' worth of logging: `run.log` for good
+  (appended once per process per path) and, when
+  `settings.logs.enhanced` is on, a per-run file under `logs/runs/`.
+  `_enhanced_log` is a context manager around the whole run: it puts the
+  root logger at DEBUG and *pins the handlers that were already there* to
+  the level they were running at, so run.log and the container's stdout
+  keep their INFO diet while the run's own file gets everything.
+- **Never let urllib3 loose at DEBUG in that file.** It logs whole URLs,
+  and a Google Calendar iCal address is a credential; the file is
+  downloadable from the web page. `QUIET_LOGGERS` in `run.py` holds it and
+  its friends at INFO for the duration. Any new chatty library goes there.
+- The run file is named for the paper's own clock (`_now()`, the container
+  `TZ`), while the lines inside carry `logging`'s local time; on a box
+  running UTC those differ, as they already do in run.log.
+- `run()` is now a wrapper: `_run()` is the issue itself. Anything that
+  must be inside the run's log (or timed as part of it) goes in `_run`.
 
 ## Web page
 
@@ -152,6 +204,56 @@ reasons and the traps. Add to it when you hit one.
   the Host header, then the container's LAN IP; `tasks_post_url` overrides.
 - The footer prints `Build <sha>` from `APP_BUILD`, set by the publish
   workflow. It is the fastest way to tell whether a container update took.
+- **Every colour on the page is a token on `:root`** (`--ink`, `--paper`,
+  `--grey`, ...), because `settings.web.theme` turns the whole page over at
+  once. A colour written straight into a rule stays light in the dark, and
+  that is exactly the bug nobody notices; `test_the_stylesheet_has_no_colour_outside_the_palette`
+  fails the build for it.
+- The dark palette is written twice on purpose — once under
+  `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])` and
+  once under `:root[data-theme="dark"]` — because plain CSS cannot share a
+  block between a media query and a selector. A test asserts the two agree.
+  `color-scheme: dark` is what makes the browser's own radios, checkboxes
+  and time pickers follow; without it they stay white.
+- The theme is server state (`settings.web`), not localStorage, so it is the
+  same on the phone and the laptop and `base.html` can put it on `<html>`
+  before the page paints — no flash of the wrong theme, and no script. The
+  switch is plain submit buttons and a `next` path, sanitised by `_own_path`
+  so a posted form cannot turn it into an open redirect.
+- **Starlette's `StaticFiles` sends no `Cache-Control`**, only an ETag and a
+  Last-Modified, which leaves the browser free to guess how long a file
+  stays fresh and reuse it without asking. It guessed wrong the first time
+  the theme shipped: a reader's browser served the *previous* image's
+  `style.css` with the new page, so `<html data-theme="dark">` was right and
+  the page stayed white, because that stylesheet had no dark palette in it.
+  Static files are mounted through `Revalidated` (`Cache-Control: no-cache`
+  — "ask first", answered by a 304 with no body) and `base.html` hangs
+  `?v={{ build }}` on the stylesheet and the script so a container update is
+  a new address as well. Any future CSS or JS change depends on both; a
+  symptom that "the new page has the old styling" is this, not the cascade.
+- **Never set a control's `background` without its `color` in the same
+  rule.** The stylesheet had `button { background: #fff }` and no `color`
+  from the beginning, which left the text to the user agent. On a device
+  whose system is dark the agent paints `buttontext` white — white on an
+  explicitly white button — so the theme switch rendered as three empty
+  boxes, reported as "the text inside the buttons isn't showing up". It
+  needed a dark phone *and* the stale stylesheet above to show up, which is
+  why no amount of desktop screenshotting found it.
+  `test_no_control_sets_a_background_without_its_ink` fails the build for
+  the whole class. Declaring `color-scheme` on `:root` (both branches) is
+  the other half: the agent then draws its own widgets to match the page
+  instead of guessing from the system.
+- **Judge any UI control at `device_scale_factor=1`.** The theme switch was
+  first set as grey small caps at 0.85rem, which looked fine in a 3x
+  screenshot and was thin and captionish on the actual page — small caps
+  shrinks the letterforms again on top of the size. It is a segmented
+  control now, every choice in full `--ink` with a real border, the chosen
+  one reversed (`background: var(--ink); color: var(--paper)`), which is the
+  only marking that reads the same in both themes.
+- The theme is tested where it is actually decided: `test_the_page_is_painted_the_way_she_set_it`
+  loads the real page and the real stylesheet in Chromium across the four
+  (choice, machine) pairs and asserts the painted background. Structural CSS
+  assertions did not catch the caching bug and would not catch a cascade one.
 
 ## Deployment
 

@@ -52,6 +52,8 @@ from app.settings import (  # noqa: E402
     RAIL_SIDE_LABELS,
     RAIL_SIDES,
     SLUG_RE,
+    THEME_LABELS,
+    THEMES,
     CalendarSource,
     EarBox,
     Env,
@@ -77,6 +79,8 @@ ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d+)?\.pdf$")
 #: The date a filed issue carries, for the strip and the reprint button.
 ARCHIVE_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 PREVIEW_FILE = re.compile(r"^(page-\d+\.png|paper\.html)$")
+#: A run log, as enhanced logging names it: `2026-09-20-060000.log`.
+RUN_LOG_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}\.log$")
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 #: body_size_pt choices: 8.0 to 11.0 in half points.
@@ -94,6 +98,9 @@ LIST_STYLES = [("checkbox", "Checkboxes"), ("plain", "Plain lines"), ("numbered"
 PLACE_CHOICES = [(place, PLACE_LABELS[place]) for place in PLACES]
 #: Which edge of the sheet the reader's column runs down.
 RAIL_SIDE_CHOICES = [(side, RAIL_SIDE_LABELS[side]) for side in RAIL_SIDES]
+#: How this page is set, as the switch in the tab row puts it. It is page
+#: furniture, not one of the paper's settings: nothing here is ever printed.
+THEME_CHOICES = [(name, THEME_LABELS[name]) for name in THEMES]
 #: Which container variables each tab shows as "set on the container / not set".
 ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.NYT_S, Env.TZ]
 ENV_ON_OUTPUT = [*Env.SMTP]
@@ -122,8 +129,27 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Personal Paper", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.middleware("http")(auth.middleware)
-app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
-app.mount("/fonts", StaticFiles(directory=str(FONT_DIR)), name="fonts")
+class Revalidated(StaticFiles):
+    """Static files the browser must ask about before reusing.
+
+    Starlette sends an ETag and a Last-Modified and no `Cache-Control`, so a
+    browser is free to guess how long the file stays fresh and reuse it
+    without asking. It guessed wrong once already: a reader whose browser
+    still held the stylesheet from the container before an update got the
+    new page with the old CSS, and the dark theme she had just chosen did
+    nothing. `no-cache` does not mean "do not store" — it means "ask first",
+    and the answer is almost always a 304 with no body, which on one
+    reader's LAN costs nothing.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", Revalidated(directory=str(HERE / "static")), name="static")
+app.mount("/fonts", Revalidated(directory=str(FONT_DIR)), name="fonts")
 
 
 # ----------------------------------------------------------------- helpers
@@ -199,12 +225,17 @@ def _status() -> dict[str, Any]:
 
 
 def page(request: Request, tab: str, template: str, **extra: Any) -> Response:
+    settings = Settings.load()
     context = {
         "request": request,
         "tab": tab,
         "tabs": TABS,
         # The paper's name is the reader's, set on the Look tab.
-        "paper_name": Settings.load().look.paper_name,
+        "paper_name": settings.look.paper_name,
+        # How this page is set for her eyes: "auto", "light" or "dark".
+        # The paper is black on white whatever this says.
+        "theme": settings.web.theme,
+        "theme_choices": THEME_CHOICES,
         "status": _status(),
         "saved": request.query_params.get("saved") == "1",
         # Which image this is: the commit the publish workflow built from,
@@ -397,6 +428,32 @@ def fonts_css() -> Response:
 
 
 # --------------------------------------------------------------- Look tab
+# --------------------------------------------------------- POST /theme
+#: Where the switch may send the reader back to: a path on this page and
+#: nothing else. "//host" and "https://host" are paths to the browser but
+#: addresses to everyone else, so they are refused rather than followed.
+def _own_path(raw: str, fallback: str = "/look") -> str:
+    path = (raw or "").strip()
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return fallback
+    return path
+
+
+@app.post("/theme")
+async def theme_post(request: Request) -> RedirectResponse:
+    """Set the page light, dark, or whatever the machine is already doing.
+
+    This is the settings page's own furniture: the paper is black on white
+    however it is set, and nothing here reaches the sheet.
+    """
+    form = await request.form()
+    settings = Settings.load()
+    settings.web.theme = one_of(form_text(form, "theme"), THEMES, settings.web.theme)
+    settings.save()
+    # Back where she was, so the switch never costs her the tab she was on.
+    return RedirectResponse(_own_path(form_text(form, "next")), status_code=303)
+
+
 def font_cards(choices: list[str], current: str) -> list[dict[str, Any]]:
     """One card per choice: its name, the stack it is set in, and whether
     it is the face the paper is set in now."""
@@ -1091,6 +1148,27 @@ def archive(name: str) -> Response:
     return FileResponse(path, media_type="application/pdf", filename=name)
 
 
+def _run_log_rows() -> list[dict[str, Any]]:
+    """The files enhanced logging has kept, newest first, for the page."""
+    from run import run_logs
+
+    rows = []
+    for path in run_logs():
+        stamp = path.stem                      # 2026-09-20-060000
+        day, _, clock = stamp.rpartition("-")
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        rows.append({
+            "name": path.name,
+            "when": f"{day} {clock[:2]}:{clock[2:4]}:{clock[4:6]}",
+            "size": f"{max(size, 1024) // 1024:,} kB",
+            "url": f"/log/runs/{path.name}",
+        })
+    return rows
+
+
 @app.get("/log")
 def log_page(request: Request) -> Response:
     path = data_dir() / "logs" / "run.log"
@@ -1098,7 +1176,36 @@ def log_page(request: Request) -> Response:
         lines = path.read_text(errors="replace").splitlines()[-200:]
     except OSError:
         lines = []
-    return page(request, "log", "log.html", lines=lines)
+    settings = Settings.load()
+    return page(
+        request, "log", "log.html",
+        lines=lines,
+        logs=settings.logs,
+        runs=_run_log_rows(),
+    )
+
+
+@app.post("/log")
+async def log_post(request: Request) -> RedirectResponse:
+    """The one setting on this page: enhanced logging, on or off."""
+    form = await request.form()
+    settings = Settings.load()
+    settings.logs.enhanced = form_flag(form, "enhanced")
+    settings.save()
+    return saved("/log")
+
+
+@app.get("/log/runs/{name}")
+def run_log(name: str) -> Response:
+    """One run's log file, as a download."""
+    from run import run_log_dir
+
+    if not RUN_LOG_NAME.match(name):
+        return JSONResponse({"detail": "not found"}, status_code=404)
+    path = run_log_dir() / name
+    if not path.is_file():
+        return JSONResponse({"detail": "not found"}, status_code=404)
+    return FileResponse(path, media_type="text/plain", filename=name)
 
 
 # ------------------------------------------------- POST /lists/<slug>

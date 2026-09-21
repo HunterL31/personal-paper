@@ -65,9 +65,36 @@ def _empty(section: str) -> Any:
 
 def _call(module_name: str, func_name: str, settings) -> Any:
     """Import the gatherer lazily and call it. Runs on a worker thread."""
+    started = time.monotonic()
     mod = importlib.import_module(module_name)
     fn: Callable = getattr(mod, func_name)
-    return fn(settings)
+    try:
+        return fn(settings)
+    finally:
+        # Only ever read in an enhanced-logging run, where "which source was
+        # slow this morning" is most of the question.
+        logger.debug("%s.%s took %.1fs", module_name, func_name,
+                     time.monotonic() - started)
+
+
+def _describe(section: str, value: Any) -> str:
+    """One line about what a gatherer came back with, for a debug log."""
+    try:
+        if section == "weather":
+            w = value or {}
+            return (f"{w.get('summary')}, high {w.get('high')}, low {w.get('low')}, "
+                    f"{len(w.get('hourly') or [])} hourly row(s)")
+        if section == "events":
+            return f"{len(value or [])} event(s)"
+        if section == "lists":
+            return "; ".join(f"{li.get('slug')}: {len(li.get('items') or [])} item(s)"
+                             for li in (value or [])) or "no lists"
+        if section == "articles":
+            titles = "; ".join(str((a or {}).get("title", "")) for a in (value or []))
+            return f"{len(value or [])} post(s) offered to the layout: {titles}"
+    except Exception:  # noqa: BLE001 - a log line is never worth an exception
+        pass
+    return type(value).__name__
 
 
 def submit(section: str, fn: Callable, *args) -> Future:
@@ -150,6 +177,7 @@ def run_all(settings) -> dict:
             data[section] = _empty(section)
         else:
             data[section] = result
+            logger.debug("%s: %s", section, _describe(section, result))
 
     if data["weather"] is None:  # a gatherer returned None
         data["weather"] = _empty("weather")
