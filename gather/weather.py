@@ -12,14 +12,18 @@ The six hourly rows are 7, 10, 13, 16, 19 and 22 local time. ``summary`` is
 rule-based from the morning (7--10) against the afternoon (13--16) weather
 codes and is kept under 30 characters, because it lives in the ear box.
 
-``fetch`` raises on a network or API failure -- ``gather.run_all`` catches it
-and substitutes ``unavailable()``.
+A transient failure (a connection error, a timeout, or one of the status
+codes in ``RETRY_STATUS``) is retried a few times inside ``BUDGET_SECONDS``,
+because Open-Meteo answers 503 for a moment now and then and the morning run
+has only one shot at the forecast. ``fetch`` raises once the attempts are
+spent -- ``gather.run_all`` catches it and substitutes ``unavailable()``.
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
 import logging
+import time
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -30,7 +34,18 @@ from app.settings import Env, Settings
 log = logging.getLogger(__name__)
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
-TIMEOUT = 20  # seconds
+TIMEOUT = 20  # seconds, per attempt
+
+#: Attempts at the API, and the pause before each retry.
+ATTEMPTS = 3
+BACKOFF_SECONDS = (1.0, 2.0)
+
+#: Wall clock for all the attempts together. Kept under
+#: `gather.TIMEOUT_SECONDS` (30), which would abandon this gatherer anyway.
+BUDGET_SECONDS = 25.0
+
+#: Status codes worth a second ask; anything else is the API saying no.
+RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 DAILY = [
     "temperature_2m_max",
@@ -202,6 +217,15 @@ def _parse(stamp: str) -> dt.datetime:
 
 
 # --------------------------------------------------------------- fetching
+def _transient(exc: Exception) -> bool:
+    """Is this failure worth asking again about in a second or two?"""
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    response = getattr(exc, "response", None)
+    return (response is not None
+            and getattr(response, "status_code", None) in RETRY_STATUS)
+
+
 def _request(lat: float, lon: float, tz: str) -> dict:
     params = {
         "latitude": lat,
@@ -213,9 +237,26 @@ def _request(lat: float, lon: float, tz: str) -> dict:
         "timezone": tz,
         "forecast_days": 2,
     }
-    r = requests.get(API_URL, params=params, timeout=TIMEOUT)
-    r.raise_for_status()
-    return r.json()
+    deadline = time.monotonic() + BUDGET_SECONDS
+    for attempt in range(1, ATTEMPTS + 1):
+        remaining = deadline - time.monotonic()
+        try:
+            r = requests.get(API_URL, params=params,
+                             timeout=min(TIMEOUT, max(1.0, remaining)))
+            r.raise_for_status()
+            return r.json()
+        except requests.RequestException as exc:
+            pause = (BACKOFF_SECONDS[attempt - 1]
+                     if attempt - 1 < len(BACKOFF_SECONDS) else 0.0)
+            spent = attempt == ATTEMPTS
+            if spent or not _transient(exc):
+                raise
+            if time.monotonic() + pause >= deadline:  # no time left to try
+                raise
+            log.warning("open-meteo attempt %d of %d failed (%s); "
+                        "retrying in %.0fs", attempt, ATTEMPTS, exc, pause)
+            time.sleep(pause)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _build(payload: dict, day: dt.date) -> dict:

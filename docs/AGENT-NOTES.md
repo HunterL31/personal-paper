@@ -153,6 +153,15 @@ reasons and the traps. Add to it when you hit one.
 - Open-Meteo needs no key; the request is built with `forecast_days=2` so
   arrays are selected by ISO date, not index, which is what makes the
   `today=` test hook work.
+- **Open-Meteo answers a momentary 503** now and then, and the 6 a.m. run
+  gets only one shot at the forecast: a morning's ear box read "Forecast
+  unavailable" while the Sources tab's Check button, run by hand an hour
+  later, worked fine. `_request` therefore retries a transient failure
+  (connection error, timeout, or a code in `RETRY_STATUS`) up to `ATTEMPTS`
+  times with `BACKOFF_SECONDS` between tries, inside `BUDGET_SECONDS` (25),
+  which stays under `gather.TIMEOUT_SECONDS` (30) — that budget is the
+  thing to keep in mind if the attempts or the backoff ever grow. A 4xx is
+  the API saying no and is not retried.
 - Google Calendar's secret iCal address includes recurrences; declined
   events are detected by matching the attendee against `X-WR-CALNAME`.
 - Substack blocks default user agents; the fetcher sends a browser-like
