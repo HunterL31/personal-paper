@@ -69,6 +69,10 @@ settings), `state.json` (issue counter, seen posts), `lists/<name>.json`,
      stories the front page may hold, and the crossword's place and size.
      Check it on **Preview**.
 
+   **Theme** at the end of the tab row sets this page light or dark, or
+   leaves it to follow your phone or laptop. It is only this page: the
+   paper is printed black on white whatever you choose.
+
 With `docker compose` instead: copy `.env.example` to `.env`, fill it in,
 `docker compose up -d`.
 
@@ -346,3 +350,20 @@ square size and the most of the page it may fill.
 
 Changing any of it changes how much fits, never a word of an article. Judge
 it on the **Preview** tab before it hits paper.
+
+#### A list longer than the front page
+
+Your column is one flow. A long to-do list is not cut off at the foot of
+page 1: it runs on into a column of the same width on the back of the
+sheet, under its own heading again, with *Continued on Page 2* where it
+broke. It always breaks between two whole items, never inside one.
+
+Making that column costs the continued stories some width, so a very long
+list can mean one story fewer on the sheet — they carry the line saying
+where the rest of them is online, and your list does not.
+
+If even both columns cannot hold everything, the sheet says so rather than
+losing it quietly: the list ends with *"12 more, not printed"*, and any
+section that was pushed off entirely is named at the foot of the column.
+Sections fill in the order you set on this tab, so what you want most
+should be first.

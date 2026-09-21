@@ -82,6 +82,30 @@ reasons and the traps. Add to it when you hit one.
   the template and the web page's `/fonts.css`. Variable fonts are renamed
   `Name-var.ttf` because `[wght]` in a filename breaks URLs.
 
+### The rail (`layoutRail` and friends)
+
+- **The rail is fitted before the stories, and that order is load-bearing.**
+  A section that overruns page 1 continues into a column on page 2, which is
+  made on demand by wrapping `.cols` in `.page2-main`. That narrows the
+  continuations, so the article search has to run after it and not before.
+  `onePage()` lays the rail out again with `layoutRail(false)`, before
+  `fitFrontCrossword`, because the column decides how wide the story slot is.
+- Every pass rebuilds the rail from clones taken at script start (`RAIL_P1`,
+  `RAIL_P2`), the way the article search rebuilds page 1 from `pristine`.
+  Measuring a section while the ones below it are still in the column gives
+  the wrong answer: flex shrinks them.
+- Sections break between `li` and `tr`, so lists, the agenda and the hourly
+  table all run on; the notes box has no rows and moves whole or not at all.
+  `railFoot()` is what keeps the hourly table's sunrise line with the part
+  that carries its last row.
+- When nothing overflows, the rebuild is a no-op down to the pixel — which
+  is what keeps the default render byte-identical. Check it that way
+  (`md5sum` of the sample PNGs) after touching any of this.
+- `RenderResult.rail_dropped` is the one thing the sheet cannot show the
+  reader an "online" line for, so it is logged at WARNING. `railTally()`
+  counts from the finished page, not from the passes, so the report cannot
+  drift from the paper.
+
 ## Delivery and printing (`deliver/`)
 
 - **pyipp's serializer silently returns empty bytes for attribute names it
@@ -152,6 +176,22 @@ reasons and the traps. Add to it when you hit one.
   the Host header, then the container's LAN IP; `tasks_post_url` overrides.
 - The footer prints `Build <sha>` from `APP_BUILD`, set by the publish
   workflow. It is the fastest way to tell whether a container update took.
+- **Every colour on the page is a token on `:root`** (`--ink`, `--paper`,
+  `--grey`, ...), because `settings.web.theme` turns the whole page over at
+  once. A colour written straight into a rule stays light in the dark, and
+  that is exactly the bug nobody notices; `test_the_stylesheet_has_no_colour_outside_the_palette`
+  fails the build for it.
+- The dark palette is written twice on purpose — once under
+  `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])` and
+  once under `:root[data-theme="dark"]` — because plain CSS cannot share a
+  block between a media query and a selector. A test asserts the two agree.
+  `color-scheme: dark` is what makes the browser's own radios, checkboxes
+  and time pickers follow; without it they stay white.
+- The theme is server state (`settings.web`), not localStorage, so it is the
+  same on the phone and the laptop and `base.html` can put it on `<html>`
+  before the page paints — no flash of the wrong theme, and no script. The
+  switch is plain submit buttons and a `next` path, sanitised by `_own_path`
+  so a posted form cannot turn it into an open redirect.
 
 ## Deployment
 

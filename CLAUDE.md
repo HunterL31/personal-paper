@@ -42,6 +42,13 @@ the paper's name is whatever its one reader types on the Look tab
   `items: []` when the phone did not sync. Where each one goes is
   `look.layout.sections`, not the data.
 - `app/settings.py` is the settings contract. Extend it deliberately.
+  `settings.web` is the settings page's own furniture (the light/dark
+  theme); nothing under it may ever reach the sheet.
+- The reader's rail is one flow: page 1's column continues into a column of
+  the same width on page 2, made only when it is needed, and breaking only
+  between whole items. The continuations give up the width for it. What no
+  column can hold is said on the sheet and reported in
+  `RenderResult.rail_dropped` — an item is never quietly lost.
 - `DATA_DIR` env (default `/data`) is where state, settings, archive, logs live.
 - Each gatherer: `fetch(settings) -> <its part>` plus a `__main__` printing JSON.
 - Credentials for a source are container variables (`NYT_S` for the

@@ -359,10 +359,30 @@ class Output(BaseModel):
     notify_email: str = ""
 
 
+# ----------------------------------------------------------------- Web
+class Web(BaseModel):
+    """This page, not the paper.
+
+    The paper is black on white, always: `Look` says nothing about screens
+    and nothing here reaches the sheet. `theme` is how the settings page is
+    set for the reader's own eyes -- "auto" follows whatever the phone or
+    the laptop is already doing, which is what it ships as.
+    """
+    theme: Literal["auto", "light", "dark"] = "auto"
+
+
+#: What the theme switch calls each choice.
+THEMES = ["auto", "light", "dark"]
+THEME_LABELS = {"auto": "Auto", "light": "Light", "dark": "Dark"}
+
+
 class Settings(BaseModel):
     look: Look = Field(default_factory=Look)
     sources: Sources = Field(default_factory=Sources)
     output: Output = Field(default_factory=Output)
+    #: How this page is set. A settings file written before there was a
+    #: choice has no `web` key and gets "auto", which is the page as it was.
+    web: Web = Field(default_factory=Web)
 
     def sync_list_sections(self) -> None:
         """Keep `look.layout.sections` in step with `sources.lists`.

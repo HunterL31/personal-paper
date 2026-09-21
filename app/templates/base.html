@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -51,6 +51,18 @@
   {% for slug, label in tabs %}
     <a href="/{{ slug }}" class="{{ 'active' if tab == slug else '' }}">{{ label }}</a>
   {% endfor %}
+  {#- How this page is set, not how the paper is: it is printed black on
+      white whatever is chosen here. Plain buttons, so it works with no
+      script, and it sends her back to the tab she was reading. #}
+  <form class="theme" method="post" action="/theme">
+    <input type="hidden" name="next" value="{{ request.url.path }}">
+    <span class="note">Theme</span>
+    {%- for value, label in theme_choices %}
+    <button type="submit" name="theme" value="{{ value }}"
+            class="{{ 'on' if theme == value else '' }}"
+            {% if theme == value %}aria-current="true"{% endif %}>{{ label }}</button>
+    {%- endfor %}
+  </form>
 </nav>
 
 {% if saved %}<p class="flash">Saved.</p>{% endif %}

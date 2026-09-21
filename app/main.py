@@ -52,6 +52,8 @@ from app.settings import (  # noqa: E402
     RAIL_SIDE_LABELS,
     RAIL_SIDES,
     SLUG_RE,
+    THEME_LABELS,
+    THEMES,
     CalendarSource,
     EarBox,
     Env,
@@ -94,6 +96,9 @@ LIST_STYLES = [("checkbox", "Checkboxes"), ("plain", "Plain lines"), ("numbered"
 PLACE_CHOICES = [(place, PLACE_LABELS[place]) for place in PLACES]
 #: Which edge of the sheet the reader's column runs down.
 RAIL_SIDE_CHOICES = [(side, RAIL_SIDE_LABELS[side]) for side in RAIL_SIDES]
+#: How this page is set, as the switch in the tab row puts it. It is page
+#: furniture, not one of the paper's settings: nothing here is ever printed.
+THEME_CHOICES = [(name, THEME_LABELS[name]) for name in THEMES]
 #: Which container variables each tab shows as "set on the container / not set".
 ENV_ON_SOURCES = [*Env.IMAP, Env.TASKS_TOKEN, Env.NYT_S, Env.TZ]
 ENV_ON_OUTPUT = [*Env.SMTP]
@@ -199,12 +204,17 @@ def _status() -> dict[str, Any]:
 
 
 def page(request: Request, tab: str, template: str, **extra: Any) -> Response:
+    settings = Settings.load()
     context = {
         "request": request,
         "tab": tab,
         "tabs": TABS,
         # The paper's name is the reader's, set on the Look tab.
-        "paper_name": Settings.load().look.paper_name,
+        "paper_name": settings.look.paper_name,
+        # How this page is set for her eyes: "auto", "light" or "dark".
+        # The paper is black on white whatever this says.
+        "theme": settings.web.theme,
+        "theme_choices": THEME_CHOICES,
         "status": _status(),
         "saved": request.query_params.get("saved") == "1",
         # Which image this is: the commit the publish workflow built from,
@@ -397,6 +407,32 @@ def fonts_css() -> Response:
 
 
 # --------------------------------------------------------------- Look tab
+# --------------------------------------------------------- POST /theme
+#: Where the switch may send the reader back to: a path on this page and
+#: nothing else. "//host" and "https://host" are paths to the browser but
+#: addresses to everyone else, so they are refused rather than followed.
+def _own_path(raw: str, fallback: str = "/look") -> str:
+    path = (raw or "").strip()
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return fallback
+    return path
+
+
+@app.post("/theme")
+async def theme_post(request: Request) -> RedirectResponse:
+    """Set the page light, dark, or whatever the machine is already doing.
+
+    This is the settings page's own furniture: the paper is black on white
+    however it is set, and nothing here reaches the sheet.
+    """
+    form = await request.form()
+    settings = Settings.load()
+    settings.web.theme = one_of(form_text(form, "theme"), THEMES, settings.web.theme)
+    settings.save()
+    # Back where she was, so the switch never costs her the tab she was on.
+    return RedirectResponse(_own_path(form_text(form, "next")), status_code=303)
+
+
 def font_cards(choices: list[str], current: str) -> list[dict[str, Any]]:
     """One card per choice: its name, the stack it is set in, and whether
     it is the face the paper is set in now."""

@@ -185,6 +185,155 @@ def test_twelve_long_tasks(sample_data, tmp_path):
     _render(data, tmp_path, "tasks")
 
 
+# --------------------------------------------- a list longer than its column
+#: The rail is one flow: page 1's column, then a column of the same width on
+#: page 2. A list too long for the front is not cut off there -- it runs on,
+#: and what no column can hold is said on the sheet, never dropped in silence.
+def _with_todo(sample_data, n, word="Item"):
+    items = [f"{word} {i:03d} on the list" for i in range(n)]
+    lists = [dict(sample_data["lists"][0], items=items)] + sample_data["lists"][1:]
+    return _with(sample_data, lists=lists), items
+
+
+def _rail_items(html, where):
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    return [li.get_text() for li in soup.select(f"{where} .todo li")]
+
+
+def test_a_list_that_fits_page_one_stays_there(sample_data, tmp_path):
+    """The column on page 2 is made only when the flow needs it."""
+    from bs4 import BeautifulSoup
+
+    data, items = _with_todo(sample_data, 8)
+    result = _render(data, tmp_path, "short")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+
+    assert _rail_items(result.laid_out_html, "#page-1 .rail") == items
+    assert soup.select("#page-2 .page2-rail") == []
+    assert soup.select("#page-2 .page2-main") == []
+    assert result.rail_continued == {} and result.rail_dropped == {}
+    assert soup.select(".rail p.rail-jump") == [], "nothing of hers had to run on"
+    assert soup.select(".rail p.rail-more") == []
+
+
+def test_a_long_list_runs_on_into_a_column_on_page_two(sample_data, tmp_path):
+    """Every item is printed, in order, split at a whole item across the two."""
+    data, items = _with_todo(sample_data, 40)
+    result = _render(data, tmp_path, "long")
+
+    front = _rail_items(result.laid_out_html, "#page-1 .rail")
+    back = _rail_items(result.laid_out_html, "#page-2 .page2-rail")
+    assert front and back, "the list is set on both sides of the sheet"
+    assert front + back == items, "every item, in her order, not one reworded"
+    assert result.rail_continued["list:tasks"] == len(back)
+    assert "list:tasks" not in result.rail_dropped
+
+
+def test_the_two_parts_of_a_list_each_say_where_the_other_is(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    data, _ = _with_todo(sample_data, 40)
+    result = _render(data, tmp_path, "marks")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+
+    assert soup.select_one("#page-1 .rail .list-box p.rail-jump").get_text() == "Continued on Page 2"
+    back = soup.select_one("#page-2 .page2-rail .list-box")
+    assert back.select_one("h3").get_text() == "To do"      # its own heading again
+    assert back.select_one("p.rail-cont").get_text() == "Continued from Page 1"
+
+
+def test_the_column_on_page_two_narrows_the_continuations(sample_data, tmp_path):
+    """The stories give up the width: that is what the extra column costs."""
+    from bs4 import BeautifulSoup
+
+    def beside_a_column(result):
+        soup = BeautifulSoup(result.laid_out_html, "html.parser")
+        return soup.select_one("#page-2 .page2-main") is not None
+
+    short = _render(_with_todo(sample_data, 5)[0], tmp_path, "wide")
+    long = _render(_with_todo(sample_data, 40)[0], tmp_path, "narrow")
+
+    assert not beside_a_column(short), "page 2 is all continuations until it is not"
+    assert beside_a_column(long), "the continuations moved over to make room"
+    assert len(long.printed) <= len(short.printed)
+
+
+def test_what_no_column_can_hold_is_said_on_the_sheet(sample_data, tmp_path):
+    """A list longer than the whole sheet ends with its count, and the
+    sections it pushed off are named. Nothing disappears unsaid."""
+    from bs4 import BeautifulSoup
+
+    data, items = _with_todo(sample_data, 200)
+    result = _render(data, tmp_path, "toolong")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+
+    shown = (_rail_items(result.laid_out_html, "#page-1 .rail")
+             + _rail_items(result.laid_out_html, "#page-2 .page2-rail"))
+    assert shown == items[:len(shown)], "the leading items, in order"
+    assert result.rail_dropped["list:tasks"] == len(items) - len(shown)
+
+    more = [p.get_text() for p in soup.select(".rail p.rail-more")]
+    assert f"{len(items) - len(shown)} more, not printed" in more
+    left_out = {"Hour by hour": "hourly", "Notes": "notes"}
+    named = " ".join(m for m in more if m.startswith("Not printed:"))
+    for label, key in left_out.items():
+        if key in result.rail_dropped:
+            assert label in named, (label, more)
+
+
+def test_a_one_page_morning_has_no_column_to_run_on_to(sample_data, tmp_path):
+    """No stories means no page 2: the flow ends on the front with its count,
+    and the items that are printed are still the author's, in her order."""
+    from bs4 import BeautifulSoup
+
+    data, items = _with_todo(sample_data, 60)
+    data["articles"] = []
+    result = _render(data, tmp_path, "oneside")
+
+    assert result.pages == 1
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+    assert soup.select_one("#page-2") is None
+    shown = _rail_items(result.laid_out_html, "#page-1 .rail")
+    assert shown == items[:len(shown)]
+    assert result.rail_continued == {}, "there is no page 2 to continue on to"
+    assert result.rail_dropped["list:tasks"] == len(items) - len(shown)
+    assert soup.select_one("#page-1 .rail p.rail-more") is not None
+
+
+def test_a_long_list_the_reader_put_on_page_two_stays_there(sample_data, tmp_path):
+    """A section placed on page 2 has no further column: it ends with a count
+    rather than climbing back onto the front."""
+    data, items = _with_todo(sample_data, 60)
+    look = {"layout": {"sections": [
+        {"key": "agenda", "place": "rail"},
+        {"key": "list:tasks", "place": "page2"},
+    ]}}
+    result = render(data, look, tmp_path / "p2list")
+    assert_verbatim(result, data["articles"])
+
+    assert _rail_items(result.laid_out_html, "#page-1 .rail") == []
+    back = _rail_items(result.laid_out_html, "#page-2 .page2-rail")
+    assert back == items[:len(back)] and back, "as many as its column holds"
+    assert result.rail_dropped["list:tasks"] == len(items) - len(back)
+
+
+def test_the_hourly_table_breaks_between_its_rows(sample_data, tmp_path):
+    """Not only lists: any section of the rail runs on at a whole row."""
+    from bs4 import BeautifulSoup
+
+    data, _ = _with_todo(sample_data, 26)
+    data["weather"] = dict(sample_data["weather"],
+                           hourly=(sample_data["weather"]["hourly"] * 4)[:16])
+    result = _render(data, tmp_path, "hours")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+
+    rows = soup.select("#page-1 .rail .hourly tr") + soup.select("#page-2 .page2-rail .hourly tr")
+    given = [f"{h['time']}{h['sky']}{h['temp']}\u00b0" for h in data["weather"]["hourly"]]
+    assert [r.get_text() for r in rows] == given[:len(rows)]
+
+
 def test_a_data_file_from_before_the_lists_still_renders(sample_data, tmp_path):
     """An archived data.json has one list, under `tasks`. It is "To do"."""
     from bs4 import BeautifulSoup

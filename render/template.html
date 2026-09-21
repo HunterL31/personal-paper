@@ -163,7 +163,7 @@
 {# One section of the reader's own day, wherever it was placed. #}
 {% macro rail_section(sec) %}
     {%- if sec.key == 'agenda' %}
-      <section class="agenda-box">
+      <section class="agenda-box" data-key="{{ sec.key }}">
         <h3>Today</h3>
         <ul class="agenda">
           {% for e in events %}
@@ -172,7 +172,7 @@
         </ul>
       </section>
     {%- elif sec.key == 'hourly' %}
-      <section class="hourly-box">
+      <section class="hourly-box" data-key="{{ sec.key }}">
         <h3>Hour by hour</h3>
         <table class="hourly">
           {% for h in weather.hourly %}<tr><td>{{ h.time }}</td><td class="sky">{{ h.sky }}</td><td class="temp">{{ h.temp }}°</td></tr>{% endfor %}
@@ -180,13 +180,13 @@
         <p class="sun">Sunrise {{ weather.sunrise }}, sunset {{ weather.sunset }}</p>
       </section>
     {%- elif sec.key == 'notes' %}
-      <section class="notes">
+      <section class="notes" data-key="{{ sec.key }}">
         <h3>Notes</h3>
         <div class="lines"></div>
       </section>
     {%- elif sec.data %}
       {%- set style = sec.data['style'] | default('checkbox', true) %}
-      <section class="list-box">
+      <section class="list-box" data-key="{{ sec.key }}">
         <h3>{{ sec.data['name'] | default('List', true) }}</h3>
         <ul class="todo">
           {% for item in sec.data['items'] | default([], true) %}<li>{% if style == 'numbered' %}<span class="num">{{ loop.index }}.</span>{% elif style != 'plain' %}<span class="box"></span>{% endif %}<span>{{ item }}</span></li>{% endfor %}
@@ -403,6 +403,16 @@
   .hourly td.temp { text-align: right; font-family: var(--head); font-weight: bold; white-space: nowrap; }
   .hourly td.sky { text-align: right; font-style: italic; }
   .sun { font-size: var(--rail-small); margin: 0.06in 0 0; }
+  /* A section of the rail that runs on. `rail-jump` ends the part printed
+     here, `rail-cont` opens the part that carries the rest, and `rail-more`
+     is the line that closes the flow when there is no column left to run
+     into. All three are the paper's own words, set like the stories' jump
+     lines: nothing they say changes an item. */
+  .rail p.rail-jump, .rail p.rail-more {
+    font-size: var(--rail-small); font-style: italic; text-align: right;
+    margin: 0.05in 0 0;
+  }
+  .rail p.rail-cont { font-size: var(--rail-small); font-style: italic; margin: 0 0 0.05in; }
 
   /* The same column on page 2, beside the continuations. Its notes block is
      a fixed depth there: page 2 has no spare height to give away, and the
@@ -667,6 +677,10 @@
 
   A paragraph is never reworded, never shortened and never split, except by
   that one front-page break, which continues verbatim on page 2.
+
+  The reader's own rail is fitted the same way and before the stories, since
+  the column it may claim on page 2 is width the continuations then do not
+  have: see `layoutRail`.
 */
 (function () {
   const rect = el => el.getBoundingClientRect();
@@ -831,29 +845,196 @@
     function measure() { window.__crosswordHeightIn = rect(xw).height / PX_PER_IN; }
   }
 
+  // ---- The reader's rail ----
+  // The rail is one flow down the sheet: page 1's column first and then, when
+  // it holds more of her day than the page does, a column of the same width on
+  // page 2 beside the continuations, made only when the flow needs it. A
+  // section that straddles the break is printed as far as its last whole item
+  // that fits and runs on under its own heading; page 2 gives up the width,
+  // which is what printing as much of her day as will go on the sheet costs
+  // the stories. No item is ever reworded, shortened or split, and none is
+  // dropped while there is a column left to put it in.
+  //
+  // On a one-page morning there is no second column. The flow then ends with a
+  // line saying how much was left off, because the one thing worse than a
+  // short list is a list that lost something without saying so.
+  const RAIL_LEFT = !!document.querySelector('.front-grid.rail-left');
+  //: What ends the part of a section printed in a column: the pointer to the
+  //: next column, or -- when this is the last column there is -- the count of
+  //: the rows that no column had room for.
+  const railEnd = (last, left) => last
+    ? el('p', 'rail-more', left + ' more, not printed')
+    : el('p', 'rail-jump', 'Continued on Page 2');
+
+  function railClones(sel) {
+    const rail = document.querySelector(sel);
+    return rail ? Array.from(rail.children).map(s => s.cloneNode(true)) : [];
+  }
+  //: The sections as the server set them, kept out of the document so that
+  //: every rail pass is measured from the same untouched column.
+  const RAIL_P1 = railClones('#page-1 .rail');
+  const RAIL_P2 = railClones('#page-2 .page2-rail');
+
+  const railKey = sec => sec.dataset.key || '';
+  const railName = sec => (sec.querySelector('h3') || {}).textContent || '';
+  //: The rows a section may be broken between. The notes block has none, so it
+  //: moves whole or not at all.
+  const railItems = sec => Array.from(sec.querySelectorAll('li, tr'));
+  const railFits = (sec, box) => !spills(sec, box) && !outside(sec, box);
+
+  //: Whatever follows the rows closes the section -- the hourly table's
+  //: sunrise line -- so it travels with the row that ends it.
+  function railFoot(sec) {
+    const items = railItems(sec);
+    if (!items.length) return [];
+    let holder = items[items.length - 1];
+    while (holder.parentNode && holder.parentNode !== sec) holder = holder.parentNode;
+    const after = [];
+    for (let n = holder.nextElementSibling; n; n = n.nextElementSibling) after.push(n);
+    return after;
+  }
+
+  // The section broken after its first `n` rows: the part printed here, ended
+  // by the line that says where the rest of it is, and the part that runs on,
+  // under its own heading again. Both are cut from the untouched section, so
+  // no markup is ever rebuilt by hand.
+  function railSplit(sec, n, last) {
+    const head = sec.cloneNode(true), tail = sec.cloneNode(true);
+    const left = railItems(sec).length - n;
+    railItems(head).slice(n).forEach(x => x.remove());
+    railFoot(head).forEach(x => x.remove());          // it closes the other part
+    railItems(tail).slice(0, n).forEach(x => x.remove());
+    head.appendChild(railEnd(last, left));
+    const cont = el('p', 'rail-cont', 'Continued from Page 1');
+    const h3 = tail.querySelector('h3');
+    if (h3) h3.insertAdjacentElement('afterend', cont);
+    else tail.insertBefore(cont, tail.firstChild);
+    return { head, tail, left };
+  }
+
+  // The most leading rows of `sec` that the rest of `rail` holds with that
+  // line after them (binary search, as the stories use). 0 when not even one
+  // row fits, and the whole section moves on instead.
+  function railMost(rail, sec, last) {
+    let lo = 0, hi = railItems(sec).length - 1;       // the whole of it just failed
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      const { head } = railSplit(sec, mid, last);
+      rail.appendChild(head);
+      const ok = railFits(head, rail);
+      head.remove();
+      if (ok) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  }
+
+  // Fill one column with `queue`, in the reader's own order. `last` says there
+  // is no further column, so the section that straddles the foot is closed
+  // with its count instead of a pointer. Returns the sections the column could
+  // not hold: the remainder of the one that was broken, then the rest
+  // untouched -- and, when `last`, only the ones that never got in at all.
+  function railFill(rail, queue, last) {
+    rail.textContent = '';
+    for (let i = 0; i < queue.length; i++) {
+      const sec = queue[i];
+      const whole = sec.cloneNode(true);
+      rail.appendChild(whole);
+      if (railFits(whole, rail)) continue;            // it fits as it is
+      whole.remove();
+      const n = railItems(sec).length > 1 ? railMost(rail, sec, last) : 0;
+      if (!n) return queue.slice(i);                  // no room for any of it
+      const { head, tail } = railSplit(sec, n, last);
+      rail.appendChild(head);
+      return last ? queue.slice(i + 1) : [tail, ...queue.slice(i + 1)];
+    }
+    return [];
+  }
+
+  // The column on page 1. It is made here only on a one-page morning that
+  // hands the rail the sections page 2 would have held, when there was no
+  // column on the front before.
+  function railOne(need) {
+    const grid = document.querySelector('#page-1 .front-grid');
+    let rail = grid.querySelector('.rail');
+    if (rail || !need) return rail;
+    rail = el('aside', 'rail');
+    // It goes on the side the reader chose, which for a left rail means before
+    // the stories, not after them.
+    grid.insertBefore(rail, RAIL_LEFT ? grid.firstChild : null);
+    grid.style.gridTemplateColumns = '';              // the template set one column
+    return rail;
+  }
+
+  // The column on page 2, made when the flow needs it: the continuations move
+  // into a row beside it, and that is what narrows them.
+  function railTwo(need) {
+    const page2 = document.getElementById('page-2');
+    if (!page2) return null;
+    let rail = page2.querySelector('.page2-rail');
+    if (rail || !need) return rail;
+    let main = page2.querySelector('.page2-main');
+    if (!main) {
+      main = el('div', 'page2-main' + (RAIL_LEFT ? ' rail-left' : ''));
+      cols.replaceWith(main);
+      main.appendChild(cols);
+    }
+    rail = el('aside', 'rail page2-rail');
+    main.insertBefore(rail, RAIL_LEFT ? main.firstChild : null);
+    return rail;
+  }
+
+  // Set the whole rail, from the untouched sections. `hasPage2` says whether
+  // there is a back of the sheet to run on to; on a morning with no stories
+  // there is not, and the sections the reader put on page 2 join the flow on
+  // the front instead, in their own order after it.
+  function layoutRail(hasPage2) {
+    const clone = s => s.cloneNode(true);
+    let queue = RAIL_P1.map(clone);
+    if (!hasPage2) queue = queue.concat(RAIL_P2.map(clone));
+
+    let last = railOne(queue.length > 0);
+    let over = last ? railFill(last, queue, !hasPage2) : queue;
+    if (hasPage2) {
+      queue = over.concat(RAIL_P2.map(clone));
+      const two = railTwo(queue.length > 0);
+      over = two ? railFill(two, queue, true) : queue;
+      if (two) last = two;
+    }
+    // A section that never reached the sheet is named at the foot of the last
+    // column: the reader must never be left wondering what she is not seeing.
+    const names = over.map(railName).filter(Boolean);
+    if (last && names.length)
+      last.appendChild(el('p', 'rail-more', 'Not printed: ' + names.join(', ')));
+  }
+
+  // What the columns ended up carrying, counted from the sheet itself rather
+  // than from the passes, so the report cannot drift from the paper:
+  // `{key: rows}` for what ran on to page 2 and for what is not there at all.
+  function railTally() {
+    const given = {}, shown = {}, continued = {}, dropped = {};
+    for (const sec of [...RAIL_P1, ...RAIL_P2]) given[railKey(sec)] = railItems(sec).length;
+    for (const sec of document.querySelectorAll('.rail > section'))
+      shown[railKey(sec)] = (shown[railKey(sec)] || 0) + railItems(sec).length;
+    for (const sec of document.querySelectorAll('#page-2 .page2-rail > section'))
+      continued[railKey(sec)] = (continued[railKey(sec)] || 0) + railItems(sec).length;
+    for (const key in given)
+      if (!(key in shown)) dropped[key] = given[key];
+      else if (given[key] > shown[key]) dropped[key] = given[key] - shown[key];
+    return { continued, dropped };
+  }
+
   // ---- A morning with no stories ----
   // Nothing was printed, so nothing is continued and page 2 has no work to
-  // do: the paper is a single page. The sections the reader put on page 2
-  // join the rail, in their own order after it, and the crossword -- if
-  // there is one -- is set where the lead would have been, in place of the
-  // "No new stories this morning." line.
+  // do: the paper is a single page. The rail is set again for the one page
+  // there is -- the sections the reader put on page 2 join it, in their own
+  // order after it -- and the crossword, if there is one, goes where the lead
+  // would have been, in place of the "No new stories this morning." line.
   function onePage() {
     const page2 = document.getElementById('page-2');
     const slot = front();
 
-    const p2rail = page2 && page2.querySelector('.page2-rail');
-    if (p2rail && p2rail.firstElementChild) {
-      let rail = document.querySelector('#page-1 .rail');
-      if (!rail) {                                       // the rail was empty
-        const grid = document.querySelector('#page-1 .front-grid');
-        rail = el('aside', 'rail');
-        // It goes on the side the reader chose, which for a left rail means
-        // before the stories, not after them.
-        grid.insertBefore(rail, grid.classList.contains('rail-left') ? grid.firstChild : null);
-        grid.style.gridTemplateColumns = '';
-      }
-      while (p2rail.firstChild) rail.appendChild(p2rail.firstChild);
-    }
+    // Before the crossword: the column decides how wide the story slot is.
+    layoutRail(false);
 
     const xw = document.getElementById('xword');
     if (xw) {
@@ -1011,6 +1192,9 @@
   function run() {
     fitEars();
     fitCrossword();
+    // Her day first: a column on page 2 narrows the continuations, so the
+    // stories have to be fitted around it and not the other way about.
+    layoutRail(true);
 
     let printed = 0, partial = null;
     for (let k = TOTAL; k >= 1; k--) {
@@ -1042,6 +1226,9 @@
     window.__printed = Array.from({ length: printed }, (_, i) => i);
     //: {index: paragraphs printed} for the one partial article, or {}.
     window.__partial = partial ? { [partial.index]: partial.paras } : {};
+    //: What her own columns carried: `{key: rows}` for the sections that ran
+    //: on to page 2, and for the rows no column had room for.
+    window.__rail = railTally();
     //: 2, or 1 on a morning with no stories, when page 2 has been removed.
     window.__pages = document.querySelectorAll('.page').length;
     window.__layoutDone = true;

@@ -1575,3 +1575,93 @@ def test_the_look_further_back_option_saves(client):
     client.post("/sources", auth=AUTH, data={"article_max_age_days": "7"})
     assert Settings.load().sources.extend_window_when_empty is False
     assert "Look further back" in client.get("/sources", auth=AUTH).text
+
+
+# ---------------------------------------------------------- the theme switch
+#: How the settings page is set for the reader's own eyes. It is this page's
+#: furniture and nothing else: the paper is black on white whatever it says.
+def test_the_page_ships_following_the_machine(client):
+    assert Settings().web.theme == "auto"
+    assert 'data-theme="auto"' in client.get("/look", auth=AUTH).text
+
+
+def test_the_switch_sets_the_theme_and_comes_back_to_the_tab(client):
+    r = client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/sources"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/sources"
+    assert Settings.load().web.theme == "dark"
+
+
+@pytest.mark.parametrize("tab", ["look", "layout", "sources", "output", "preview", "log"])
+def test_every_tab_is_set_the_way_she_chose(client, tab):
+    client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/look"})
+    html = client.get(f"/{tab}", auth=AUTH).text
+    assert 'data-theme="dark"' in html
+    # ... and the switch says which one is on, for a reader who cannot see it
+    assert 'aria-current="true"' in html
+
+
+def test_a_theme_the_page_does_not_know_changes_nothing(client):
+    client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/look"})
+    client.post("/theme", auth=AUTH, data={"theme": "chartreuse", "next": "/look"})
+    assert Settings.load().web.theme == "dark"
+
+
+@pytest.mark.parametrize("nowhere", ["//elsewhere.example", "https://elsewhere.example/x",
+                                     "", "javascript:alert(1)"])
+def test_the_switch_only_ever_sends_her_back_to_this_page(client, nowhere):
+    """`next` comes off a form, so it is treated as somebody else's idea."""
+    r = client.post("/theme", auth=AUTH, data={"theme": "light", "next": nowhere},
+                    follow_redirects=False)
+    assert r.headers["location"] == "/look"
+
+
+def test_the_theme_is_not_a_setting_of_the_paper(client):
+    """Saving a tab leaves it alone, and it never reaches the Look."""
+    client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/look"})
+    client.post("/look", auth=AUTH, data={"paper_name": "The Morning"})
+    settings = Settings.load()
+    assert settings.web.theme == "dark"
+    assert settings.look.paper_name == "The Morning"
+    assert "theme" not in settings.look.model_dump()
+
+
+def test_a_settings_file_written_before_there_was_a_choice(client, data_dir):
+    """No `web` key means the page as it was: whatever the machine is doing."""
+    path = Settings.path()
+    written = json.loads(path.read_text()) if path.exists() else {}
+    written.pop("web", None)
+    path.write_text(json.dumps(written))
+    assert Settings.load().web.theme == "auto"
+    assert 'data-theme="auto"' in client.get("/look", auth=AUTH).text
+
+
+#: The palette itself. The page is styled from tokens so that the whole of
+#: it turns over at once; a colour written straight into a rule would stay
+#: light in the dark, which is the one way this quietly breaks.
+def test_the_stylesheet_has_no_colour_outside_the_palette():
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    palette, rest = css.split("* { box-sizing: border-box; }", 1)
+    stray = re.findall(r"(?<![\w-])#[0-9a-fA-F]{3,8}\b", rest)
+    assert stray == [], f"colours set outside the palette: {stray}"
+    # Both ways in: the machine's preference, and the reader overruling it.
+    assert '@media (prefers-color-scheme: dark)' in palette
+    assert ':root:not([data-theme="light"])' in palette, "light must beat the machine"
+    assert ':root[data-theme="dark"]' in palette, "dark must beat the machine too"
+    assert "color-scheme: dark" in palette, "so the browser's own controls follow"
+
+
+def test_the_two_dark_blocks_are_the_same_palette():
+    """They are written twice because CSS cannot share them; they must agree."""
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    blocks = re.findall(r"color-scheme: dark;(.*?)\n\s*\}", css, re.S)
+    assert len(blocks) == 2, "one for the media query, one for the reader's choice"
+    tokens = [dict(re.findall(r"(--[\w-]+):\s*([^;]+);", b)) for b in blocks]
+    assert tokens[0] == tokens[1]
+    assert tokens[0], "the dark blocks actually set something"
