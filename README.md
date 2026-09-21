@@ -177,7 +177,8 @@ the first morning.
 3. Paste it into a calendar row on the Sources tab and press Check. It
    shows the calendar's name and today's event count. Save.
 4. Repeat for each calendar that should appear in the rail. Events are
-   merged and sorted, all-day first.
+   merged and sorted, all-day first. On a day with nothing on any of
+   them, the section reads "No events today" under its heading.
 
 Declined invitations and cancelled events are left out. Times are shown
 without a.m./p.m. because the order makes it obvious. If a recurring

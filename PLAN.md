@@ -106,7 +106,9 @@ Read that file first; it is the contract. Notes per field:
 - `paper.date`: `"Wednesday, September 16, 2026"` (full weekday and month).
 - `events[]`: `time` is a display string — `"All day"` or a bare clock time
   like `"9:30"` / `"3:00"` (order makes a.m./p.m. obvious; the rail column is
-  narrow). `where` is optional.
+  narrow). `where` is optional. An empty list is a day with nothing on it:
+  the template prints "No events today" under the section's heading rather
+  than a heading over nothing.
 - `lists[]`: one entry per list configured on the Sources tab, in that
   order: `{"name", "slug", "style", "items"}`, `style` one of `checkbox`,
   `plain`, `numbered`, `items` plain strings — `[]` on a morning the phone

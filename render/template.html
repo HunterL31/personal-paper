@@ -165,11 +165,20 @@
     {%- if sec.key == 'agenda' %}
       <section class="agenda-box" data-key="{{ sec.key }}">
         <h3>Today</h3>
+        {% if events %}
         <ul class="agenda">
           {% for e in events %}
           <li><span class="t">{{ e.time }}</span><span>{{ e.title }}{% if e.where %}<span class="where">{{ e.where }}</span>{% endif %}</span></li>
           {% endfor %}
         </ul>
+        {% else %}
+        {# A day with nothing on it says so, in the paper's own voice, rather
+           than leaving a heading over a blank. It is a line and not a row: the
+           rail counts rows (`li`, `tr`) when a section runs on or is left off,
+           and a day with no events has none to count, so the section moves
+           whole, the way the notes block does. #}
+        <p class="agenda-none">No events today</p>
+        {% endif %}
       </section>
     {%- elif sec.key == 'hourly' %}
       <section class="hourly-box" data-key="{{ sec.key }}">
@@ -393,6 +402,9 @@
   .agenda li { display: grid; grid-template-columns: 0.48in 1fr; column-gap: 0.05in; }
   .agenda .t { font-family: var(--head); font-weight: bold; font-variant-numeric: tabular-nums; }
   .agenda .where { display: block; font-size: var(--rail-small); font-style: italic; }
+  /* The agenda on a day with nothing on it: one line where the rows would be,
+     set in the rows' size and the italic the rail's own words are set in. */
+  .rail p.agenda-none { font-size: var(--rail-text); font-style: italic; line-height: 1.25; margin: 0.04in 0 0; }
   .todo li { display: flex; gap: 0.07in; align-items: flex-start; }
   .todo .box { flex: 0 0 auto; width: 0.11in; height: 0.11in; border: 1px solid #000; margin-top: 0.012in; }
   /* A numbered list counts in the headline face; a plain one has no marker

@@ -173,9 +173,32 @@ def test_headings_blockquotes_and_lists_as_paragraphs(sample_data, tmp_path):
 
 @pytest.mark.parametrize("n", [0, 15])
 def test_event_counts(sample_data, tmp_path, n):
+    from bs4 import BeautifulSoup
+
     events = (sample_data["events"] * 3)[:n]
     data = _with(sample_data, events=events)
-    _render(data, tmp_path, f"ev{n}")
+    result = _render(data, tmp_path, f"ev{n}")
+    # A day with nothing on it says so under its heading; a day with events
+    # on it does not.
+    box = BeautifulSoup(result.laid_out_html, "html.parser").select_one("#page-1 .rail .agenda-box")
+    assert ("No events today" in box.get_text()) == (n == 0)
+    if n == 0:
+        assert box.select("li") == []
+        assert box.get_text(" ", strip=True) == "Today No events today"
+        # The line is not a row: nothing was left off, so nothing is reported.
+        assert "agenda" not in result.rail_dropped
+
+
+def test_a_day_with_no_events_says_so_wherever_the_agenda_goes(sample_data, tmp_path):
+    from bs4 import BeautifulSoup
+
+    data = _with(sample_data, events=[])
+    look = {"layout": {"sections": [{"key": "agenda", "place": "page2"}]}}
+    result = render(data, look, tmp_path / "noev-p2")
+    assert_verbatim(result, data["articles"])
+    box = BeautifulSoup(result.laid_out_html, "html.parser").select_one("#page-2 .page2-rail .agenda-box")
+    assert box is not None and box.get_text(" ", strip=True) == "Today No events today"
+    assert "agenda" not in result.rail_dropped
 
 
 def test_twelve_long_tasks(sample_data, tmp_path):
@@ -431,6 +454,7 @@ def test_empty_paper(tmp_path):
     assert result.pages == 1
     assert 'id="page-2"' not in result.laid_out_html   # nothing to print on the back
     assert "No new stories this morning." in result.laid_out_html
+    assert "No events today" in result.laid_out_html
 
 
 def test_a_lone_lead_fills_the_front_page(tmp_path, sample_data):

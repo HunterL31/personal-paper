@@ -98,6 +98,11 @@ reasons and the traps. Add to it when you hit one.
   table all run on; the notes box has no rows and moves whole or not at all.
   `railFoot()` is what keeps the hourly table's sunrise line with the part
   that carries its last row.
+- The agenda on a day with no events prints one line, `p.agenda-none`
+  ("No events today"), and not an `li`: `railItems` counts `li` and `tr`,
+  so a row-shaped line would be tallied as an event given, shown or
+  dropped. With no rows the section moves whole, like the notes block, and
+  one that found no column reports `agenda: 0` in `rail_dropped`.
 - When nothing overflows, the rebuild is a no-op down to the pixel — which
   is what keeps the default render byte-identical. Check it that way
   (`md5sum` of the sample PNGs) after touching any of this.
