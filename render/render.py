@@ -86,6 +86,7 @@ _FALLBACK_LOOK: dict[str, Any] = {
         "crossword_place": "bottom",
         "crossword_cell_in": 0.19,
         "crossword_max_pct": 55,
+        "pictures": False,
     },
 }
 
@@ -218,7 +219,8 @@ class RenderResult:
     #: 2, the front of the sheet and its back -- or 1 on a morning with no
     #: articles to print, when there is nothing to continue onto page 2 and
     #: the paper is the front alone.  `pages == 1` exactly when `printed`
-    #: is empty.
+    #: is empty.  With the picture sheet on (`look.layout.pictures`) and a
+    #: printed story that has a picture, `picture_pages` (1 or 2) more.
     pages: int
     #: Indices into `data["articles"]` of the articles that were printed, in
     #: the order they were given: the whole ones and, last, the partial one
@@ -237,6 +239,15 @@ class RenderResult:
     #: the notes block -- and was left off whole.
     rail_continued: dict[str, int] = field(default_factory=dict)
     rail_dropped: dict[str, int] = field(default_factory=dict)
+    #: The picture sheet: how many pages it took (0 when it was not asked
+    #: for, or no printed story had a picture), which pictures are on it as
+    #: `(article index, picture index)` in the order they are numbered, and
+    #: which pictures of the printed stories it could not hold. A picture is
+    #: never on the sheet without its line in the story, nor the line
+    #: without the picture.
+    picture_pages: int = 0
+    pictures: list[tuple[int, int]] = field(default_factory=list)
+    pictures_dropped: list[tuple[int, int]] = field(default_factory=list)
     pngs: list[Path] = field(default_factory=list)
     #: `document.documentElement.outerHTML` after the fitting script ran, i.e.
     #: the pages as they were printed.  The verbatim test parses this.
@@ -276,7 +287,59 @@ def _look_dict(look: "Look | dict | None") -> dict[str, Any]:
     return merged
 
 
-def build_html(data: dict, look: "Look | dict | None" = None, *, font_dir: str | None = None) -> str:
+def picture_key(key: Any) -> tuple[int, int]:
+    """"0:2" -> (0, 2): the article's index and the picture's within it."""
+    a, _, i = str(key).partition(":")
+    return int(a), int(i)
+
+
+def pictures_for(articles: list, look: dict[str, Any], image_dir: Path | str | None) -> list[dict[str, Any]]:
+    """The pictures the template may set, one per fetched picture of every
+    article, in article order -- or none at all when the reader has not
+    switched the picture sheet on.
+
+    Each is `{key, article, after, src, caption, title}`; `key` is
+    `"<article>:<picture>"`. A picture's `file` is relative to `image_dir`
+    (the folder its data.json is in; the `render/` folder for the sample
+    issue) unless it is absolute. One whose file is not there is left out
+    with a warning, and the story then carries no line for it: a replay of
+    a day whose pictures were cleaned up is still a paper.
+    """
+    if not (look.get("layout") or {}).get("pictures"):
+        return []
+    base = Path(image_dir) if image_dir is not None else HERE
+    out: list[dict[str, Any]] = []
+    for a_index, article in enumerate(articles or []):
+        if not isinstance(article, dict):
+            continue
+        for i_index, image in enumerate(article.get("images") or []):
+            file = image.get("file") if isinstance(image, dict) else None
+            if not file:
+                continue
+            path = Path(str(file))
+            if not path.is_absolute():
+                path = base / path
+            if not path.is_file():
+                log.warning("picture %d of article %d is not on disk (%s); not printed",
+                            i_index + 1, a_index, path)
+                continue
+            try:
+                after = max(0, int(image.get("after") or 0))
+            except (TypeError, ValueError):
+                after = 0
+            out.append({
+                "key": f"{a_index}:{i_index}",
+                "article": a_index,
+                "after": after,
+                "src": path.resolve().as_uri(),
+                "caption": str(image.get("caption") or ""),
+                "title": str(article.get("title") or ""),
+            })
+    return out
+
+
+def build_html(data: dict, look: "Look | dict | None" = None, *,
+               font_dir: str | None = None, image_dir: Path | str | None = None) -> str:
     """Render the Jinja2 template (no browser involved)."""
     env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape(["html"]))
     env.filters["hyphenate"] = hyphenate
@@ -298,6 +361,8 @@ def build_html(data: dict, look: "Look | dict | None" = None, *, font_dir: str |
         ctx["lists"] = [{"name": "To do", "slug": "tasks", "style": "checkbox",
                          "items": list(ctx["tasks"])}]
     ctx.setdefault("lists", [])
+    full_look = _look_dict(look)
+    ctx["pictures"] = pictures_for(ctx["articles"], full_look, image_dir)
     return env.get_template("template.html").render(
         font_dir=font_dir if font_dir is not None else FONT_DIR.as_uri(),
         # The faces, from render/fontlist.py: `font_faces` is what the
@@ -305,7 +370,7 @@ def build_html(data: dict, look: "Look | dict | None" = None, *, font_dir: str |
         # set in. The Look tab's picker is served the same table.
         font_faces=FONT_FILES,
         FONTS=STACKS,
-        look=_look_dict(look),
+        look=full_look,
         **ctx,
     )
 
@@ -336,26 +401,30 @@ def render(
     *,
     png: bool = False,
     browser: Any = None,
+    image_dir: Path | str | None = None,
 ) -> RenderResult:
     """Lay the paper out in Chromium and write `paper.html` and `paper.pdf`.
 
     `look` is an `app.settings.Look` (or a plain dict, or None for defaults).
     `browser` lets a caller reuse one Playwright browser across renders; when
-    it is None a browser is launched and closed for this render.
+    it is None a browser is launched and closed for this render. `image_dir`
+    is the folder a picture's relative `file` is under (see `pictures_for`);
+    the `render/` folder, where the sample issue's are, when it is None.
 
-    The paper is two pages, or one when no article reached the sheet;
+    The paper is two pages, or one when no article reached the sheet, with
+    the picture sheet's page or two after them when the reader asked for it;
     anything else is a bug in the template, not a layout the caller could
     recover from, so it raises.
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    html = build_html(data, look)
+    html = build_html(data, look, image_dir=image_dir)
     html_path = out / "paper.html"
     html_path.write_text(html)
     pdf_path = out / "paper.pdf"
 
-    def _do(br) -> tuple[int, list[int], dict[int, int], dict[str, dict[str, int]], str]:
+    def _do(br) -> tuple[int, list[int], dict[int, int], dict[str, dict[str, int]], dict[str, Any], str]:
         page = br.new_page()
         try:
             page.emulate_media(media="print")     # measure in the same mode we print in
@@ -365,36 +434,46 @@ def render(
             printed = page.evaluate("window.__printed")
             partial = page.evaluate("window.__partial") or {}
             rail = page.evaluate("window.__rail") or {}
+            pics = page.evaluate("window.__pictures") or {}
             laid_out = page.evaluate("document.documentElement.outerHTML")
             page.pdf(path=str(pdf_path), prefer_css_page_size=True, print_background=True)
             return (int(n), [int(i) for i in printed],
                     {int(k): int(v) for k, v in dict(partial).items()},
                     {part: {str(k): int(v) for k, v in dict(rail.get(part) or {}).items()}
                      for part in ("continued", "dropped")},
+                    {"pages": int(pics.get("pages") or 0),
+                     "printed": [picture_key(k) for k in (pics.get("printed") or [])],
+                     "dropped": [picture_key(k) for k in (pics.get("dropped") or [])]},
                     laid_out)
         finally:
             page.close()
 
     if browser is not None:
-        pages, printed, partial, rail, laid_out_html = _do(browser)
+        pages, printed, partial, rail, pics, laid_out_html = _do(browser)
     else:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
             br = _launch(p)
             try:
-                pages, printed, partial, rail, laid_out_html = _do(br)
+                pages, printed, partial, rail, pics, laid_out_html = _do(br)
             finally:
                 br.close()
 
-    if pages not in (1, 2):
-        raise AssertionError(f"the paper is one sheet: expected 1 or 2 pages, laid out {pages}")
+    # The sheet, then the picture sheet: nothing else is ever laid out.
+    sheet = pages - pics["pages"]
+    if sheet not in (1, 2) or pics["pages"] > 2:
+        raise AssertionError(f"the paper is one sheet and at most one more of pictures: "
+                             f"expected 1 or 2 pages plus 0-2, laid out {pages} "
+                             f"({pics['pages']} of pictures)")
+    if bool(pics["pages"]) != bool(pics["printed"]):
+        raise AssertionError(f"{pics['pages']} picture page(s) with {len(pics['printed'])} picture(s) on them")
     # One page is the morning with nothing queued, and only that: a page 2
     # missing from a paper that has stories on it would lose their
     # continuations, which is exactly what must never happen silently.
-    if (pages == 1) != (not printed):
+    if (sheet == 1) != (not printed):
         raise AssertionError(
-            f"a one-page paper is a morning with no articles: laid out {pages} page(s) "
+            f"a one-page paper is a morning with no articles: laid out {sheet} page(s) "
             f"with {len(printed)} article(s) printed"
         )
 
@@ -410,9 +489,16 @@ def render(
     if rail["dropped"]:
         log.warning("rail did not fit the sheet: %s",
                     ", ".join(f"{k} ({n} row(s))" for k, n in rail["dropped"].items()))
+    if pics["printed"]:
+        log.info("picture sheet: %d picture(s) on %d page(s)", len(pics["printed"]), pics["pages"])
+    if pics["dropped"]:
+        log.warning("picture sheet had no room for %d picture(s): %s", len(pics["dropped"]),
+                    ", ".join(f"article {a} picture {i + 1}" for a, i in pics["dropped"]))
     return RenderResult(pdf=pdf_path, html=html_path, pages=pages, printed=printed,
                         partial=partial, rail_continued=rail["continued"],
-                        rail_dropped=rail["dropped"], pngs=pngs, laid_out_html=laid_out_html)
+                        rail_dropped=rail["dropped"], picture_pages=pics["pages"],
+                        pictures=pics["printed"], pictures_dropped=pics["dropped"],
+                        pngs=pngs, laid_out_html=laid_out_html)
 
 
 def _look_from_settings_file(path: str) -> Any:
@@ -442,6 +528,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         part = result.partial.get(i)
         of = f"  ({part} of {len(articles[i]['paragraphs'])} paragraphs, rest online)" if part else ""
         print(f"    [{i}] {articles[i]['title']}{of}")
+    if result.picture_pages:
+        print(f"  {len(result.pictures)} picture(s) on {result.picture_pages} picture page(s)"
+              + (f", {len(result.pictures_dropped)} left off" if result.pictures_dropped else ""))
     for p in result.pngs:
         print(f"  {p}")
 

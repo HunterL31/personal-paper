@@ -77,6 +77,36 @@
 {% set row_articles = articles[1:front_n] %}
 
 {#
+  ---- The pictures, from `pictures` (render.py) ----
+
+  One entry per picture the reader may see, in article order: `key`
+  ("<article>:<picture>"), `article`, `after` (how many of the author's
+  paragraphs come before it), `src`, `caption` and the story's `title`.
+  render.py builds it only when `look.layout.pictures` is on and the file
+  is there, so with the switch off the list is empty and the paper is
+  exactly the one sheet it has always been. The story body sets a line of
+  the paper's own where each picture was ("See Image N."); the script under
+  the sheet numbers the ones that reach the picture sheet, and takes out
+  the line of any that did not. A paragraph is never touched.
+#}
+{% set pictures = pictures if (pictures is defined and pictures) else [] %}
+
+{# A story's paragraphs, each the author's, with the picture lines set
+   between them where the author set the pictures. Nothing but the marker
+   markup changes when a story has no pictures: with none, this is exactly
+   the body as it has always been written. #}
+{% macro story_body(a, ai) %}
+{%- set mine = pictures | selectattr('article', 'equalto', ai) | list -%}
+<div class="body">
+{%- for p in a.paragraphs %}{% set i = loop.index0 %}
+{%- for pic in mine if pic.after == i %}<p class="figref" data-image="{{ pic.key }}">See Image 1.</p>{% endfor -%}
+<p>{{ p | hyphenate }}</p>
+{%- endfor %}
+{%- for pic in mine if pic.after >= (a.paragraphs | length) %}<p class="figref" data-image="{{ pic.key }}">See Image 1.</p>{% endfor -%}
+</div>
+{%- endmacro %}
+
+{#
   The reader's lists (`data.lists`): each has a name, a slug the layout
   refers to, a style for its markers, and its items. render.py turns an
   older data.json's plain `tasks` into the one list called "To do".
@@ -353,6 +383,12 @@
      only once the ordinary break points after its slashes and hyphens are used. */
   .page p.online .u { overflow-wrap: break-word; }
   .ending { break-inside: avoid; }
+  /* The line that stands where the author set a picture, pointing to the
+     picture sheet. It is the paper's, set like the jump line, and the fitting
+     script moves it whole -- it is never a paragraph and never cut. The
+     paragraph after it starts flush, as one after a heading does. */
+  .page p.figref { text-indent: 0; text-align: right; font-style: italic; font-size: var(--byline); margin: 0.01in 0 0.02in; break-inside: avoid; }
+  .body p.figref + p { text-indent: 0; }
   p.no-stories { font-family: var(--head); font-style: italic; font-size: var(--row-head); margin: 0.3in 0 0; text-align: center; }
 
   /* Lead story: headline across the full width, text in three columns */
@@ -504,6 +540,26 @@
     margin: 0 0 0.11in; padding-bottom: 0.05in; border-bottom: 1px solid #000;
   }
   .xword.front .xw-under { margin-top: 0.13in; }
+
+  /* ---------- The picture sheet: pages 3 and 4, when the reader asked ----------
+     Two columns of figures, each a picture at the column's width (or the
+     height cap, for a tall one) with its number, its story and the author's
+     caption under it. A figure moves whole between columns and pages; the
+     script fills page 3, then page 4, and leaves the rest off with a line
+     saying how many. */
+  .page.pictures .folio { border-bottom: 1px solid #000; margin-top: 0; }
+  .figs {
+    flex: 1; min-height: 0; overflow: hidden; padding-top: 0.13in;
+    column-count: 2; column-gap: var(--gutter); column-fill: auto;
+  }
+  figure.pic { break-inside: avoid; margin: 0 0 0.2in; }
+  figure.pic img { display: block; max-width: 100%; max-height: 3.6in; width: auto; height: auto; }
+  figure.pic figcaption { font-size: var(--byline); line-height: 1.3; margin-top: 0.05in; }
+  figure.pic .fig-n { font-family: var(--head); font-weight: bold; }
+  figure.pic .fig-from { font-style: italic; }
+  figure.pic .fig-cap { display: block; }
+  .figs p.figs-more { font-size: var(--byline); font-style: italic; text-align: right; margin: 0; break-inside: avoid; }
+  .figstore { display: none; }
 </style>
 </head>
 <body>
@@ -549,7 +605,7 @@
         <h2>{{ a.title }}</h2>
         {% if a.deck %}<p class="deck">{{ a.deck | hyphenate }}</p>{% endif %}
         <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span>{% if a.published %}, <span class="when">{{ a.published }}</span>{% endif %}</p>
-        <div class="body">{% for p in a.paragraphs %}<p>{{ p | hyphenate }}</p>{% endfor %}</div>
+        {{ story_body(a, 0) }}
       </article>
       {% endif %}
 
@@ -560,7 +616,7 @@
           <h2>{{ a.title }}</h2>
           {% if a.deck %}<p class="deck">{{ a.deck | hyphenate }}</p>{% endif %}
           <p class="byline">By <b>{{ a.author }}</b>, <span class="pub">{{ a.publication }}</span></p>
-          <div class="body">{% for p in a.paragraphs %}<p>{{ p | hyphenate }}</p>{% endfor %}</div>
+          {{ story_body(a, loop.index) }}
         </article>
         {% endfor %}
       </div>
@@ -659,6 +715,31 @@
   {%- endif %}
   {% if puzzle and not xw_top %}{{ xword_block() }}{% endif %}
 </section>
+{%- if pictures %}
+
+{# The picture sheet. Page 3 is written here; the script fills it from the
+   figures below, makes page 4 from it when they run on, and takes the sheet
+   away again when no printed story had a picture. #}
+<section class="page pictures" id="page-3">
+  <div class="folio">
+    <span>{{ look.paper_name }}</span>
+    <span>Images &middot; {{ paper.date }}</span>
+    <span class="folio-page">Page 3</span>
+  </div>
+  <div class="figs"></div>
+</section>
+{# The figures, kept out of sight in the document itself rather than in a
+   <template>, so the browser loads every picture before the script measures
+   anything: a figure is only measured once its picture has its size. #}
+<div id="figures" class="figstore">
+  {%- for pic in pictures %}
+  <figure class="pic" data-image="{{ pic.key }}">
+    <img src="{{ pic.src }}" alt="">
+    <figcaption><b class="fig-n">Image 1</b><span class="fig-from"> &middot; {{ pic.title }}</span>{% if pic.caption %}<span class="fig-cap">{{ pic.caption }}</span>{% endif %}</figcaption>
+  </figure>
+  {%- endfor %}
+</div>
+{%- endif %}
 
 <script>
 /*
@@ -708,7 +789,9 @@
   const STORIES = Array.from(pristine.querySelectorAll('.story'));
   const TOTAL = STORIES.length;
   //: How many paragraphs each story has, i.e. how far a partial one may go.
-  const PARAS = STORIES.map(s => s.querySelectorAll('.body > p').length);
+  //: A picture line (`p.figref`) is the paper's, not a paragraph.
+  const PARAS = STORIES.map(s => s.querySelectorAll('.body > p:not(.figref)').length);
+  const isRef = p => p.classList.contains('figref');
   const cols = document.querySelector('#page-2 .cols');
 
   // Truncate p to the most words for which `ok()` still holds (binary search on a
@@ -1072,7 +1155,15 @@
       if (+story.dataset.story >= k) story.remove();
     if (partial) {
       const story = fresh.querySelector('.story[data-story="' + partial.index + '"]');
-      for (const p of Array.from(story.querySelectorAll('.body > p')).slice(partial.paras)) p.remove();
+      // The first `paras` of the author's paragraphs stay, with the picture
+      // lines among them: a line that follows the last printed paragraph
+      // stays too, since the picture came after words that are printed.
+      let seen = 0;
+      for (const p of Array.from(story.querySelectorAll('.body > p'))) {
+        if (isRef(p)) { if (seen > partial.paras) p.remove(); continue; }
+        if (seen >= partial.paras) p.remove();
+        seen++;
+      }
       story.dataset.partial = String(partial.paras);
     }
     const row = fresh.querySelector('.row');
@@ -1108,8 +1199,11 @@
     const jump = el('p', 'jump', 'Continued on Page 2');
     body.appendChild(jump);
 
+    // What moves to page 2: a paragraph's words, or a picture line whole.
+    const moved = p => ({ text: p.textContent, tail: false, image: isRef(p) ? p.dataset.image : null });
+
     while (ps.length > 1 && outside(ps[ps.length - 1], body)) {
-      const p = ps.pop(); rem.unshift({ text: p.textContent, tail: false }); p.remove();
+      const p = ps.pop(); rem.unshift(moved(p)); p.remove();
     }
     // A partial story is only ever printed with its online line after it: if
     // the slot held all its paragraphs but not that line, this pass fails and
@@ -1118,6 +1212,8 @@
 
     while (ps.length && spills(jump, body)) {
       const p = ps[ps.length - 1];
+      // A picture line is never cut: it goes to page 2 whole, or stays whole.
+      if (isRef(p)) { ps.pop(); rem.unshift(moved(p)); p.remove(); continue; }
       const full = p.textContent;                     // truncate() rewrites p; keep the author's text
       const cut = truncate(p, () => !spills(jump, body));
       if (cut === null) { ps.pop(); rem.unshift({ text: full, tail: false }); p.remove(); continue; }
@@ -1125,11 +1221,12 @@
       break;
     }
     if (spills(jump, body)) return false;             // no room to say where it goes
-    return { jump, title: story.querySelector('h2').textContent, rem, online };
+    return { jump, title: story.querySelector('h2').textContent, index: story.dataset.story, rem, online };
   }
 
-  const head = title => {
+  const head = (title, index) => {
     const art = el('article');
+    art.dataset.story = index;
     const h = el('div', 'story-head');
     h.append(el('h2', null, title), el('p', 'cont', 'Continued from Page 1'));
     art.appendChild(h);
@@ -1140,12 +1237,13 @@
   function pour(remainders) {
     for (const r of remainders) {
       if (r.online && !r.rem.length) return false;    // nothing to hang it on
-      const art = head(r.title);
+      const art = head(r.title, r.index);
       cols.appendChild(art);
       if (spills(art, cols)) return false;
       for (let i = 0; i < r.rem.length; i++) {
         const it = r.rem[i];
-        const p = el('p', it.tail ? 'tail' : null, it.text);
+        const p = el('p', it.image ? 'figref' : (it.tail ? 'tail' : null), it.text);
+        if (it.image) p.dataset.image = it.image;
         art.appendChild(p);
         // The last paragraph of a partial story carries the online line.
         if (r.online && i === r.rem.length - 1) {
@@ -1165,6 +1263,98 @@
       if (r) remainders.push(r);
     }
     return pour(remainders);
+  }
+
+  // ---- The picture sheet ----
+  // The pictures of the stories that were printed, in the order the reader
+  // meets their lines, on a sheet of their own: page 3 and, when they run on,
+  // page 4. Each picture that reaches the sheet is numbered, in that order,
+  // and its line in the story is set to the number; a picture the sheet could
+  // not hold is left off, its line is taken out (a paragraph is never
+  // touched), and the sheet says how many. It runs after the stories are
+  // fitted, since which stories printed is what decides which pictures may.
+  const PICTURE_PAGES = 2;
+  function layoutPictures() {
+    const none = { printed: [], dropped: [], pages: 0 };
+    const first = document.getElementById('page-3');
+    const store = document.getElementById('figures');
+    if (!first || !store) return none;
+    // A picture the browser could not read has no size and prints as
+    // nothing: it is not on the sheet, so its line is taken out with it.
+    const figs = new Map();
+    for (const f of store.querySelectorAll('figure'))
+      if (f.querySelector('img').naturalWidth) figs.set(f.dataset.image, f);
+
+    // The lines as the reader meets them: each printed story's front part,
+    // then its continuation on page 2.
+    const refs = [];
+    for (const story of document.querySelectorAll('#page-1 .story')) {
+      refs.push(...story.querySelectorAll('p.figref'));
+      const cont = document.querySelector('#page-2 .cols > article[data-story="' + story.dataset.story + '"]');
+      if (cont) refs.push(...cont.querySelectorAll('p.figref'));
+    }
+    const order = [];
+    for (const r of refs)
+      if (figs.has(r.dataset.image) && !order.includes(r.dataset.image)) order.push(r.dataset.image);
+
+    const pages = [first];
+    const boxOf = page => page.querySelector('.figs');
+    const fits = (node, box) => !spills(node, box) && !outside(node, box);
+    function nextPage() {
+      const page = first.cloneNode(true);
+      page.id = 'page-' + (3 + pages.length);
+      page.querySelector('.folio-page').textContent = 'Page ' + (3 + pages.length);
+      boxOf(page).textContent = '';
+      pages[pages.length - 1].insertAdjacentElement('afterend', page);
+      pages.push(page);
+      return page;
+    }
+
+    // Fill page 3, then page 4, a figure at a time, whole; a figure that no
+    // empty page could hold is left off on its own.
+    let page = first;
+    const printed = [], dropped = [], left = order.slice();
+    while (left.length) {
+      const box = boxOf(page);
+      const fig = figs.get(left[0]).cloneNode(true);
+      box.appendChild(fig);
+      if (fits(fig, box)) { printed.push(left.shift()); continue; }
+      fig.remove();
+      if (!box.querySelector('figure')) { dropped.push(left.shift()); continue; }
+      if (pages.length >= PICTURE_PAGES) break;
+      page = nextPage();
+    }
+    dropped.push(...left);
+
+    // The sheet says what it could not hold, on its last page, making room
+    // for the line by giving up its last figure if it has to.
+    if (dropped.length && printed.length) {
+      const box = boxOf(page);
+      const wording = () => dropped.length + ' more picture' + (dropped.length === 1 ? '' : 's') + ', not printed';
+      let line = el('p', 'figs-more', wording());
+      box.appendChild(line);
+      while (!fits(line, box) && box.querySelector('figure')) {
+        const last = box.querySelector('figure:last-of-type');
+        dropped.unshift(printed.pop());
+        last.remove();
+        line.textContent = wording();
+      }
+    }
+
+    // Number what is on the sheet, in its order, and set every line to its
+    // picture's number -- or take the line out, when its picture is not there.
+    const number = new Map(printed.map((key, i) => [key, i + 1]));
+    for (const r of refs) {
+      const n = number.get(r.dataset.image);
+      if (n) r.textContent = 'See Image ' + n + '.';
+      else r.remove();
+    }
+    for (const fig of document.querySelectorAll('.figs figure'))
+      fig.querySelector('.fig-n').textContent = 'Image ' + number.get(fig.dataset.image);
+    for (const p of pages)
+      if (!boxOf(p).querySelector('figure')) p.remove();
+    store.remove();
+    return { printed, dropped, pages: document.querySelectorAll('.page.pictures').length };
   }
 
   // ---- The ears ----
@@ -1228,6 +1418,10 @@
     //: never from the articles that were handed in.
     if (!printed) { attempt(0, null); onePage(); }
 
+    //: The pictures of the printed stories, on their own sheet: which reached
+    //: it, in its order, and which it could not hold.
+    window.__pictures = layoutPictures();
+
     // Ruled lines for each notes box: as many whole lines as its space holds.
     for (const lines of document.querySelectorAll('.lines'))
       for (let i = 0; i < 80; i++) { const d = el('div'); lines.appendChild(d); if (spills(d, lines)) { d.remove(); break; } }
@@ -1241,12 +1435,16 @@
     //: What her own columns carried: `{key: rows}` for the sections that ran
     //: on to page 2, and for the rows no column had room for.
     window.__rail = railTally();
-    //: 2, or 1 on a morning with no stories, when page 2 has been removed.
+    //: 2, or 1 on a morning with no stories, when page 2 has been removed --
+    //: plus the picture sheet's page or two, when the reader asked for it
+    //: and a printed story had a picture.
     window.__pages = document.querySelectorAll('.page').length;
     window.__layoutDone = true;
   }
 
-  document.fonts.ready.then(run);
+  // The faces, and every picture, before anything is measured.
+  const loaded = img => img.complete ? Promise.resolve() : new Promise(done => { img.onload = img.onerror = done; });
+  Promise.all([document.fonts.ready, ...Array.from(document.images, loaded)]).then(run);
 })();
 </script>
 </body>

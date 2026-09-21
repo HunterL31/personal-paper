@@ -74,6 +74,11 @@
         "People ask whether they can skip the stock and use the boxed kind, and the honest answer is that of course they can, and it will be a perfectly good soup. But it will be a forty-minute soup. It will not have that particular roundness, the thing you cannot quite name that makes a bowl of vegetables in liquid feel like a meal rather than a compromise.",
         "The larger point, and I suppose there is always a larger point, is that the most useful cooking happens when you are not cooking. It happens in the pot you set going while doing something else, the beans you soaked before bed, the dough you left in the fridge for two days because you forgot about it and it got better anyway. The kitchen is patient. It rewards the person who starts things and walks away.",
         "So: Tuesday. Find the bones. Find the pot. Start something, and let tomorrow finish it."
+      ],
+      "images": [
+        {"url": "https://theslowkitchen.substack.com/i/stockpot.jpg",
+         "caption": "The pot, on the lowest flame the burner will hold.",
+         "after": 2, "file": "sample_images/stockpot.svg"}
       ]
     },
     {
@@ -90,6 +95,10 @@
         "A note on manners: the rule is to touch nothing you would not be comfortable being touched by, to put every rock back exactly as you found it, and to leave before the tide turns rather than after. The water comes back faster than it left. It always does.",
         "By seven the light was up and the surfers had arrived at the point, and the shelf was already half a foot under. The heron had won. I finished the thermos in the car and drove home with sand in my shoes, which is the correct way to end any morning in September.",
         "Next minus tide is Thursday, a shade after six. Bring shoes you don't mind ruining."
+      ],
+      "images": [
+        {"url": "https://fieldnotespeninsula.substack.com/i/tidepool.jpg",
+         "caption": null, "after": 2, "file": "sample_images/tidepool.svg"}
       ]
     },
     {
@@ -105,7 +114,8 @@
         "By the third time you know where the trapdoors are, and you can watch the author lay them. You see the small lie in chapter two that becomes the big one in chapter twenty. You start to feel, faintly, what it might have been like to write the thing rather than read it, which is the closest most of us will get.",
         "There is also the plainer pleasure of company. A book you have read four times is a room you have lived in. You know where the light comes in. You know which floorboard creaks. Returning to it is not a failure of curiosity. It is what people do with places they love.",
         "So, no, I have not read the hundreds of books on the list. I have read one book four times, and I know it better than I know most people, and I am not sorry."
-      ]
+      ],
+      "images": []
     },
     {
       "title": "A cheap fix for a wobbly chair",
@@ -119,7 +129,8 @@
         "If all four feet are present, sit the chair on a flat surface and find the short leg by pressing down on each corner. The one that rocks is your target. A single felt pad, the kind sold in sheets for a couple of dollars, stuck to the bottom of that leg will usually do it. Stack two if one isn't enough.",
         "For a chair that is loose at the joints rather than the feet, the fix is glue and patience. Wood glue into the joint, a strap clamp or a length of rope twisted tight, and leave it overnight. Do not use the fast-setting stuff. It is brittle and you will be doing this again in a year.",
         "That is the whole repair. Ten minutes, no tools you don't already own, and a chair that will outlast the next three you'd have bought instead."
-      ]
+      ],
+      "images": []
     }
   ],
   "crossword": {

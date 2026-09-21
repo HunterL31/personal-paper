@@ -103,6 +103,59 @@ SHEET_BACKS = ("normal", "rotated", "flipped", "manual-tumble")
 #: `int(s, 2)` then packs a whole line's bits in one C-level step.
 _THRESHOLD = bytes.maketrans(bytes(range(256)), b"1" * 128 + b"0" * 128)
 
+#: A page of type is black or white and a plain threshold serves it; a page
+#: with a photograph on it (the picture sheet) is not, and a threshold turns
+#: a photograph into blots. Those pages are halftoned instead, with the
+#: classic 8x8 ordered dither: each pixel is ink when its gray is darker
+#: than its cell's own threshold, so a mid gray prints as a pattern of dots,
+#: half of them ink, at the printer's own resolution. Type on such a page
+#: keeps its solid black; only its anti-aliased edges pick up a dot or two.
+_BAYER = (
+    (0, 32, 8, 40, 2, 34, 10, 42),
+    (48, 16, 56, 24, 50, 18, 58, 26),
+    (12, 44, 4, 36, 14, 46, 6, 38),
+    (60, 28, 52, 20, 62, 30, 54, 22),
+    (3, 35, 11, 43, 1, 33, 9, 41),
+    (51, 19, 59, 27, 49, 17, 57, 25),
+    (15, 47, 7, 39, 13, 45, 5, 37),
+    (63, 31, 55, 23, 61, 29, 53, 21),
+)
+
+
+def _dither_table(level: int) -> bytes:
+    """The threshold table of one cell: ink below `(level + 0.5) / 64` of
+    the way from black to white, so level 0 inks only near-black and level
+    63 everything but near-white."""
+    cut = (level + 0.5) * 4
+    return bytes.maketrans(bytes(range(256)),
+                           b"".join(b"1" if g < cut else b"0" for g in range(256)))
+
+
+#: One table per cell of the matrix, made once.
+_DITHER = [[_dither_table(level) for level in row] for row in _BAYER]
+
+
+def _halftone_bits(gray: bytes, y: int) -> bytes:
+    """One row as "1"/"0" characters, ordered-dithered for row `y`.
+
+    Each of the eight column phases is one C-level `translate` of the whole
+    row and one strided slice assignment, so a 600 dpi page costs a few
+    hundred milliseconds and no per-pixel Python.
+    """
+    tables = _DITHER[y % 8]
+    out = bytearray(len(gray))
+    for k in range(8):
+        out[k::8] = gray.translate(tables[k])[k::8]
+    return bytes(out)
+
+
+def _has_pictures(page) -> bool:
+    """Does this PDF page carry a raster image (a photograph)?"""
+    try:
+        return bool(page.get_images())
+    except Exception:  # noqa: BLE001 - then it is treated as a page of type
+        return False
+
 
 # ----------------------------------------------------------------- encoding
 def _string_into(header: bytearray, name: str, text: str) -> None:
@@ -188,14 +241,22 @@ def _page_header(
     return bytes(header)
 
 
-def _pack_line(gray: bytes, color: str, bytes_per_line: int) -> bytes:
-    """One row of 8-bit gray as the page's own pixels, in one line of octets."""
+def _pack_line(gray: bytes, color: str, bytes_per_line: int,
+               halftone_row: int | None = None) -> bytes:
+    """One row of 8-bit gray as the page's own pixels, in one line of octets.
+
+    `halftone_row` is the row's index on a page that carries a photograph:
+    the row is then dithered rather than thresholded (see `_BAYER`).
+    """
     if color == "sgray_8":
         return gray.ljust(bytes_per_line, b"\xff")  # pad with paper, not ink
     # black_1: 8 pixels to the octet, most significant bit first, 1 = ink.
     # The trailing bits of the last octet are paper, which also makes a blank
     # line a run of identical 0x00 octets.
-    bits = gray.translate(_THRESHOLD).decode("ascii")
+    if halftone_row is None:
+        bits = gray.translate(_THRESHOLD).decode("ascii")
+    else:
+        bits = _halftone_bits(gray, halftone_row).decode("ascii")
     bits += "0" * (bytes_per_line * 8 - len(bits))
     return int(bits, 2).to_bytes(bytes_per_line, "big")
 
@@ -326,6 +387,9 @@ def encode(
 
     with pymupdf.open(pdf) as document:
         for number, page in enumerate(document, start=1):
+            # A page with a photograph on it is halftoned; a page of type
+            # is thresholded, as it always was (1-bit pages only).
+            halftone = color == "black_1" and _has_pictures(page)
             width, height, lines = _gray_lines(page, dpi)
             cross_feed, feed = 1, 1
             if duplex and number % 2 == 0:
@@ -347,8 +411,11 @@ def encode(
                 feed_transform=feed,
             )
             out += _encode_lines(
-                [_pack_line(row, color, bytes_per_line) for row in lines]
+                [_pack_line(row, color, bytes_per_line, y if halftone else None)
+                 for y, row in enumerate(lines)]
             )
+            if halftone:
+                _LOGGER.debug("page %d carries a picture: halftoned", number)
 
     _LOGGER.debug(
         "encoded %s as %d bytes of PWG raster (%d dpi, %s)", pdf, len(out), dpi, color

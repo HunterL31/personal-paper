@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <!-- The sample issue's picture for the soup story: a stock pot on a low
+       flame, drawn in black line so it prints the way a photograph would
+       not need to. -->
+  <rect width="400" height="300" fill="#fff"/>
+  <g fill="none" stroke="#000" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- steam -->
+    <path d="M150 88 c-12 -14 12 -26 0 -40 c-10 -12 8 -22 2 -34"/>
+    <path d="M200 84 c-12 -14 12 -26 0 -40 c-10 -12 8 -22 2 -34"/>
+    <path d="M250 88 c-12 -14 12 -26 0 -40 c-10 -12 8 -22 2 -34"/>
+    <!-- lid -->
+    <path d="M96 118 q104 -46 208 0"/>
+    <rect x="186" y="86" width="28" height="12" rx="4"/>
+    <line x1="88" y1="118" x2="312" y2="118" stroke-width="7"/>
+    <!-- pot -->
+    <path d="M100 118 v112 q0 14 14 14 h172 q14 0 14 -14 v-112"/>
+    <line x1="112" y1="160" x2="288" y2="160" stroke-width="2.5" stroke-dasharray="6 6"/>
+    <!-- handles -->
+    <path d="M100 150 h-26 q-14 0 -14 14 v6 q0 14 14 14 h26"/>
+    <path d="M300 150 h26 q14 0 14 14 v6 q0 14 -14 14 h-26"/>
+    <!-- burner -->
+    <line x1="60" y1="262" x2="340" y2="262" stroke-width="6"/>
+    <line x1="120" y1="262" x2="120" y2="278"/>
+    <line x1="200" y1="262" x2="200" y2="278"/>
+    <line x1="280" y1="262" x2="280" y2="278"/>
+  </g>
+</svg>

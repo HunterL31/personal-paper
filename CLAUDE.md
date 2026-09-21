@@ -18,7 +18,12 @@ the paper's name is whatever its one reader types on the Look tab
    stop at a paragraph boundary with a line pointing to the rest online
    (`RenderResult.partial` says how many of its paragraphs were printed).
    The paragraphs left behind are held for another day, never trimmed, and
-   nothing anywhere is ever summarized or reworded.
+   nothing anywhere is ever summarized or reworded. With the Layout tab's
+   picture switch on (`look.layout.pictures`), the printed stories'
+   pictures go on a second sheet after page 2, each numbered, and a line of
+   the paper's own (`p.figref`, "See Image N.") stands between the author's
+   paragraphs where the picture was; it is never inside a paragraph, and
+   it goes when its picture does.
 2. No LLM calls anywhere in the pipeline.
 3. The paper is produced every morning even when a source fails: a failing
    gatherer yields an empty section and a log line, never an exception out
@@ -34,7 +39,12 @@ the paper's name is whatever its one reader types on the Look tab
   Each article carries `url` (the post's own page): the template prints it
   under a story that only partly fit, so it is part of the contract, not a
   secret, and it stays in `data.json`. `guid` does not: it is the run's own
-  bookkeeping and is stripped before the file is written.
+  bookkeeping and is stripped before the file is written. Each article also
+  carries `images`: `{"url", "caption", "after", "file"}` per picture the
+  author set between the paragraphs, `after` the count of paragraphs before
+  it, `caption` verbatim or null, `file` the grey JPEG `gather/images.py`
+  wrote beside `data.json` (relative to its folder) or null when it was not
+  fetched. Only a picture with a `file` is ever printed.
   `crossword` is nullable: the puzzle object `gather/crossword.py` returns, or
   `null` on any morning without one. It never carries the answers.
   `lists` replaces the old `tasks`: one entry per list configured on the

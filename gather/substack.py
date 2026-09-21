@@ -8,6 +8,12 @@ and collapsing whitespace runs that only exist because the HTML was indented.
 Nothing is summarized, shortened or reworded, and no character is added to a
 paragraph (no bullet glyphs, no quotation marks).
 
+The pictures are not printed in the text, but they are not thrown away
+either: each article carries `images`, one entry per picture the author set
+between the paragraphs -- its address, its caption verbatim, and `after`, the
+number of paragraphs before it. `gather/images.py` fetches the files when
+the reader has asked for a picture sheet, and the template numbers them.
+
 `fetch(settings)` returns article dicts in the render contract's shape (the
 printable `url` among them) plus an extra `guid` key. It deliberately does
 **not** record what it has seen: the run is not successful until the paper is
@@ -75,6 +81,20 @@ CHROME_SELECTORS = (
     ".captioned-image-container",
     ".image-link",
 )
+#: Where Substack puts a picture: the outermost of these around an `img` is
+#: one picture, with the `figcaption` inside it as its caption. They are
+#: taken out before the chrome is stripped, so the picture is kept and the
+#: paragraphs come out exactly as they always have.
+IMAGE_CONTAINERS = (".captioned-image-container", "figure")
+#: A picture inside one of these is decoration, not one the author set
+#: between paragraphs: an emoji in a sentence, an icon on a button.
+INLINE_IMAGE_PARENTS = ("p", "li", "h2", "h3", "h4", "button")
+#: Smaller than this on either side (when the tag says) is an icon.
+MIN_IMAGE_PX = 100
+#: The placeholder an extracted picture leaves in the tree, so its place
+#: among the paragraphs is counted like theirs. Not a block tag, so it can
+#: never add a paragraph, and it has no text of its own.
+_IMAGE_TAG = "pp-image"
 
 PAYWALL_SELECTORS = (".paywall", ".paywall-jump")
 PAYWALL_PHRASES = (
@@ -263,21 +283,101 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def extract_paragraphs(html: str) -> list[str]:
+def _image_src(img) -> str:
+    """The picture's address, or "" for one that is decoration or has none."""
+    src = _clean(img.get("src") or "")
+    if not src.startswith(("http://", "https://")):
+        return ""
+    for side in ("width", "height"):
+        raw = img.get(side)
+        try:
+            if raw is not None and int(str(raw).strip()) < MIN_IMAGE_PX:
+                return ""
+        except ValueError:
+            pass
+    return src
+
+
+def _attached(node, soup) -> bool:
+    """Is the node still in the document, or inside something lifted out?"""
+    while node.parent is not None:
+        node = node.parent
+    return node is soup
+
+
+def _lift_images(soup) -> None:
+    """Replace every picture with a placeholder carrying its address and
+    caption, in the place it had among the paragraphs.
+
+    A captioned container is one picture, whatever the markup inside it; a
+    bare `img` (an email edition sets some that way) is one too, unless it
+    is inline in a paragraph or an icon. Done before the chrome is stripped,
+    so a container with no picture in it goes with the rest of the chrome.
     """
-    Every block element the author wrote, in document order, verbatim.
+    for selector in IMAGE_CONTAINERS:
+        for box in soup.select(selector):
+            if not _attached(box, soup):      # inside a container already lifted
+                continue
+            img = next((i for i in box.find_all("img") if _image_src(i)), None)
+            if img is None:
+                continue
+            caption_el = box.find("figcaption")
+            # The caption flattens like a paragraph: inline tags to text, a
+            # <br> to a space, nothing added and nothing lost.
+            caption = _clean(_text_excluding_blocks(caption_el)) if caption_el is not None else ""
+            marker = soup.new_tag(_IMAGE_TAG)
+            marker["data-src"] = _image_src(img)
+            if caption:
+                marker["data-caption"] = caption
+            box.replace_with(marker)
+    for img in soup.find_all("img"):
+        src = _image_src(img)
+        if not src or img.find_parent(INLINE_IMAGE_PARENTS) is not None:
+            continue
+        marker = soup.new_tag(_IMAGE_TAG)
+        marker["data-src"] = src
+        img.replace_with(marker)
+
+
+def extract_content(html: str, *, email: bool = False) -> tuple[list[str], list[dict]]:
+    """
+    Every block element the author wrote, in document order, verbatim, and
+    every picture the author set between them.
 
     Substack chrome is removed first. Headings, blockquote paragraphs and list
-    items come through as plain paragraphs with nothing prefixed to them.
+    items come through as plain paragraphs with nothing prefixed to them. A
+    picture is `{"url", "caption", "after"}`: `after` is how many of the
+    paragraphs come before it (0 for one at the top), and `caption` is the
+    author's, verbatim, or None. `email` also drops an email edition's own
+    chrome.
     """
     soup = _soup(html)
+    _lift_images(soup)
     _strip(soup, CHROME_SELECTORS)
+    if email:
+        _strip(soup, EMAIL_CHROME_SELECTORS)
     paragraphs: list[str] = []
-    for el in soup.find_all(BLOCK_TAGS):
+    images: list[dict] = []
+    for el in soup.find_all(BLOCK_TAGS + (_IMAGE_TAG,)):
+        if el.name == _IMAGE_TAG:
+            images.append({
+                "url": el.get("data-src") or "",
+                "caption": el.get("data-caption") or None,
+                "after": len(paragraphs),
+            })
+            continue
         text = _clean(_text_excluding_blocks(el))
-        if text:
-            paragraphs.append(text)
-    return paragraphs
+        if not text:
+            continue
+        if email and any(p.match(text) for p in EMAIL_CHROME_PARAGRAPHS):
+            continue
+        paragraphs.append(text)
+    return paragraphs, images
+
+
+def extract_paragraphs(html: str) -> list[str]:
+    """The paragraphs alone; see `extract_content`."""
+    return extract_content(html)[0]
 
 
 def _entry_html(entry) -> str:
@@ -462,22 +562,12 @@ def _html_part(message) -> Optional[str]:
 
 def extract_email_paragraphs(html: str) -> list[str]:
     """The same extractor, after also dropping the email's own chrome."""
-    soup = _soup(html)
-    _strip(soup, CHROME_SELECTORS)
-    _strip(soup, EMAIL_CHROME_SELECTORS)
-    paragraphs: list[str] = []
-    for el in soup.find_all(BLOCK_TAGS):
-        text = _clean(_text_excluding_blocks(el))
-        if not text:
-            continue
-        if any(p.match(text) for p in EMAIL_CHROME_PARAGRAPHS):
-            continue
-        paragraphs.append(text)
-    return paragraphs
+    return extract_content(html, email=True)[0]
 
 
 # --------------------------------------------------------------- fetch
-def _article(entry, publication: str, paragraphs: list[str], dt: datetime) -> dict:
+def _article(entry, publication: str, paragraphs: list[str], dt: datetime,
+             images: Optional[list[dict]] = None) -> dict:
     return {
         "title": _clean(entry.get("title") or ""),
         "deck": _deck(entry, paragraphs),
@@ -488,6 +578,9 @@ def _article(entry, publication: str, paragraphs: list[str], dt: datetime) -> di
         #: part of the render contract: the template prints it under a story
         #: that only partly fit the sheet.
         "url": _url(entry),
+        #: the pictures between the paragraphs, for the picture sheet;
+        #: gather/images.py adds `file` to the ones it fetched.
+        "images": list(images or []),
         "guid": _guid(entry),
     }
 
@@ -517,7 +610,7 @@ def _articles_for_source(source, seen: set[str], max_age_days: int) -> list[dict
             continue
 
         html = _entry_html(entry)
-        paragraphs = extract_paragraphs(html)
+        paragraphs, images = extract_content(html)
         if looks_paywalled(html, paragraphs):
             if not source.paid:
                 logger.warning(
@@ -528,14 +621,14 @@ def _articles_for_source(source, seen: set[str], max_age_days: int) -> list[dict
             email_html = fetch_from_imap(title, publication)
             if not email_html:
                 continue  # fetch_from_imap logged why
-            paragraphs = extract_email_paragraphs(email_html)
+            paragraphs, images = extract_content(email_html, email=True)
             if not paragraphs:
                 logger.warning("%s: email edition of %r was empty", publication, title)
                 continue
         if not paragraphs:
             logger.warning("%s: %r had no printable text; skipped", publication, title)
             continue
-        out.append((dt, _article(entry, publication, paragraphs, dt)))
+        out.append((dt, _article(entry, publication, paragraphs, dt, images)))
 
     # A queue, not a feed: the oldest unread post is the one whose turn it is.
     out.sort(key=lambda pair: pair[0])

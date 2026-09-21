@@ -180,6 +180,11 @@ class Layout(BaseModel):
     crossword_place: Literal["bottom", "top"] = "bottom"
     crossword_cell_in: float = Field(0.19, ge=0.14, le=0.26)
     crossword_max_pct: int = Field(55, ge=25, le=75)
+    #: The stories' pictures, on a sheet of their own after page 2. Each is
+    #: numbered, and a line of the paper's own between the author's
+    #: paragraphs says which one belongs there. Off, the paper is exactly
+    #: the one sheet it has always been and no picture is fetched.
+    pictures: bool = False
 
 
 class Look(BaseModel):

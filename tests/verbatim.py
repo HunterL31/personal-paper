@@ -37,8 +37,10 @@ SOFT_HYPHEN = "­"
 #: The line that ends a partial article, as the template writes it.
 ONLINE_OPENING = "The rest of this story is online"
 
-#: Paragraphs of the template's own, never the author's.
-_FURNITURE = ("jump", "cont", "deck", "byline")
+#: Paragraphs of the template's own, never the author's. `figref` is the
+#: line that stands where the author set a picture, pointing to the
+#: picture sheet.
+_FURNITURE = ("jump", "cont", "deck", "byline", "figref")
 
 
 def _classes(tag) -> list[str]:
@@ -123,9 +125,11 @@ def assert_verbatim(result, articles: list[dict]) -> None:
     saying where the rest of it is; the others are not there at all.
     """
     # Two pages, or one on a morning that printed no article at all: there
-    # is then nothing to continue and no page 2 to continue it onto.
-    assert result.pages == (2 if result.printed else 1), \
-        f"{result.pages} page(s) with {len(result.printed)} article(s) printed"
+    # is then nothing to continue and no page 2 to continue it onto -- and
+    # after them the picture sheet's page or two, when there is one.
+    sheet = result.pages - getattr(result, "picture_pages", 0)
+    assert sheet == (2 if result.printed else 1), \
+        f"{sheet} page(s) with {len(result.printed)} article(s) printed"
     assert result.printed == sorted(result.printed), f"printed out of order: {result.printed}"
 
     partial = dict(result.partial)

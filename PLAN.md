@@ -20,7 +20,9 @@ fonts, `render.py`, sample data). This plan covers everything around it.
 4. Traditional broadsheet style, black only, US Letter, duplex. The look is
    set in `template.html`; keep changes there deliberate.
 5. **The paper is one double-sided sheet: exactly two pages, printed
-   one-sided on a morning with no articles.**
+   one-sided on a morning with no articles** -- and, only when the reader
+   switches it on, a second sheet of the stories' pictures after it (see
+   "The picture sheet" below).
    Page 1 is the front page; page 2 carries the continuations and, when
    enabled, the crossword. With nothing in the queue there is nothing to
    continue, so there is no page 2: the paper is the front page alone, with
@@ -119,8 +121,17 @@ Read that file first; it is the contract. Notes per field:
 - `articles[]`: `title`, `deck` (nullable), `author`, `publication`,
   `published` (short, e.g. `"Sept. 15"`), `paragraphs` (list of plain-text
   strings, in the author's order, untouched), `url` (the post's own page,
-  printed under a story that only partly fit). Up to four are placed on the
-  front page: index 0 is the lead, 1–3 the second row.
+  printed under a story that only partly fit), `images` (below). Up to four
+  are placed on the front page: index 0 is the lead, 1–3 the second row.
+- `articles[].images[]`: one per picture the author set between the
+  paragraphs, in order: `url` (its address), `caption` (verbatim, or
+  null), `after` (how many paragraphs come before it; 0 for one at the
+  top) and `file` -- the grey JPEG `gather/images.py` wrote under
+  `out/<date>/images/`, as a path relative to `data.json`'s folder, or null
+  when it was not fetched (the sheet is off, the fetch failed, the cap or
+  the budget was reached). The template prints only pictures with a
+  `file`, and only when `look.layout.pictures` is on; the sample issue's
+  are SVG drawings under `render/sample_images/`.
 
 - `crossword`: nullable. `null` on any morning without a puzzle (source off,
   a day it is switched off for, no cookie, a failed fetch); otherwise the
@@ -190,10 +201,49 @@ carries:
   automatically, so a new list prints without a trip to the Look tab.
 - `rail_width_in` (1.5–2.8), `front_stories` (1–4),
 - `crossword_place` (`bottom`/`top`), `crossword_cell_in` (0.14–0.26),
-  `crossword_max_pct` (25–75): how the puzzle sits on page 2.
+  `crossword_max_pct` (25–75): how the puzzle sits on page 2,
+- `pictures` (off by default): the picture sheet.
 
 Nothing here can change an article's words; it only changes how much fits,
 which is the fitting script's problem as before.
+
+### The picture sheet
+
+Substack posts carry pictures between their paragraphs, and the extractor
+has always dropped them (nothing to print in a text column). With
+`layout.pictures` on they are printed instead, on a sheet of their own:
+
+- `gather/substack.py` records every picture in `images` (address, caption
+  verbatim, and `after`, its place among the paragraphs) whether or not the
+  sheet is on. `gather/images.py` fetches the files only when it is:
+  in queue order, up to `MAX_IMAGES` (16) and inside `BUDGET_S` (45 s), each
+  turned grey and brought down to `MAX_SIDE_PX` (1400) with pymupdf and
+  written to `out/<date>/images/<article>-<n>.jpg`. Substack's CDN is asked
+  for `f_auto` in place of `f_webp`, with an Accept header that names the
+  formats pymupdf reads. A failure is a log line and `file: null`.
+- The template sets a line of the paper's own, `p.figref`, between the
+  paragraphs where each fetched picture was. The fitting script treats it
+  as a block that moves whole (to page 2 with its paragraphs, never cut)
+  and not as a paragraph: `partial` counts only the author's paragraphs,
+  and the verbatim check skips it as furniture.
+- After the stories are fitted, `layoutPictures()` takes the pictures of the
+  printed stories in the order the reader meets their lines (page 1 story by
+  story, each followed by its continuation), fills page 3 and then page 4
+  with two columns of figures -- each picture at column width or 3.6 in
+  tall, numbered, with its story's title and its caption -- and leaves the
+  rest off with "N more pictures, not printed" at the foot. Every line is
+  then set to its picture's number ("See Image 2."), and the line of a
+  picture that is not on the sheet is taken out, so nothing on paper points
+  at nothing. No printed picture, no sheet: the paper is the one sheet.
+- `RenderResult.picture_pages` (0–2), `pictures` and `pictures_dropped`
+  (`(article, picture)` pairs) report it; `render()` asserts the paper is
+  1 or 2 pages plus those. The print route sends 3 or 4 pages as the same
+  duplex job, so the sheet rides on a second piece of paper.
+- **Photographs through the raster route.** `deliver/pwg.py`'s 1-bit
+  `black_1` page was a plain threshold, which turns a photograph into blots.
+  A page that carries a raster image (`page.get_images()`) is now halftoned
+  with an 8x8 ordered dither instead; pages of type keep the threshold and
+  their exact old bytes. `sgray_8` is unchanged: that printer halftones.
 
 **Look.** `paper.name`, the two ears (each a `kind` -- the weather, the
 date, a monogram, the volume and number, lines of her own, the next thing
@@ -343,8 +393,12 @@ Each module exposes `fetch(settings) -> <its part of the contract>` and a
 - Paragraphs: parse `content:encoded` with BeautifulSoup and take the text of
   each block element (`p`, `h2`–`h4`, `blockquote`, `li`) in document order.
   **Removing Substack chrome is allowed; editing text is not.** Strip
-  subscribe/share buttons, embed widgets, image captions and images
-  (nothing to print). Keep everything the author wrote, including sign-offs.
+  subscribe/share buttons, embed widgets, image captions and images from
+  the text. Keep everything the author wrote, including sign-offs. The
+  pictures themselves are kept as `images` (see the data contract and "The
+  picture sheet"): each captioned container or bare `img` is one picture,
+  placed by how many paragraphs precede it; an `img` inside a paragraph, or
+  smaller than 100 px, is decoration and is dropped.
 - **Paywalled posts** arrive in RSS as a preview only. Detect the truncation
   (Substack's paywall marker / "read more" block) and, if any subscription is
   paid, use the email route instead: an IMAP mailbox (Gmail app password,

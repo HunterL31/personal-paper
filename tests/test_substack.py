@@ -161,8 +161,63 @@ def test_article_fields(feeds, no_imap, fake_state):
     assert article["url"] == BREAD
     assert set(article) == {
         "title", "deck", "author", "publication", "published", "paragraphs",
-        "url", "guid",
+        "images", "url", "guid",
     }
+
+
+# ------------------------------------------------------------ pictures
+BREAD_IMAGES = [
+    {"url": "https://substackcdn.com/image/fetch/loaf.jpg",
+     "caption": "A loaf, photographed badly, on a Tuesday.", "after": 0},
+    {"url": "https://substackcdn.com/image/fetch/w_1456,c_limit,f_webp,q_auto:good/"
+            "https%3A%2F%2Fbucket%2Fdough.png",
+     "caption": None, "after": 4},
+]
+
+
+def test_pictures_are_recorded_where_the_author_set_them(feeds, no_imap, fake_state):
+    """The two figures of the bread post: the captioned one at the top, the
+    bare one after the blockquote (four paragraphs in). The emoji inside the
+    last paragraph is decoration, not a picture -- and not a word moves."""
+    (article,) = substack.fetch(settings_for(SubstackSource(name="slowkitchen")))
+    assert article["images"] == BREAD_IMAGES
+    assert article["paragraphs"] == BREAD_PARAGRAPHS
+
+
+def test_extract_content_tells_pictures_from_decoration():
+    html = (
+        "<p>One.</p>"
+        "<div class='captioned-image-container'><figure>"
+        "<a class='image-link' href='x'><img src='https://cdn/a.jpg' width='1200' height='800'></a>"
+        "<figcaption>Caption <em>one</em>.</figcaption></figure></div>"
+        "<p>Two <img src='https://cdn/emoji.png' width='16' height='16'> words.</p>"
+        "<img src='https://cdn/bare.jpg'>"                       # a bare picture is one too
+        "<figure><figcaption>No picture here</figcaption></figure>"  # chrome
+        "<img src='https://cdn/icon.png' width='40' height='40'>"    # an icon
+        "<img src='data:image/png;base64,AAAA'>"                     # not an address
+        "<blockquote><p>Three.</p></blockquote>"
+    )
+    paragraphs, images = substack.extract_content(html)
+    assert paragraphs == ["One.", "Two words.", "Three."]
+    assert images == [
+        {"url": "https://cdn/a.jpg", "caption": "Caption one.", "after": 1},
+        {"url": "https://cdn/bare.jpg", "caption": None, "after": 2},
+    ]
+    assert "No picture here" not in " ".join(paragraphs)
+
+
+def test_the_email_edition_keeps_its_pictures_too(monkeypatch, feeds, fake_state, fixtures):
+    monkeypatch.setattr(substack, "fetch_from_imap",
+                        lambda title, publication: (fixtures / "substack_email.html").read_text())
+    articles = substack.fetch(settings_for(SubstackSource(name="slowkitchen", paid=True)))
+    cup = {a["guid"]: a for a in articles}[SECOND_CUP]
+    # The logo in the email's header is chrome (and icon-sized); the one
+    # figure in the body is a picture, after the last paragraph.
+    assert cup["images"] == [{
+        "url": "https://substackcdn.com/image/fetch/cup.jpg",
+        "caption": "The second cup, in the only mug that matters.",
+        "after": 5,
+    }]
 
 
 def test_url_is_a_plain_link(feeds, no_imap, fake_state):
