@@ -9,6 +9,7 @@ the preview, which renders the sample issue in the bundled Chromium.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -1236,6 +1237,66 @@ def test_log_shows_the_tail(client, data_dir):
     assert "line 99" not in body
 
 
+def _run_logs(data_dir: Path, *names: str) -> Path:
+    runs = data_dir / "logs" / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (runs / name).write_text(f"everything {name} wrote down\n")
+    return runs
+
+
+def test_the_log_page_offers_enhanced_logging(client, data_dir):
+    body = client.get("/log", auth=AUTH).text
+    assert "Enhanced logging" in body
+    assert 'name="enhanced"' in body
+    assert "The last 7 runs" in body
+    assert "no run has a file of its own" in body       # it is off
+
+
+def test_turning_enhanced_logging_on_and_off(client, data_dir):
+    response = client.post("/log", auth=AUTH, data={"enhanced": "on"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert Settings.load().logs.enhanced is True
+    assert "checked" in client.get("/log", auth=AUTH).text
+
+    client.post("/log", auth=AUTH, data={"other": "x"}, follow_redirects=False)
+    assert Settings.load().logs.enhanced is False
+
+
+def test_the_log_page_lists_the_runs_newest_first(client, data_dir):
+    _run_logs(data_dir, "2026-09-18-060000.log", "2026-09-19-061500.log",
+              "2026-09-20-060012.log")
+    body = client.get("/log", auth=AUTH).text
+    assert "2026-09-19 06:15:00" in body                # the run, in words
+    assert (body.index("2026-09-20-060012.log")
+            < body.index("2026-09-19-061500.log")
+            < body.index("2026-09-18-060000.log"))
+    assert body.count("/log/runs/") == 3
+
+
+def test_a_run_log_is_a_download(client, data_dir):
+    _run_logs(data_dir, "2026-09-20-060000.log")
+    response = client.get("/log/runs/2026-09-20-060000.log", auth=AUTH)
+    assert response.status_code == 200
+    assert "everything 2026-09-20-060000.log wrote down" in response.text
+    assert "attachment" in response.headers["content-disposition"]
+
+
+def test_the_run_log_route_rejects_odd_names(client, data_dir):
+    _run_logs(data_dir, "2026-09-20-060000.log")
+    (data_dir / "logs" / "run.log").write_text("the everyday log")
+    for name in ("run.log", "2026-09-20-060000.log.bak", "2026-09-20.log",
+                 "../run.log", "%2e%2e%2frun.log", "2026-09-21-060000.log"):
+        assert client.get(f"/log/runs/{name}", auth=AUTH).status_code == 404, name
+
+
+def test_the_log_page_needs_the_password(client, data_dir):
+    _run_logs(data_dir, "2026-09-20-060000.log")
+    assert client.get("/log").status_code == 401
+    assert client.get("/log/runs/2026-09-20-060000.log").status_code == 401
+
+
 # ------------------------------------------------------------------ preview
 def test_preview_renders_the_sample_issue(client, data_dir):
     response = client.post("/preview?source=sample", auth=AUTH, follow_redirects=False)
@@ -1575,3 +1636,243 @@ def test_the_look_further_back_option_saves(client):
     client.post("/sources", auth=AUTH, data={"article_max_age_days": "7"})
     assert Settings.load().sources.extend_window_when_empty is False
     assert "Look further back" in client.get("/sources", auth=AUTH).text
+
+
+# ---------------------------------------------------------- the theme switch
+#: How the settings page is set for the reader's own eyes. It is this page's
+#: furniture and nothing else: the paper is black on white whatever it says.
+def test_the_page_ships_following_the_machine(client):
+    assert Settings().web.theme == "auto"
+    assert 'data-theme="auto"' in client.get("/look", auth=AUTH).text
+
+
+def test_the_switch_sets_the_theme_and_comes_back_to_the_tab(client):
+    r = client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/sources"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/sources"
+    assert Settings.load().web.theme == "dark"
+
+
+@pytest.mark.parametrize("tab", ["look", "layout", "sources", "output", "preview", "log"])
+def test_every_tab_is_set_the_way_she_chose(client, tab):
+    client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/look"})
+    html = client.get(f"/{tab}", auth=AUTH).text
+    assert 'data-theme="dark"' in html
+    # ... and the switch says which one is on, for a reader who cannot see it
+    assert 'aria-current="true"' in html
+
+
+def test_a_theme_the_page_does_not_know_changes_nothing(client):
+    client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/look"})
+    client.post("/theme", auth=AUTH, data={"theme": "chartreuse", "next": "/look"})
+    assert Settings.load().web.theme == "dark"
+
+
+@pytest.mark.parametrize("nowhere", ["//elsewhere.example", "https://elsewhere.example/x",
+                                     "", "javascript:alert(1)"])
+def test_the_switch_only_ever_sends_her_back_to_this_page(client, nowhere):
+    """`next` comes off a form, so it is treated as somebody else's idea."""
+    r = client.post("/theme", auth=AUTH, data={"theme": "light", "next": nowhere},
+                    follow_redirects=False)
+    assert r.headers["location"] == "/look"
+
+
+def test_the_theme_is_not_a_setting_of_the_paper(client):
+    """Saving a tab leaves it alone, and it never reaches the Look."""
+    client.post("/theme", auth=AUTH, data={"theme": "dark", "next": "/look"})
+    client.post("/look", auth=AUTH, data={"paper_name": "The Morning"})
+    settings = Settings.load()
+    assert settings.web.theme == "dark"
+    assert settings.look.paper_name == "The Morning"
+    assert "theme" not in settings.look.model_dump()
+
+
+def test_a_settings_file_written_before_there_was_a_choice(client, data_dir):
+    """No `web` key means the page as it was: whatever the machine is doing."""
+    path = Settings.path()
+    written = json.loads(path.read_text()) if path.exists() else {}
+    written.pop("web", None)
+    path.write_text(json.dumps(written))
+    assert Settings.load().web.theme == "auto"
+    assert 'data-theme="auto"' in client.get("/look", auth=AUTH).text
+
+
+#: The palette itself. The page is styled from tokens so that the whole of
+#: it turns over at once; a colour written straight into a rule would stay
+#: light in the dark, which is the one way this quietly breaks.
+def test_the_stylesheet_has_no_colour_outside_the_palette():
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    palette, rest = css.split("* { box-sizing: border-box; }", 1)
+    stray = re.findall(r"(?<![\w-])#[0-9a-fA-F]{3,8}\b", rest)
+    assert stray == [], f"colours set outside the palette: {stray}"
+    # Both ways in: the machine's preference, and the reader overruling it.
+    assert '@media (prefers-color-scheme: dark)' in palette
+    assert ':root:not([data-theme="light"])' in palette, "light must beat the machine"
+    assert ':root[data-theme="dark"]' in palette, "dark must beat the machine too"
+    assert "color-scheme: dark" in palette, "so the browser's own controls follow"
+
+
+def test_the_two_dark_blocks_are_the_same_palette():
+    """They are written twice because CSS cannot share them; they must agree."""
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    blocks = re.findall(r"color-scheme: dark;(.*?)\n\s*\}", css, re.S)
+    assert len(blocks) == 2, "one for the media query, one for the reader's choice"
+    tokens = [dict(re.findall(r"(--[\w-]+):\s*([^;]+);", b)) for b in blocks]
+    assert tokens[0] == tokens[1]
+    assert tokens[0], "the dark blocks actually set something"
+
+
+# --------------------------------------------- the page actually going dark
+#: Two ways the theme quietly failed on a real container, both fixed here.
+def test_the_browser_must_ask_before_reusing_a_static_file(client):
+    """The white-page bug.
+
+    Starlette sends an ETag and no `Cache-Control`, so a browser may decide
+    for itself how long a file stays fresh. One did: it served the previous
+    image's stylesheet with the new page, and the dark theme the reader had
+    just chosen did nothing at all, because that stylesheet had no dark
+    palette in it. `no-cache` makes it ask every time.
+    """
+    response = client.get("/static/style.css", auth=AUTH)
+    assert response.headers["cache-control"] == "no-cache"
+    # ... and asking is cheap: the answer is a 304 with no body.
+    again = client.get("/static/style.css", auth=AUTH,
+                       headers={"If-None-Match": response.headers["etag"]})
+    assert again.status_code == 304
+
+
+def test_a_container_update_is_a_new_address_for_the_stylesheet(client, monkeypatch):
+    """Belt and braces: even a browser that ignores the header cannot reuse
+    the last image's file, because the url it was stored under is gone."""
+    monkeypatch.setenv("APP_BUILD", "abc123def4567890")
+    html = client.get("/look", auth=AUTH).text
+    assert 'href="/static/style.css?v=abc123def456"' in html
+    assert 'src="/static/app.js?v=abc123def456"' in html
+
+
+def test_the_theme_switch_is_legible_in_both_themes():
+    """It was grey small caps once: at 0.85rem that is not a control, it is
+    a caption nobody can read. Every choice is in full ink now, and the one
+    that is on is printed in reverse, which reads either way round."""
+    from pathlib import Path
+
+    css = Path("app/static/style.css").read_text()
+    rule = css.split(".theme button {", 1)[1].split("}", 1)[0]
+    assert "color: var(--ink)" in rule, "the words are set in the page's own ink"
+    assert "var(--grey)" not in rule and "small-caps" not in rule
+    assert "border: var(--rule)" in rule, "it has an edge, so it reads as a control"
+    on = css.split(".theme button.on {", 1)[1].split("}", 1)[0]
+    assert "background: var(--ink)" in on and "color: var(--paper)" in on
+
+
+#: The contract the palette has to keep, checked where it is actually
+#: decided: in a browser, with the real stylesheet and the real cascade.
+#: "dark" and "light" are the reader overruling her machine, so each is
+#: tried against the machine set the other way.
+THEME_CASES = [
+    ("auto", "light", False),      # no choice made: follow the machine
+    ("auto", "dark", True),
+    ("light", "dark", False),      # her choice beats the machine, both ways
+    ("dark", "light", True),       # ... this one is the bug that was reported
+]
+
+
+@pytest.mark.parametrize("theme,machine,expect_dark", THEME_CASES)
+def test_the_page_is_painted_the_way_she_set_it(client, tmp_path, theme, machine, expect_dark):
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    client.post("/theme", auth=AUTH, data={"theme": theme, "next": "/look"})
+    html = client.get("/look", auth=AUTH).text
+    assert f'data-theme="{theme}"' in html
+
+    # The page and its stylesheet, side by side, so the cascade is the real
+    # one and no server is needed.
+    page_file = tmp_path / "look.html"
+    page_file.write_text(re.sub(r'href="/static/style\.css[^"]*"', 'href="style.css"', html))
+    (tmp_path / "style.css").write_text(Path("app/static/style.css").read_text())
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(color_scheme=machine)
+        page = context.new_page()
+        page.goto(page_file.as_uri())
+        painted = page.evaluate("""() => {
+          const body = getComputedStyle(document.body);
+          const off = [...document.querySelectorAll('.theme button')]
+              .find(b => !b.classList.contains('on'));
+          return {bg: body.backgroundColor, ink: body.color,
+                  offColor: getComputedStyle(off).color};
+        }""")
+        browser.close()
+
+    def channels(css_colour):
+        return [int(n) for n in re.findall(r"\d+", css_colour)[:3]]
+
+    background = sum(channels(painted["bg"])) / 3
+    ink = sum(channels(painted["ink"])) / 3
+    if expect_dark:
+        assert background < 60, f"{theme} on a {machine} machine painted {painted['bg']}"
+        assert ink > 180, "and the type has to be light on it"
+    else:
+        assert background > 200, f"{theme} on a {machine} machine painted {painted['bg']}"
+        assert ink < 60
+
+    # The choices she has not made stay as readable as the one she has:
+    # dimming them to grey small caps is what made the switch unreadable.
+    assert channels(painted["offColor"]) == channels(painted["ink"])
+
+
+#: Selectors that reach a form control, which the browser draws with its own
+#: colours unless told otherwise.
+CONTROL_SELECTORS = ("button", "input", "select", "textarea")
+
+
+def test_no_control_sets_a_background_without_its_ink():
+    """The blank-buttons bug, pinned at the cause.
+
+    `button { background: #fff }` with no `color` leaves the text to the
+    user agent, which paints `buttontext` white on a device whose system is
+    dark -- white on an explicitly white button, so the switch rendered as
+    three empty boxes. A control that claims its background claims its
+    foreground in the same breath.
+    """
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    offenders = []
+    for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        selector = selector.strip()
+        if selector.startswith("@") or ":root" in selector:
+            continue
+        if not any(re.search(rf"(^|[\s,>+~]){c}\b", selector) for c in CONTROL_SELECTORS):
+            continue
+        if re.search(r"(^|[;\s])background(-color)?\s*:", body) and not re.search(r"(^|[;\s])color\s*:", body):
+            # A :hover that only re-tints an already-inked rule is fine.
+            if ":hover" in selector or ":focus" in selector:
+                continue
+            offenders.append(selector)
+    assert offenders == [], f"controls with a background but no colour: {offenders}"
+
+
+def test_the_page_declares_which_scheme_its_controls_are_drawn_in():
+    """The other half of that defence: with `color-scheme` declared, the
+    browser draws its own widgets -- checkboxes, radios, the time picker --
+    to match the page instead of guessing from the system."""
+    from pathlib import Path
+    import re
+
+    css = Path("app/static/style.css").read_text()
+    root = css.split("* { box-sizing: border-box; }", 1)[0]
+    assert "color-scheme: light" in root
+    # The declaration, not the `prefers-color-scheme: dark` query around it.
+    declared = re.findall(r"(?<!-)color-scheme:\s*dark", root)
+    assert len(declared) == 2, "both ways into the dark palette declare it"

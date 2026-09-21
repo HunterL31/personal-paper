@@ -24,12 +24,14 @@ import os
 import re
 import shutil
 import sys
+import time
 import traceback
 from concurrent.futures import TimeoutError as FutureTimeout
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
@@ -74,6 +76,8 @@ class RunResult:
     partial: dict[int, int] = field(default_factory=dict)
     #: route name -> error message, or None when that route succeeded
     delivery: dict[str, Optional[str]] = field(default_factory=dict)
+    #: this run's own log file, when enhanced logging is on (settings.logs)
+    log: Optional[Path] = None
     ok: bool = False
     error: Optional[str] = None
 
@@ -95,6 +99,18 @@ NOTHING_TO_REPRINT = "No paper has been made yet."
 
 #: `<date>.pdf`, and `<date>-2.pdf` for a second issue made the same day.
 ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d+)?\.pdf$")
+
+#: One enhanced-logging file per run: `<date>-<HHMMSS>.log`, which sorts
+#: by name in the order the runs happened.
+RUN_LOG_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}\.log$")
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+#: Libraries that stay at INFO even in an enhanced run. urllib3 writes the
+#: whole of every URL it fetches at debug level, and a calendar address is
+#: a credential: the run's log file is downloadable, so it keeps none.
+QUIET_LOGGERS = (
+    "urllib3", "requests", "httpx", "httpcore", "hpack", "charset_normalizer",
+    "asyncio", "apscheduler", "PIL", "fontTools", "markdown_it",
+)
 
 
 # ------------------------------------------------------------------ helpers
@@ -191,6 +207,147 @@ def _setup_file_logging() -> None:
             root.setLevel(logging.INFO)
     except Exception as exc:  # a read-only /data must not stop the paper
         log.warning("cannot write run.log (%s)", exc)
+
+
+# ------------------------------------------------- enhanced logging (Logs)
+def run_log_dir() -> Path:
+    """`<DATA_DIR>/logs/runs`: the file enhanced logging keeps per run."""
+    return data_dir() / "logs" / "runs"
+
+
+def run_logs() -> list[Path]:
+    """Every run log on disk, newest first. Never raises."""
+    try:
+        files = [p for p in run_log_dir().iterdir()
+                 if p.is_file() and RUN_LOG_NAME.match(p.name)]
+    except OSError:
+        return []
+    # The name is the run's own date and time, so it sorts chronologically
+    # however the files were copied about.
+    return sorted(files, key=lambda p: p.name, reverse=True)
+
+
+def _prune_run_logs(keep: int) -> None:
+    """Keep the newest `keep` run logs and delete the rest."""
+    for path in run_logs()[max(1, int(keep)):]:
+        try:
+            path.unlink()
+        except OSError as exc:
+            log.warning("could not delete %s (%s)", path, exc)
+
+
+@contextmanager
+def _enhanced_log(settings: Settings) -> Iterator[Optional[Path]]:
+    """This run's own debug log, when the reader asked for one.
+
+    Yields the file's path, or None when enhanced logging is off (or the
+    file cannot be written, which is never a reason not to print a paper).
+    Inside, the root logger runs at DEBUG so everything the run and the
+    gatherers say reaches this file; the handlers that were already there
+    (run.log, the container's stdout) are pinned at the level they were
+    running at, so neither is flooded, and `QUIET_LOGGERS` keeps the
+    libraries that write credentials into their debug lines at INFO.
+    """
+    logs = getattr(settings, "logs", None)
+    if logs is None or not logs.enhanced:
+        yield None
+        return
+
+    path = run_log_dir() / f"{_now():%Y-%m-%d-%H%M%S}.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+    except OSError as exc:            # a read-only /data must not stop the paper
+        log.warning("cannot write %s (%s)", path, exc)
+        yield None
+        return
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    handler.setLevel(logging.DEBUG)
+
+    root = logging.getLogger()
+    was = root.level
+    floor = was if was > logging.NOTSET else logging.INFO
+    pinned = [h for h in root.handlers if h.level == logging.NOTSET]
+    quiet = [(logging.getLogger(name), logging.getLogger(name).level)
+             for name in QUIET_LOGGERS]
+    for h in pinned:
+        h.setLevel(floor)
+    for logger, _ in quiet:
+        logger.setLevel(logging.INFO)
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)
+    try:
+        yield path
+    finally:
+        root.setLevel(was)
+        root.removeHandler(handler)
+        handler.close()
+        for h in pinned:
+            h.setLevel(logging.NOTSET)
+        for logger, level in quiet:
+            logger.setLevel(level)
+        _prune_run_logs(logs.keep_runs)
+
+
+def _log_settings(settings: Settings, *, dry_run: bool, date: Optional[str],
+                  sample: bool) -> None:
+    """What this run was asked for and what the paper is set to.
+
+    Never a credential: a calendar address is a secret, so the calendars
+    are counted, not named, and the container's variables are reported set
+    or not set, exactly as the web page reports them.
+    """
+    mode = "replaying " + date if date else ("sample data" if sample else "live")
+    log.info("enhanced logging on")
+    log.debug("run: %s%s", mode, "; dry run, nothing delivered" if dry_run else "")
+    log.debug("data dir: %s; timezone: %s; build: %s; python %s",
+              data_dir(), Env.tz(), os.environ.get("APP_BUILD") or "dev",
+              sys.version.split()[0])
+    src = settings.sources
+    log.debug("sources: %d calendar(s), %d substack(s), %d list(s); "
+              "weather at %s,%s; crossword %s; articles within %d day(s)%s",
+              len(src.calendars), len(src.substacks), len(src.lists),
+              src.weather.lat, src.weather.lon,
+              "on" if src.crossword.enabled else "off",
+              src.article_max_age_days,
+              "; window widened when empty" if src.extend_window_when_empty else "")
+    out = settings.output
+    log.debug("output: print %s (%s, %s); email %s (%d address(es)); "
+              "schedule %s on days %s; notify %s",
+              "on" if out.print.enabled else "off",
+              out.print.printer_host or "no printer",
+              "duplex" if out.print.duplex else "one-sided",
+              "on" if out.email.enabled else "off", len(out.email.to),
+              out.schedule.time,
+              ",".join(str(d) for d in out.schedule.days) or "none",
+              out.notify)
+    look = settings.look
+    log.debug("look: %r; body %s at %.1fpt; up to %d front stor%s; rail on the %s",
+              look.paper_name, look.body_font, look.body_size_pt,
+              look.layout.front_stories,
+              "y" if look.layout.front_stories == 1 else "ies",
+              look.layout.rail_side)
+    st = load_state()
+    log.debug("state: issue %s; last run %s; last success %s; last error %s",
+              st.get("issue"), st.get("last_run") or "never",
+              st.get("last_success") or "never", st.get("last_error") or "none")
+    log.debug("container variables set: %s",
+              ", ".join(n for n, on in Env.status().items() if on) or "none")
+
+
+def _log_result(result: RunResult, seconds: float) -> None:
+    """The last lines of a run log: what came of all that."""
+    for name, err in result.gather_errors.items():
+        log.debug("gatherer %s reported nothing: %s", name, err)
+    log.debug("delivery: %s",
+              "; ".join(f"{route}: {err or 'ok'}"
+                        for route, err in result.delivery.items()) or "nothing sent")
+    log.info(
+        "run finished in %.1fs: ok=%s pages=%s crossword=%s printed=%s "
+        "partial=%s error=%s",
+        seconds, result.ok, result.pages, result.crossword, result.printed,
+        result.partial or "none", result.error or "none",
+    )
 
 
 def _gather(settings: Settings) -> tuple[dict[str, Any], dict[str, str]]:
@@ -303,8 +460,30 @@ def run(
     archived `out/<date>/data.json` (also without delivering); `sample`
     renders `render/sample_data.json` instead of gathering.  Only a real,
     delivered run bumps the issue counter.
+
+    The issue itself is `_run` below; this sets up the logging around it,
+    which with enhanced logging on is a file of this run's own.
     """
     _setup_file_logging()
+    started = time.monotonic()
+    with _enhanced_log(settings) as path:
+        if path is not None:
+            _log_settings(settings, dry_run=dry_run, date=date, sample=sample)
+        result = _run(settings, dry_run=dry_run, date=date, sample=sample)
+        result.log = path
+        if path is not None:
+            _log_result(result, time.monotonic() - started)
+    return result
+
+
+def _run(
+    settings: Settings,
+    *,
+    dry_run: bool,
+    date: Optional[str],
+    sample: bool,
+) -> RunResult:
+    """One issue, inside whatever logging `run` set up around it."""
     now = _now()
     replay = date is not None
     day = date or now.strftime("%Y-%m-%d")

@@ -541,6 +541,53 @@ def test_an_empty_window_can_look_further_back(feeds, no_imap, fake_state):
     assert {r["status"] for r in plain["skipped"]} == {"too-old"}
 
 
+def test_a_post_printed_from_a_widened_window_is_reported_as_printed(
+    feeds, no_imap, fake_state
+):
+    """A post found by looking further back is older than the window by
+    definition. Once it has been printed the queue view has to say so:
+    before, the age test ran first and filed it under "older than 7 days",
+    where the reader could neither see that it had printed nor mark it
+    unread."""
+    feeds["https://window.substack.com/feed"] = build_feed(
+        "Window", "window",
+        [{"title": "Twenty days ago", "slug": "twenty",
+          "pubdate": "Wed, 27 Aug 2025 15:00:00 GMT"},      # NOW is Sept 16, 15:00
+         {"title": "Twenty-five days ago", "slug": "twentyfive",
+          "pubdate": "Fri, 22 Aug 2025 15:00:00 GMT"}],
+    )
+    source = SubstackSource(name="window")
+    s = settings_for(source)
+    s.sources.extend_window_when_empty = True
+
+    printed = substack.fetch(s)[0]           # the oldest one, as the paper would
+    substack.mark_seen([printed["guid"]])
+
+    view = substack.queue_preview(s)
+    assert [(r["title"], r["status"]) for r in view["printed"]] == [
+        ("Twenty-five days ago", "printed")
+    ]
+    assert not [r for r in view["skipped"] if r["title"] == "Twenty-five days ago"]
+    # and it is not offered again, whatever the view says
+    assert [a["title"] for a in substack.fetch(s)] == ["Twenty days ago"]
+
+
+def test_an_old_printed_post_is_printed_not_too_old(feeds, no_imap, fake_state):
+    """The same rule without the look-back option: having been printed is a
+    fact about the post, not about the window."""
+    feeds["https://window.substack.com/feed"] = build_feed(
+        "Window", "window",
+        [{"title": "Twenty days ago", "slug": "twenty",
+          "pubdate": "Wed, 27 Aug 2025 15:00:00 GMT"}],
+    )
+    source = SubstackSource(name="window")
+    substack.mark_seen(["https://window.substack.com/p/twenty"])
+
+    view = substack.queue_preview(settings_for(source))
+    assert [r["status"] for r in view["printed"]] == ["printed"]
+    assert view["skipped"] == [] and view["queued"] == []
+
+
 def test_wider_windows_step_up_from_the_setting():
     assert substack.wider_windows(7) == [14, 30, 60, 90, 180, 365]
     assert substack.wider_windows(60) == [90, 180, 365]
