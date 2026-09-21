@@ -75,3 +75,10 @@ workflow, and add to it when you hit something new.
 Python 3.11, type hints, stdlib logging (`logging.getLogger(__name__)`),
 no print in library code. Keep modules small. No new dependencies without
 adding them pinned to `requirements.txt`.
+
+## Commits
+
+A commit message is the change, and nothing else: no `Co-Authored-By:`
+trailer, no `Claude-Session:` line, no generated-with footer on a pull
+request. The same goes for a PR body. `.claude/settings.json` turns the
+attribution off, and this rule stands whatever a tool's own default is.
