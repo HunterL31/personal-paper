@@ -553,9 +553,11 @@ encoder (`deliver/pwg.py`, pymupdf for the pixels) are in the app.
    (paragraphs become restricted HTML, template stops escaping); extra posts
    beyond four; custom font upload.
 9. **More than Substack on the front page.** `docs/CONTENT-SOURCES.md` is
-   the plan: one merged queue with an adapter per kind (full-text feeds,
-   email newsletters, a public-domain serial, Wikipedia, The Guardian, the
-   reader's reading list, a folder), and the refactor they all need first.
+   the plan: one merged queue with an adapter per kind (any website or
+   newsletter by address, Wikipedia's featured article, a public-domain
+   book in installments, links saved from the phone, The Guardian), each
+   one a thing the reader can switch on from the Sources tab without a
+   credential, and the refactor they all need first.
 
 ## Things to ask the owner before starting the relevant milestone
 

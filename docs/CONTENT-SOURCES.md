@@ -13,9 +13,22 @@ paragraphs, nothing reworded) and rule 2 (no LLM), because together they
 rule out every source that offers a summary, a snippet, or a headline with
 a link.
 
-## What a source has to give us
+## Two tests every source has to pass
 
-A source can feed the front page only if it yields, for each story, all of:
+**It is easy to switch on.** The reader adds it from the Sources tab in
+under a minute, understands what they typed, and the Check button tells
+them in plain words what will print tomorrow. Concretely: a website
+address, a title from a list, or a switch. No mail servers, no app
+passwords, no tokens copied out of a developer console. The one credential
+the plan asks for (a free Guardian key) is a form with a name and an email
+on it, and it is the least easy thing here. That test is why the email
+route is not in this plan: fetching newsletters over IMAP would bring the
+most text for the least code, and it asks the reader to create a Gmail
+label, a filter and an app password and to type an IMAP host into a
+container variable. The paid-Substack route that already does this stays
+as it is; nothing new is built on it.
+
+**It gives us the whole text.** For each story, all of:
 
 - **The whole text**, as the author published it, as HTML or plain text
   that splits cleanly into paragraphs. A feed that carries only a
@@ -26,9 +39,7 @@ A source can feed the front page only if it yields, for each story, all of:
 - **A stable identifier** for the queue: printed once, never repeated,
   held for another day when it did not fit.
 - **A date**, so the window ("skip posts older than … days") applies.
-- **A `url`**, the address printed under a story that only partly fit. It
-  may be empty, in which case the template says the story is online
-  without saying where; for some kinds a better line is needed (below).
+- **A `url`**, the address printed under a story that only partly fit.
 - **A title, an author and a publication name**, verbatim.
 
 And the operational rules: a failing source yields an empty list and a log
@@ -54,35 +65,34 @@ default render byte-identical:
 
 ### `gather/articles.py` — the merged queue
 
-`fetch(settings)` walks `settings.sources.publications` in order, asks
-each publication's adapter for its unread articles, applies that
-publication's per-issue cap, and returns the first `QUEUE_LIMIT`, exactly
-as `substack.fetch` does today. The widened-window fallback
-(`extend_window_when_empty`) stays and applies only to kinds where
-"further back" makes sense (newsletters and feeds, not news).
-Publications are fetched concurrently on daemon threads with a
-per-publication timeout of about 10 s, so six feeds, a mailbox and an API
-call still fit the 30 s budget — the Open-Meteo retry budget in
-`docs/AGENT-NOTES.md` is the precedent.
+`fetch(settings)` asks each source's adapter for its unread articles,
+applies that source's per-morning cap, and returns the first
+`QUEUE_LIMIT`, exactly as `substack.fetch` does today. The widened-window
+fallback (`extend_window_when_empty`) stays and applies only to kinds
+where "further back" makes sense (websites and newsletters, not news).
+Sources are fetched concurrently on daemon threads with a per-source
+timeout of about 10 s, so six feeds, an API call and a book still fit
+the 30 s budget — the Open-Meteo retry budget in `docs/AGENT-NOTES.md` is
+the precedent.
 
 `queue_preview(settings)` and the Sources tab's queue view merge the
-adapters' rows the same way, with a Kind column.
+adapters' rows the same way, with a column saying where each row came
+from.
 
 `record_printed(settings, [(guid, paragraphs_or_None), ...])` is what
 `run.py` calls after a delivered run instead of `mark_seen`: it marks the
 guids seen and then gives each adapter the chance to act on its own
-articles (the serial advances its bookmark; a reading-list service can
-archive the item).
+articles (the book advances its bookmark; a saved link is filed as read).
 
 ### `gather/sources/<kind>.py` — one adapter per kind
 
 ```python
-def fetch(pub: Publication, seen: set[str], window_days: int) -> list[dict]
+def fetch(source, seen: set[str], window_days: int) -> list[dict]
     # articles in the render contract's shape, plus `guid`, in this kind's
     # own order; never raises for one bad post, may raise for a dead source
-def check(pub: Publication) -> dict
-    # the Sources tab's Check button
-def printed(pub: Publication, guid: str, paragraphs: int | None) -> None
+def check(source) -> dict
+    # the Sources tab's Check button, in the reader's words
+def printed(source, guid: str, paragraphs: int | None) -> None
     # optional; called by record_printed after a delivered run
 ```
 
@@ -103,166 +113,123 @@ covers whatever comes out.
 `seen()`, `mark_seen()`, `mark_unseen()` over `state.json["seen_posts"]`.
 The key keeps its name so an existing state file keeps working. Substack
 guids stay as they are; every new kind prefixes its own (`feed:<id>`,
-`email:<message-id>`, `serial:<slug>:<from>-<to>`) so nothing collides.
+`wiki:<pageid>`, `book:<slug>:<from>-<to>`) so nothing collides.
 
-### Settings: `sources.publications`
+### Settings: what the reader sees
 
-One ordered list, one row per publication, whatever its kind — order is
-front-page priority, as it is today for Substacks:
+The Sources tab grows from one table to four short groups, and the
+settings follow them. Every knob that only an engineer would understand
+(per-kind window, sort order, chrome lists) is a default in code, not a
+field on the page.
 
 ```python
-class Publication(BaseModel):
-    kind: Literal["substack", "feed", "email", "guardian", "reading_list",
-                  "serial", "wikipedia", "folder"]
-    name: str                 # substack name, feed URL, mailbox folder or sender,
-                              # Guardian section, book address, ...
-    paid: bool = False        # substack only
-    max_age_days: Optional[int] = None   # overrides sources.article_max_age_days;
-                                         # news kinds default to 1
-    order: Literal["oldest_first", "newest_first"] = "oldest_first"
-    per_issue: int = 0        # 0 = no cap; 2 keeps a news section from
-                              # crowding out the newsletters
-    selector: str = ""        # feed / reading_list: the CSS container of the
-                              # article body, when the page needs one
+class Publication(BaseModel):          # "Websites and newsletters"
+    address: str                       # a site, a Substack name, or a feed URL
+    paid: bool = False                 # shown only when Check says it is a Substack
+    per_morning: int = Field(0, ge=0, le=4)   # 0 = as many as fit
+
+class BookSource(BaseModel):           # "A book, a little each morning"
+    enabled: bool = False
+    url: str = ""                      # the Standard Ebooks page picked from the list
+    paragraphs_per_morning: int = Field(30, ge=5, le=120)
+
+class WikipediaSource(BaseModel):      # "Something to read every day"
+    enabled: bool = False
+    pick: Literal["featured", "random_featured", "on_this_day"] = "featured"
+
+class SavedLinks(BaseModel):           # "Saved from your phone"
+    enabled: bool = True               # the endpoint is always there; this is whether it prints
+
+class GuardianSource(BaseModel):       # "The news"
+    enabled: bool = False
+    api_key: str = ""                  # pasted on the tab, masked after save (see below)
+    sections: list[str] = ["world"]
+    per_morning: int = Field(2, ge=1, le=4)
 ```
 
 `sources.substacks` is read for one more release and turned into
 `publications` rows on load, the way `_lists_from_tasks` rebuilds the
-to-do list from a pre-lists file. The Sources tab gets a Kind dropdown per
-row and shows only the fields the kind uses — the `EAR_KIND_FIELDS`
-pattern on the Look tab.
+to-do list from a pre-lists file.
 
-Why `order` and `max_age_days` per publication: a newsletter is read in
-the order it was written, oldest unread first, over a week; a news section
-is read newest first and is stale after a day. One global rule cannot
-serve both.
+**Front-page priority** in v1 is fixed and stated on the tab: the reader's
+own picks first (saved links, then the websites table in its order), then
+the news, then Wikipedia, then the book — the book last because it is the
+story that continues tomorrow and so the right one to cut. A drag-to-order
+list across groups is a later refinement if anyone wants it.
 
 ### Contract: one new field, defaulting to today
 
 `article.rest`, optional: `"online"` (the default, and today's line, "The
-rest of this story is online: <url>"), `"tomorrow"` ("Continued
-tomorrow.", for the serial) or `"inbox"` ("The rest of this letter is in
-your inbox.", for an email with no web address). `onlineLine()` in
-`render/template.html` picks the wording; with the field absent the render
-is byte-identical to today, which the PNG tests check.
+rest of this story is online: <url>") or `"tomorrow"` ("Continued
+tomorrow.", for the book). `onlineLine()` in `render/template.html`
+picks the wording; with the field absent the render is byte-identical to
+today, which the PNG tests check.
 
 Nothing else in the contract changes. `publication` already carries
-whatever name the kind gives it ("The Guardian · World", the newsletter's
-name, the book's author).
+whatever name the kind gives it ("The Guardian · World", the site's own
+title, the book's author).
 
 ## The sources
 
-Ordered roughly by how much front page they buy per hour of work.
+In the order they should be built, which is also, roughly, the order of
+how easy they are to switch on.
 
-### 1. Full-text feeds (`feed`)
+### 1. Websites and newsletters, by address (`feed`)
 
-Anything with an RSS or Atom feed that carries the whole post: Beehiiv,
-Ghost, Buttondown, WordPress and the static-site generators, Medium's free
-posts, most personal blogs. Also two publishers whose feeds carry whole
-articles under Creative Commons licences that forbid editing — which is
-house rule 1 in someone else's words:
+The reader pastes the address of a site or a newsletter — `kottke.org`,
+`platformer.news`, `someone.beehiiv.com`, a Ghost or Buttondown letter, a
+WordPress blog — and the paper finds the feed itself. This is the
+Substack table generalised, and for the reader it is the same table with a
+wider welcome.
+
+**Finding the feed.** Fetch the page and read its
+`<link rel="alternate" type="application/rss+xml|application/atom+xml">`;
+failing that, try the usual paths (`/feed`, `/rss`, `/feed.xml`,
+`/atom.xml`, `/index.xml`, `/rss.xml`). A `*.substack.com` address, or a
+feed whose generator says Substack, is handled by the Substack adapter
+exactly as today, Paid checkbox and all; the reader never picks a kind.
+Check reports, in words: the feed's title, the latest post's title, and
+whether posts arrive whole or as previews.
+
+**Whole posts or previews.** The one new piece of logic: a feed with no
+`content:encoded`, or a short body ending in a "read more" link, carries
+previews. Such a site yields nothing and Check says so plainly ("This
+site's feed carries only the opening of each post, so nothing from it can
+be printed"). Nothing is scraped from the post's page in v1; the reader
+is told rather than given a stub or a guess.
+
+**Presets.** A dropdown beside the address box, "Or pick one", with a
+handful of publications whose feeds are known to carry whole articles and
+whose licences forbid editing — house rule 1 in someone else's words:
 
 - **ProPublica**, `https://www.propublica.org/feeds/propublica/main`:
   RSS 2.0 with the complete piece in `content:encoded` (verified; 15–40
   paragraphs an item), CC BY-NC-ND.
-- **The Conversation**, `https://theconversation.com/us/articles.atom`
-  (per-section feeds exist): Atom with the complete article in `content`
-  and a `<rights>` line, CC BY-ND, 15–30 paragraphs an item.
+- **The Conversation**, `https://theconversation.com/us/articles.atom`,
+  with per-section feeds: Atom with the complete article in `content` and
+  a `<rights>` line, CC BY-ND, 15–30 paragraphs an item (verified).
 
 Both publishers' republishing pages address other publishers and ask that
 stories be picked one at a time rather than mirrored wholesale. One
 household's single printed copy is reading, not republishing, but the
-terms are worth knowing before anyone adds a "print everything" switch.
+terms are worth knowing before anyone adds a "print everything" switch;
+`per_morning` is the reader's own throttle. Presets live in
+`gather/presets.py` as name, feed URL and chrome list, so adding one is a
+three-line change.
 
-**What it needs.** Almost nothing: `substack.feed_url` already accepts a
-full feed URL, and the adapter is `substack.py` without the paid branch
-and with a generic chrome list (share bars, "related" blocks, `<figure>`,
-`<iframe>`). The one new piece is detecting a summary-only feed: no
-`content:encoded`, or a short body ending in a "read more" link. Such a
-feed yields nothing, with a log line and a "this feed carries only
-previews" verdict from Check — unless the publication has a `selector`,
-in which case the page extractor (source 6) fetches the post's own page.
+**Effort.** Small. `substack.feed_url` already accepts a full feed URL;
+the adapter is `substack.py` without the paid branch and with a generic
+chrome list (share bars, "related" blocks, `<figure>`, `<iframe>`), plus
+the discovery step. Fixtures: a Beehiiv feed, a Ghost feed, a WordPress
+summary-only feed, a page with a feed link in its head, the ProPublica and
+Conversation feeds.
 
-**Effort.** Small. Fixtures: a Beehiiv feed, a Ghost feed, a WordPress
-summary-only feed, the ProPublica and Conversation feeds.
+### 2. Something to read every day: Wikipedia (`wikipedia`)
 
-### 2. Email newsletters (`email`)
-
-The mailbox as a source. A publication is an IMAP folder (a Gmail label)
-or a sender address; every message in it inside the window that has not
-printed is a queued article. This is probably the largest single win:
-
-- The reader already curates it, by subscribing.
-- Paid posts arrive whole. Money Stuff, Axios, The Browser, Morning Brew,
-  every Beehiiv and Ghost letter with no public feed: all of it comes in
-  by email and nowhere else.
-- The credential already exists (`IMAP_*`), and the extractor for email
-  HTML exists (`extract_email_paragraphs`).
-- It makes the paid-Substack dance (RSS preview, then IMAP by subject)
-  unnecessary: a paid Substack is just an email publication.
-
-**Mapping.** `guid` = `Message-ID`; `title` = Subject; `author` = the From
-display name; `publication` = the reader's name for the row (or the From
-name); `published` = the Date header; `url` = the "View in browser" link
-when the message has one (Substack, Beehiiv, Ghost, Buttondown and
-Mailchimp all put one in), else empty with `rest: "inbox"`.
-
-**Risks.** Email HTML is table soup. `BLOCK_TAGS` walks `p`, `h2`–`h4`,
-`blockquote` and `li`; text that sits bare in a `<td>` or `<div>` is not
-picked up, and the platforms differ. Per-platform chrome selectors are
-needed (Beehiiv, Mailchimp and Ghost footers on top of the Substack ones in
-`EMAIL_CHROME_SELECTORS`), and the Check button must show the paragraph
-count with the first and last paragraph so a gutted issue is visible before
-it prints. The IMAP `\Seen` flag is never touched (the mailbox is opened
-read-only); `state.json` remembers what printed, as for everything else.
-
-**Effort.** Medium. Fixtures: one `.eml` per platform.
-
-### 3. A serial (`serial`)
-
-A public-domain novel, printed a little every morning, the way Dickens
-shipped. This is the most newspaper-native idea in the list, and it is
-the source that guarantees the paper is never one sheet with a puzzle on
-the front: there is always a next installment.
-
-- **Standard Ebooks** first: `https://standardebooks.org/ebooks/<author>/<title>/text/single-page`
-  is one XHTML document, chapters as `<section epub:type="chapter">` with
-  an `<h2>`, paragraphs as plain `<p>`, blockquotes where the author had
-  them, CC0 (verified on *Persuasion*). The existing block walk reads it
-  with no new extractor; chapter headings come through as paragraphs the
-  way Substack `h2`s do.
-- **Project Gutenberg** for books Standard Ebooks lacks:
-  `https://www.gutenberg.org/ebooks/<id>.txt.utf-8`, paragraphs at blank
-  lines, the licence boilerplate cut at the `*** START OF` / `*** END OF`
-  markers. Messier (hard-wrapped lines to rejoin, headings by heuristic),
-  so second.
-
-**How it queues.** The book is fetched once and cached as a paragraph list
-under `<DATA_DIR>/serials/<slug>.json`. `state.json["serials"][slug]`
-holds `{"next": <paragraph index>}`. Each morning the adapter offers one
-article: the next `paragraphs_per_day` paragraphs (a per-row setting,
-say 30), or fewer to end at a chapter boundary; `title` the book's title,
-`publication` the author, `deck` the chapter heading when the installment
-opens one, `url` the book's page, `rest: "tomorrow"`. The row's
-`per_issue` is 1 and it belongs at the bottom of the priority list, so it
-is the story that gets cut when the sheet is full. `record_printed`
-advances `next` by exactly the paragraphs that reached the sheet — all of
-them for a whole installment, `RenderResult.partial`'s count for a cut
-one, none if it did not fit at all. Paragraphs are never split, nothing is
-reworded, and tomorrow resumes at the paragraph after the last one
-printed: rule 1 as the feature.
-
-**What it changes.** The `rest` field and the wording in `onlineLine()`.
-
-**Effort.** Small to medium. Fixtures: a short Standard Ebooks single-page
-document, a Gutenberg text.
-
-### 4. Wikipedia (`wikipedia`)
-
-Zero credentials, always available, and the article is long enough that
-it is always the partial story at the end of the sheet, which suits a
-reference article: the reader gets the lead and the first sections, and
-the address of the rest.
+One switch. Zero credentials, always available, and the article is long
+enough that it is always the partial story at the end of the sheet, which
+suits a reference article: the reader gets the lead and the first
+sections, and the address of the rest.
 
 - The featured-content feed
   (`https://en.wikipedia.org/api/rest_v1/feed/featured/YYYY/MM/DD`,
@@ -275,18 +242,97 @@ the address of the rest.
   blank-line paragraphs (verified on *Persuasion (novel)*: some 15,000
   words).
 
-**Modes** (a per-row setting): today's featured article; a random featured
-article; the article behind one of today's "On this day" events. `guid` =
-page id plus revision; `url` the page; `published` today; `author` empty;
-`publication` "Wikipedia". The heading marks (`==`) are markup and are
-stripped, leaving the heading text as its own paragraph. The apparatus
-sections at the end — References, See also, External links, Notes,
-Bibliography — are cut by name: they are navigation, the same call as
-removing a subscribe button. CC BY-SA.
+**Picks** (a radio on the tab): today's featured article; a random
+featured article; the article behind one of today's "On this day" events.
+`guid` = page id plus revision; `url` the page; `published` today;
+`author` empty; `publication` "Wikipedia". The heading marks (`==`) are
+markup and are stripped, leaving the heading text as its own paragraph.
+The apparatus sections at the end — References, See also, External links,
+Notes, Bibliography — are cut by name: they are navigation, the same call
+as removing a subscribe button. CC BY-SA.
 
 **Effort.** Small. Fixtures: one featured-feed JSON, one extract JSON.
 
-### 5. Real news: The Guardian (`guardian`), and what does not work
+### 3. A book, a little each morning (`book`)
+
+A public-domain novel, printed in installments, the way Dickens shipped.
+The most newspaper-native idea in the list, and the source that guarantees
+the paper is never one sheet with a puzzle on the front: there is always
+a next installment. For the reader it is a title picked from a list and a
+number of paragraphs a morning.
+
+- **Standard Ebooks**: `https://standardebooks.org/ebooks/<author>/<title>/text/single-page`
+  is one XHTML document, chapters as `<section epub:type="chapter">` with
+  an `<h2>`, paragraphs as plain `<p>`, blockquotes where the author had
+  them, CC0 (verified on *Persuasion*). The existing block walk reads it
+  with no new extractor; chapter headings come through as paragraphs the
+  way Substack `h2`s do. Their catalogue is an OPDS feed, so the picker can
+  be a search box over titles and authors rather than a URL field; a short
+  built-in list of well-known titles covers the first morning.
+- **Project Gutenberg** for books Standard Ebooks lacks:
+  `https://www.gutenberg.org/ebooks/<id>.txt.utf-8`, paragraphs at blank
+  lines, the licence boilerplate cut at the `*** START OF` / `*** END OF`
+  markers. Messier (hard-wrapped lines to rejoin, headings by heuristic),
+  so second, and behind a "paste a Gutenberg address" field rather than
+  the picker.
+
+**How it queues.** The book is fetched once and cached as a paragraph list
+under `<DATA_DIR>/books/<slug>.json`. `state.json["books"][slug]` holds
+`{"next": <paragraph index>}`. Each morning the adapter offers one
+article: the next `paragraphs_per_morning` paragraphs, or fewer to end at
+a chapter boundary; `title` the book's title, `publication` the author,
+`deck` the chapter heading when the installment opens one, `url` the
+book's page, `rest: "tomorrow"`. It is last in priority, so it is the
+story that gets cut when the sheet is full. `record_printed` advances
+`next` by exactly the paragraphs that reached the sheet — all of them for
+a whole installment, `RenderResult.partial`'s count for a cut one, none if
+it did not fit at all. Paragraphs are never split, nothing is reworded,
+and tomorrow resumes at the paragraph after the last one printed: rule 1
+as the feature. Finishing the book is said on the sheet ("The End") and
+on the tab, where the reader picks the next.
+
+**What it changes.** The `rest` field and the wording in `onlineLine()`.
+
+**Effort.** Small to medium. Fixtures: a short Standard Ebooks single-page
+document, a Gutenberg text, a slice of the OPDS catalogue.
+
+### 4. Saved from your phone (`saved`)
+
+The link saved during the day is the story on the doorstep next morning.
+The reader already has a Shortcut that posts a list to the paper; this is
+one more, on the share sheet: "Get URLs from input", then `POST
+/saved` with the same bearer rule as `POST /lists/<slug>`. The Sources
+tab shows the address and header the Shortcut needs, the same box the
+lists have, and under it the links waiting, each with its extracted
+paragraph count and a Remove.
+
+**How it works.** Saved links wait in `<DATA_DIR>/saved/`, one JSON each.
+The page is fetched and the article extracted at save time, so the count
+is on the tab within seconds and a link that cannot be printed is flagged
+right away rather than at 6 a.m. `guid` = the URL; `url` the URL;
+`published` the day it was saved; `title`, `author` and the site's name
+from the page's own metadata (`og:title`, `author`, `og:site_name`),
+falling back to the `<title>` and the host name.
+
+**The extractor, and the one real rule 1 risk in this plan.** Pages have
+no feed to hand us the body, so the article has to be found in the page.
+`trafilatura` (pure Python on lxml, the best-scoring open extractor, run
+with `favor_recall=True`) or `readability-lxml`, pinned in
+`requirements.txt`. A heuristic extractor can drop a short paragraph it
+scores as boilerplate. Mitigations: recall over precision; the queue view
+always showing the paragraph count with the first and last paragraph, so
+a gutted page is visible before it prints; and a plain rule that a
+paywalled page — very short text plus subscribe or sign-in words — is
+flagged "This page only shows its opening without signing in" and never
+printed. When a site's feed is known (its `<link rel="alternate">`), the
+feed's `content:encoded` for that URL is preferred over the page, because
+a feed body is the author's HTML and needs no guessing.
+
+**Effort.** Medium: the endpoint and tab furniture are the lists pattern
+again; the extractor is the new dependency. Fixtures: three saved pages
+(a plain blog post, a news article with heavy chrome, a paywalled stub).
+
+### 5. The news: The Guardian (`guardian`)
 
 Most news is off the table. The New York Times APIs return abstracts and
 URLs. AP and Reuters license their text; Reuters has no public feed since
@@ -297,83 +343,47 @@ page behind it is paywalled, React-rendered, or both.
 non-commercial use, and `https://content.guardianapis.com/search` with
 `show-fields=body,byline,standfirst` returns the article's whole body as
 HTML, the deck as `standfirst`, the byline, `webUrl` and a stable `id`.
-One call per section per morning, `section=` or `tag=` to choose,
-`order=newest_first`, `max_age_days=1`, `per_issue=2` so world news does
-not crowd out the newsletters. Env `GUARDIAN_API_KEY`. The documentation
-pages could not be fetched from this container (the proxy refuses the
-host), so the key's daily call limit and the exact terms are to be checked
-at implementation; a morning needs a handful of calls, far below any tier.
+One call per section per morning, sections as checkboxes on the tab
+(World, UK, US, Science, Culture, Books, Food, …), newest first, a
+one-day window, `per_morning` defaulting to 2 so the news does not crowd
+out the newsletters.
 
-**The NYT with the reader's cookie** is the same line the crossword
-already crosses, but worse: the article body is scraped out of a page that
-changes without notice, so it breaks silently and often. Only if the
-reader asks, and last.
+**The key.** Getting one is a short form (name, email, what for) and a
+key by return email — the least easy step in this plan, and still a
+five-minute job with the tab's instructions beside the box. Where it
+lives is a decision to take: the key is a rate-limiting identifier rather
+than a password, and the plan for the calendar's secret iCal addresses
+(`PLAN.md`, "Settings and secrets") argued that such things belong to the
+reader and go in the settings file, masked after save. Pasting it on the
+Sources tab is the easy-to-switch-on answer; a `GUARDIAN_API_KEY`
+container variable is the strict reading of house rule 5. Recommended:
+the tab, with the variable honoured if set, so Unraid users can do
+either.
 
-**Effort** (Guardian). Small: one JSON fixture, the shared extractor on
+The documentation pages could not be fetched from this container (the
+proxy refuses the host), so the key's daily call limit and the exact
+terms are to be checked at implementation; a morning needs a handful of
+calls, far below any tier.
+
+**Effort.** Small: one JSON fixture, the shared extractor on
 `fields.body`.
 
-### 6. The reader's own reading list (`reading_list`)
+### 6. Later, and for people who already have the thing
 
-The link saved during the day is the story on the doorstep next morning.
-Two flavours, and they share the page extractor described under Risks.
-
-**(a) The share sheet, no third party.** `POST /articles` with a URL, the
-same bearer rule as `POST /lists/<slug>`; an iPhone Shortcut on the share
-sheet ("Get URLs from input", then the post). Saved links wait in
-`<DATA_DIR>/reading/`, one JSON each; the Sources tab lists them with
-their extracted paragraph count and a Remove. The container fetches the
-page and extracts the article at run time (or at save time, so the queue
-view can show the count).
-
-**(b) A reading service.** The reader saves from a logged-in browser and
-the service already has the text, paywall and all, which is the strongest
-argument for this flavour.
-
-- **Readwise Reader** (verified): `GET https://readwise.io/api/v3/list/`
-  with `Authorization: Token <READWISE_TOKEN>`, filtered by `location`
-  (`later`, `shortlist`) or up to five `tag=`; `withHtmlContent=true`
-  returns `html_content`; 20 requests a minute. After printing, the
-  optional `printed` hook moves the item to `archive`.
-- **Wallabag**: self-hosted, so it fits the Unraid box; OAuth2 client
-  credentials; `GET /api/entries` returns each entry's extracted
-  `content` HTML (verified); archive via the entries endpoint.
-- **Instapaper**: the full API is xAuth and has a full-text endpoint, but
-  the docs page is script-rendered and could not be read here; verify
-  before promising it.
-- **Pocket** shut down on 8 July 2025 and **Omnivore** in 2024; neither is
-  an option.
-
-**Risks.** Flavour (a) needs a page extractor, and a heuristic one
-(`trafilatura` or `readability-lxml`, pinned in `requirements.txt`) can
-drop a short paragraph it scores as boilerplate. That is a rule 1
-problem. Mitigations, in order: a per-row `selector` (every block inside
-that container, minus a chrome list, deterministic, the Substack way);
-`trafilatura` with `favor_recall=True` only when there is no selector;
-Check and the queue view always showing the paragraph count with the first
-and last paragraph. A paywalled page extracts to a stub: very short text
-plus subscribe or sign-in words is skipped with a log line and never
-printed. Flavour (b) has none of this, because the service extracted the
-text while the reader was logged in.
-
-**Effort.** Medium for (a), small for (b) once (a)'s extractor exists (or
-small alone, since a service hands over HTML the shared extractor can
-already walk).
-
-### 7. A folder (`folder`)
-
-`<DATA_DIR>/inbox/*.md` and `*.txt`: anything dropped there prints as an
-article and is moved to `inbox/printed/` after a delivered run. A first
-`# ` line is the title, the file's mtime the date, blank lines split
-paragraphs, Markdown inline marks flatten to text (as inline HTML does in
-v1). No network, no account, and it turns an Unraid share, a Syncthing
-folder or an Obsidian export into a source: the reader's own drafts read
-on paper, a letter someone typed, a journal entry from a year ago today
-that a two-line script drops in the night before.
-
-**Effort.** Tiny. Could go in at any point after the foundation.
-
-### 8. Later: verse, and a few oddities
-
+- **A folder** (`<DATA_DIR>/inbox/*.md`, `*.txt`): anything dropped there
+  prints as an article and moves to `inbox/printed/`. Tiny to build, and
+  a good fit for an Unraid share or a Syncthing folder — which is exactly
+  who it is for; a reader who does not know what a share is never needs
+  to see it.
+- **Reading services** — Readwise Reader (`GET https://readwise.io/api/v3/list/`,
+  `Authorization: Token`, `withHtmlContent=true`, 20 requests a minute;
+  verified) and self-hosted Wallabag (`GET /api/entries` returns extracted
+  `content`; verified) both hand over text the reader saved from a
+  logged-in browser, paywalls and all. They need a token, which fails the
+  first test, so they are an option for a reader who already uses one
+  rather than a thing to recommend. Pocket shut down on 8 July 2025 and
+  Omnivore in 2024; Instapaper's docs are script-rendered and could not
+  be read here.
 - **Poetry** — PoetryDB (public domain, JSON with a `lines[]` array),
   Poetry Foundation's and Poets.org's poem-of-the-day feeds. Line breaks
   are the text of a poem, and `_clean` collapses whitespace, so verse
@@ -383,16 +393,17 @@ that a two-line script drops in the night before.
 - **Chronicling America** (Library of Congress): the OCR text of a
   newspaper from this day a hundred years ago. Fun, free, and the OCR is
   frequently garbage; a stretch.
-- **Wikinews**: CC BY, low volume, uneven.
 
 ### Not worth investigating again
 
 | Source | Why not |
 |---|---|
+| Email newsletters over IMAP | The most text for the least code, and the hardest thing on the tab to set up: label, filter, app password, host in a container variable. Fails the first test. The paid-Substack route that exists stays as it is. |
+| NYT with the reader's cookie | The crossword's line, crossed worse: a body scraped from a page that changes without notice, so it breaks silently and often. |
 | NYT APIs | Abstracts and links only. |
 | AP, Reuters | Licensees only; no public full text. |
 | Apple News | No API at all. |
-| Medium members-only posts | Truncated in the feed; free posts work as a `feed`. |
+| Medium members-only posts | Truncated in the feed; free posts work by address. |
 | Reddit | API terms and OAuth; self-posts are the only full text. |
 | X / Twitter | No. |
 | Hacker News, Lobsters | Links only: everything depends on the page extractor and hits paywalls; comments are not articles. |
@@ -404,18 +415,19 @@ that a two-line script drops in the night before.
 1. **The foundation**, with Substack as the only adapter and no behaviour
    change: `articles.py`, `sources/substack.py`, `extract.py`, `seen.py`,
    `sources.publications` with the migration, the `rest` field with its
-   default, the Kind column on the Sources tab. Every existing test still
-   passes; the sample PNGs are byte-identical.
-2. **`feed`** — nearly free after step 1, and it opens Beehiiv, Ghost,
-   Buttondown, blogs, ProPublica and The Conversation.
-3. **`email`** — the reader's real subscriptions, whole, on one credential
-   that already exists.
-4. **`serial` and `wikipedia`** — the pair that means there is always
-   something to print; the first users of `rest`.
-5. **`guardian`** — news on the front page, legitimately.
-6. **`reading_list`** — the share sheet, then Readwise; the page
-   extractor is the one new dependency in the whole plan.
-7. **`folder`** whenever it is convenient; **verse** and the rest later.
+   default. Every existing test still passes; the sample PNGs are
+   byte-identical.
+2. **Websites and newsletters by address**, with feed discovery and the
+   presets — the Substack table becomes the everything table.
+3. **Wikipedia** — a switch, an afternoon, and the paper always has a
+   story.
+4. **The book** — the first user of `rest`, and the thing people will
+   talk about.
+5. **Saved from your phone** — the share-sheet Shortcut; brings in the
+   page extractor, the one new dependency in the plan.
+6. **The Guardian** — news on the front page, behind the one key.
+7. The folder whenever it is convenient; services, verse and the rest
+   later.
 
 ## Tests and fixtures
 
@@ -423,18 +435,20 @@ One fixture per adapter under `tests/fixtures/`, and for each: paragraphs
 verbatim against the fixture (the `tests/verbatim.py` check), chrome
 gone, the queue order the kind promises, seen guids skipped, the window
 applied, a broken source leaving the others intact, `fetch` writing no
-state. For the serial: the bookmark advances by exactly the paragraphs
-printed, including zero. For the merged queue: priority order across
-kinds, `per_issue` caps, `QUEUE_LIMIT`, and a run whose `record_printed`
-reaches the right adapter. For the template: `rest` wording, and the
-default render unchanged.
+state. For feed discovery: a page with a feed link, one without, a
+Substack address routed to the Substack adapter. For the book: the
+bookmark advances by exactly the paragraphs printed, including zero, and
+the end of the book is handled. For saved links: a paywalled stub is
+flagged and never printed. For the merged queue: priority order across
+kinds, `per_morning` caps, `QUEUE_LIMIT`, and a run whose
+`record_printed` reaches the right adapter. For the template: `rest`
+wording, and the default render unchanged.
 
 ## Things to ask the owner before starting
 
-- Which newsletters arrive only by email, and is the mailbox Gmail (the
-  documented label-and-app-password route)?
-- Which Guardian sections, if any, and whether news belongs above or below
-  the newsletters in the priority list?
-- Which book first, and how many paragraphs a morning?
-- A reading app already in use (Readwise Reader, Wallabag, Instapaper), or
-  the share sheet alone?
+- Which sites and newsletters, beyond the Substacks already listed, so
+  the discovery step and the chrome lists are built against real feeds?
+- Which book first, and about how many paragraphs a morning?
+- Does the news belong on the front page at all, and if so which Guardian
+  sections?
+- The Guardian key: on the Sources tab, or a container variable?
