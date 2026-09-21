@@ -113,6 +113,13 @@ reasons and the traps. Add to it when you hit one.
   up to `QUEUE_LIMIT` (8) offered to the layout. Posts are marked seen
   only after a real successful run, and a partially printed post counts
   as used. `guid` is stripped from `data.json`; `url` stays.
+- **In the queue view, ask "has it printed?" before "is it too old?"**
+  A post printed from a widened window is older than the window forever
+  after, so a preview that tests the age first buries it under
+  `too-old` — the reader sees no record of a story that was in the paper
+  that morning, and the row loses its "Mark as unread" button. Having been
+  printed is a fact about the post; the window only decides what prints
+  next.
 - **NYT crossword**: `https://www.nytimes.com/svc/crosswords/v6/puzzle/daily/{YYYY-MM-DD}.json`
   with the `NYT-S` cookie (`NYT_S` variable). Keys: `body[0].cells`
   (`{}` is a black square), `body[0].clues` with `label`, `direction`,

@@ -447,7 +447,7 @@ function renderQueue(result) {
       + esc(result.window_days) + " days, as allowed.</p>";
   }
   html += '<p class="queue-summary">' + esc(queued.length) + " waiting, "
-    + esc(printed.length) + " printed this week, " + esc(skipped.length) + " skipped</p>";
+    + esc(printed.length) + " already printed, " + esc(skipped.length) + " skipped</p>";
   if (!queued.length && !printed.length && !skipped.length) {
     view.innerHTML = html + '<p class="note">Nothing new in any publication.</p>';
     return;

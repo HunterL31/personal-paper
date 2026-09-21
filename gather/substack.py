@@ -648,6 +648,11 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
     A paywalled post is only really printable when the source is marked paid
     *and* the email route exists; IMAP itself is not opened here, because the
     preview is meant to be cheap and to change nothing.
+
+    Having been printed is a fact about the post, not about the window, so it
+    is settled first: a post the paper found by looking further back (it is
+    older than the window by definition) is reported as printed, not filed
+    under the posts that are too old to print.
     """
     parsed = _parse_feed(_get(feed_url(source.name)))
     publication = _clean((parsed.feed or {}).get("title") or source.name)
@@ -664,12 +669,12 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
             logger.debug("%s: %r has no usable date; not previewed", publication,
                          _clean(entry.get("title") or ""))
             continue
-        if dt < cutoff:
-            skipped.append((dt, _preview_row(entry, publication, dt, "too-old")))
-            continue
         guid = _guid(entry)
         if guid and guid in seen:
             printed.append((dt, _preview_row(entry, publication, dt, "printed")))
+            continue
+        if dt < cutoff:
+            skipped.append((dt, _preview_row(entry, publication, dt, "too-old")))
             continue
         html = _entry_html(entry)
         paragraphs = extract_paragraphs(html)
@@ -700,8 +705,10 @@ def queue_preview(settings) -> dict:
 
     `queued` is exactly what `fetch` would offer, in its order — positions 1
     upwards, and `beyond-limit` (position `None`) for the ones still waiting
-    behind `QUEUE_LIMIT`. `printed` is what has already been in the paper,
-    `skipped` what never will be: paywalled previews with no email route, and
+    behind `QUEUE_LIMIT`. `printed` is every post in the feeds that has
+    already been in the paper, whatever its age — a post printed from a
+    widened window is older than the window and still belongs here.
+    `skipped` is what never will be: paywalled previews with no email route, and
     the posts that fell out of the window (the most recent `TOO_OLD_SHOWN`
     of those). A feed that fails is an `errors` entry, not an exception.
 
