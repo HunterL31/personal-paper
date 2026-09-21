@@ -188,13 +188,82 @@ def test_summary_falls_back_to_the_daily_code(monkeypatch, payload):
 
 
 # ---------------------------------------------------------------- errors
-def test_fetch_raises_so_run_all_can_substitute(monkeypatch):
+def http_response(status: int) -> requests.Response:
+    """A real Response, so `raise_for_status` raises the real HTTPError."""
+    r = requests.Response()
+    r.status_code = status
+    r.url = weather.API_URL
+    return r
+
+
+@pytest.fixture
+def no_backoff(monkeypatch):
+    """Retry without the waiting, so the error tests stay quick."""
+    monkeypatch.setattr(weather, "BACKOFF_SECONDS", (0.0, 0.0))
+
+
+def serve(monkeypatch, answers: list) -> list:
+    """Serve `answers` in order (the last one repeats) and count the calls."""
+    calls: list = []
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params, "timeout": timeout})
+        return answers[min(len(calls) - 1, len(answers) - 1)]
+
+    monkeypatch.setattr(weather.requests, "get", fake_get)
+    return calls
+
+
+def test_a_transient_503_is_retried(monkeypatch, payload, no_backoff):
+    """The morning of 2026-09-20: Open-Meteo answered 503 for a moment."""
+    calls = serve(monkeypatch,
+                  [http_response(503), http_response(503), FakeResponse(payload)])
+    assert weather.fetch(Settings(), today=TODAY)["summary"] == \
+        "Fog early, clearing by noon"
+    assert len(calls) == 3
+
+
+def test_retries_give_up_and_raise(monkeypatch, no_backoff):
+    calls = serve(monkeypatch, [http_response(503)])
+    with pytest.raises(requests.HTTPError):
+        weather.fetch(Settings(), today=TODAY)
+    assert len(calls) == weather.ATTEMPTS
+
+
+@pytest.mark.parametrize("status", [400, 404])
+def test_a_refusal_is_not_retried(monkeypatch, no_backoff, status):
+    calls = serve(monkeypatch, [http_response(status)])
+    with pytest.raises(requests.HTTPError):
+        weather.fetch(Settings(), today=TODAY)
+    assert len(calls) == 1
+
+
+def test_the_check_button_retries_too(monkeypatch, payload, no_backoff):
+    calls = serve(monkeypatch, [http_response(503), FakeResponse(payload)])
+    assert weather.check(45.52, -122.68, today=TODAY)["hourly"]
+    assert len(calls) == 2
+
+
+def test_no_time_left_in_the_budget_means_no_retry(monkeypatch):
+    """A slow first attempt is not followed by a pointless second one."""
+    monkeypatch.setattr(weather, "BUDGET_SECONDS", 0.5)
+    calls = serve(monkeypatch, [http_response(503)])
+    with pytest.raises(requests.HTTPError):
+        weather.fetch(Settings(), today=TODAY)
+    assert len(calls) == 1
+
+
+def test_fetch_raises_so_run_all_can_substitute(monkeypatch, no_backoff):
+    attempts = []
+
     def boom(*args, **kwargs):
+        attempts.append(1)
         raise requests.ConnectionError("no route to host")
 
     monkeypatch.setattr(weather.requests, "get", boom)
     with pytest.raises(requests.ConnectionError):
         weather.fetch(Settings(), today=TODAY)
+    assert len(attempts) == weather.ATTEMPTS      # a dropped link is retried
 
 
 def test_missing_day_raises(served):

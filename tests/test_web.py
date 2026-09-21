@@ -1237,6 +1237,66 @@ def test_log_shows_the_tail(client, data_dir):
     assert "line 99" not in body
 
 
+def _run_logs(data_dir: Path, *names: str) -> Path:
+    runs = data_dir / "logs" / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (runs / name).write_text(f"everything {name} wrote down\n")
+    return runs
+
+
+def test_the_log_page_offers_enhanced_logging(client, data_dir):
+    body = client.get("/log", auth=AUTH).text
+    assert "Enhanced logging" in body
+    assert 'name="enhanced"' in body
+    assert "The last 7 runs" in body
+    assert "no run has a file of its own" in body       # it is off
+
+
+def test_turning_enhanced_logging_on_and_off(client, data_dir):
+    response = client.post("/log", auth=AUTH, data={"enhanced": "on"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert Settings.load().logs.enhanced is True
+    assert "checked" in client.get("/log", auth=AUTH).text
+
+    client.post("/log", auth=AUTH, data={"other": "x"}, follow_redirects=False)
+    assert Settings.load().logs.enhanced is False
+
+
+def test_the_log_page_lists_the_runs_newest_first(client, data_dir):
+    _run_logs(data_dir, "2026-09-18-060000.log", "2026-09-19-061500.log",
+              "2026-09-20-060012.log")
+    body = client.get("/log", auth=AUTH).text
+    assert "2026-09-19 06:15:00" in body                # the run, in words
+    assert (body.index("2026-09-20-060012.log")
+            < body.index("2026-09-19-061500.log")
+            < body.index("2026-09-18-060000.log"))
+    assert body.count("/log/runs/") == 3
+
+
+def test_a_run_log_is_a_download(client, data_dir):
+    _run_logs(data_dir, "2026-09-20-060000.log")
+    response = client.get("/log/runs/2026-09-20-060000.log", auth=AUTH)
+    assert response.status_code == 200
+    assert "everything 2026-09-20-060000.log wrote down" in response.text
+    assert "attachment" in response.headers["content-disposition"]
+
+
+def test_the_run_log_route_rejects_odd_names(client, data_dir):
+    _run_logs(data_dir, "2026-09-20-060000.log")
+    (data_dir / "logs" / "run.log").write_text("the everyday log")
+    for name in ("run.log", "2026-09-20-060000.log.bak", "2026-09-20.log",
+                 "../run.log", "%2e%2e%2frun.log", "2026-09-21-060000.log"):
+        assert client.get(f"/log/runs/{name}", auth=AUTH).status_code == 404, name
+
+
+def test_the_log_page_needs_the_password(client, data_dir):
+    _run_logs(data_dir, "2026-09-20-060000.log")
+    assert client.get("/log").status_code == 401
+    assert client.get("/log/runs/2026-09-20-060000.log").status_code == 401
+
+
 # ------------------------------------------------------------------ preview
 def test_preview_renders_the_sample_issue(client, data_dir):
     response = client.post("/preview?source=sample", auth=AUTH, follow_redirects=False)

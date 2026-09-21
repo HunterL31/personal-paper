@@ -232,7 +232,9 @@ def fetch(settings: Settings, *, today: Optional[dt.date] = None) -> list[dict]:
         label = source.name or "calendar"
         try:
             text = _download(source.url)
-            rows.extend(_events_from_ics(text, today=day, tz=tz))
+            found = _events_from_ics(text, today=day, tz=tz)
+            rows.extend(found)
+            log.debug("calendar %s: %d event(s) on %s", label, len(found), day)
         except Exception:
             # House rule 3: one bad calendar never costs us the others.
             log.exception("calendar %s failed; skipping it", label)

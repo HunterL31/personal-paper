@@ -26,8 +26,8 @@ scheduler ─▶ gather (calendar, weather, substack, lists) ─▶ render (Chro
 Everything persistent lives under `/data`: `settings.json` (the page's
 settings), `state.json` (issue counter, seen posts), `lists/<name>.json`,
 `archive/<date>.pdf` (`-2`, `-3` for another paper made the same day),
-`out/<date>/` (that day's data and HTML) and
-`logs/run.log`.
+`out/<date>/` (that day's data and HTML), `logs/run.log` and, with enhanced
+logging on, `logs/runs/<date>-<time>.log` for each of the last seven runs.
 
 ## Install on Unraid
 
@@ -367,3 +367,25 @@ losing it quietly: the list ends with *"12 more, not printed"*, and any
 section that was pushed off entirely is named at the foot of the column.
 Sections fill in the order you set on this tab, so what you want most
 should be first.
+
+## The log, and enhanced logging
+
+The **Log** link in the status strip, at the top of every tab, shows the
+last 200 lines of `logs/run.log`: a line an event, every run since the
+container started.
+
+Under it is one switch, **Enhanced logging**. With it on, every run also
+writes a file of its own — what the paper was set to that morning, what
+each source answered or why it did not, how long each one took, what the
+layout did with the stories, and what the routes said — and the page lists
+the last seven of them with a link to download each. Older ones are deleted
+as each run ends, so the directory never grows; switching it off leaves the
+files that are there, and the next run deletes nothing more.
+
+It is the thing to turn on when a morning goes wrong and the 200 lines are
+not enough: leave it on, wait for the paper that misbehaves, and send the
+file. Nothing the container keeps secret is written down — passwords,
+tokens, the `NYT-S` cookie and the calendars' secret addresses are all left
+out, exactly as the settings page leaves them out — but the file does say
+what you have switched on and what your sources are called, so treat it as
+yours.

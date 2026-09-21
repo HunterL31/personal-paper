@@ -79,6 +79,8 @@ ARCHIVE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d+)?\.pdf$")
 #: The date a filed issue carries, for the strip and the reprint button.
 ARCHIVE_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 PREVIEW_FILE = re.compile(r"^(page-\d+\.png|paper\.html)$")
+#: A run log, as enhanced logging names it: `2026-09-20-060000.log`.
+RUN_LOG_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}\.log$")
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 #: body_size_pt choices: 8.0 to 11.0 in half points.
@@ -1146,6 +1148,27 @@ def archive(name: str) -> Response:
     return FileResponse(path, media_type="application/pdf", filename=name)
 
 
+def _run_log_rows() -> list[dict[str, Any]]:
+    """The files enhanced logging has kept, newest first, for the page."""
+    from run import run_logs
+
+    rows = []
+    for path in run_logs():
+        stamp = path.stem                      # 2026-09-20-060000
+        day, _, clock = stamp.rpartition("-")
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        rows.append({
+            "name": path.name,
+            "when": f"{day} {clock[:2]}:{clock[2:4]}:{clock[4:6]}",
+            "size": f"{max(size, 1024) // 1024:,} kB",
+            "url": f"/log/runs/{path.name}",
+        })
+    return rows
+
+
 @app.get("/log")
 def log_page(request: Request) -> Response:
     path = data_dir() / "logs" / "run.log"
@@ -1153,7 +1176,36 @@ def log_page(request: Request) -> Response:
         lines = path.read_text(errors="replace").splitlines()[-200:]
     except OSError:
         lines = []
-    return page(request, "log", "log.html", lines=lines)
+    settings = Settings.load()
+    return page(
+        request, "log", "log.html",
+        lines=lines,
+        logs=settings.logs,
+        runs=_run_log_rows(),
+    )
+
+
+@app.post("/log")
+async def log_post(request: Request) -> RedirectResponse:
+    """The one setting on this page: enhanced logging, on or off."""
+    form = await request.form()
+    settings = Settings.load()
+    settings.logs.enhanced = form_flag(form, "enhanced")
+    settings.save()
+    return saved("/log")
+
+
+@app.get("/log/runs/{name}")
+def run_log(name: str) -> Response:
+    """One run's log file, as a download."""
+    from run import run_log_dir
+
+    if not RUN_LOG_NAME.match(name):
+        return JSONResponse({"detail": "not found"}, status_code=404)
+    path = run_log_dir() / name
+    if not path.is_file():
+        return JSONResponse({"detail": "not found"}, status_code=404)
+    return FileResponse(path, media_type="text/plain", filename=name)
 
 
 # ------------------------------------------------- POST /lists/<slug>

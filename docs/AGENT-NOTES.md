@@ -153,10 +153,38 @@ reasons and the traps. Add to it when you hit one.
 - Open-Meteo needs no key; the request is built with `forecast_days=2` so
   arrays are selected by ISO date, not index, which is what makes the
   `today=` test hook work.
+- **Open-Meteo answers a momentary 503** now and then, and the 6 a.m. run
+  gets only one shot at the forecast: a morning's ear box read "Forecast
+  unavailable" while the Sources tab's Check button, run by hand an hour
+  later, worked fine. `_request` therefore retries a transient failure
+  (connection error, timeout, or a code in `RETRY_STATUS`) up to `ATTEMPTS`
+  times with `BACKOFF_SECONDS` between tries, inside `BUDGET_SECONDS` (25),
+  which stays under `gather.TIMEOUT_SECONDS` (30) — that budget is the
+  thing to keep in mind if the attempts or the backoff ever grow. A 4xx is
+  the API saying no and is not retried.
 - Google Calendar's secret iCal address includes recurrences; declined
   events are detected by matching the attendee against `X-WR-CALNAME`.
 - Substack blocks default user agents; the fetcher sends a browser-like
   one.
+
+## Logging
+
+- `run.py` sets up two handlers' worth of logging: `run.log` for good
+  (appended once per process per path) and, when
+  `settings.logs.enhanced` is on, a per-run file under `logs/runs/`.
+  `_enhanced_log` is a context manager around the whole run: it puts the
+  root logger at DEBUG and *pins the handlers that were already there* to
+  the level they were running at, so run.log and the container's stdout
+  keep their INFO diet while the run's own file gets everything.
+- **Never let urllib3 loose at DEBUG in that file.** It logs whole URLs,
+  and a Google Calendar iCal address is a credential; the file is
+  downloadable from the web page. `QUIET_LOGGERS` in `run.py` holds it and
+  its friends at INFO for the duration. Any new chatty library goes there.
+- The run file is named for the paper's own clock (`_now()`, the container
+  `TZ`), while the lines inside carry `logging`'s local time; on a box
+  running UTC those differ, as they already do in run.log.
+- `run()` is now a wrapper: `_run()` is the issue itself. Anything that
+  must be inside the run's log (or timed as part of it) goes in `_run`.
 
 ## Web page
 
