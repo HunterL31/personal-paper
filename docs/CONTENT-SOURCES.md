@@ -190,6 +190,23 @@ WordPress blog — and the paper finds the feed itself. This is the
 Substack table generalised, and for the reader it is the same table with a
 wider welcome.
 
+**What works today, by accident.** `substack.feed_url` passes a full URL
+through untouched, so any feed pasted into the Substack table is fetched
+and parsed by the Substack adapter now. Run against two hand-made feeds
+(22 Sept 2026), that showed exactly where the plan below has to do work:
+
+- A feed carrying the whole post (Ghost, Beehiiv, WordPress with
+  full-content feeds) prints correctly — but a WordPress share block came
+  through as three paragraphs, "Share this:", "Twitter", "Facebook",
+  because the chrome list is Substack's.
+- A feed carrying only an excerpt printed the excerpt *as the article*:
+  a paragraph ending in "[…]" and then "The post On walking to work
+  appeared first on A WordPress Blog." `looks_paywalled` only knows
+  Substack's markers and the "read more" link, so a plain excerpt with
+  neither goes straight to the sheet. That is a truncated text printed as
+  a story, which house rule 1 forbids, and it is the first thing this
+  source fixes.
+
 **Finding the feed.** Fetch the page and read its
 `<link rel="alternate" type="application/rss+xml|application/atom+xml">`;
 failing that, try the usual paths (`/feed`, `/rss`, `/feed.xml`,
@@ -200,8 +217,9 @@ Check reports, in words: the feed's title, the latest post's title, and
 whether posts arrive whole or as previews.
 
 **Whole posts or previews.** The one new piece of logic: a feed with no
-`content:encoded`, or a short body ending in a "read more" link, carries
-previews. Such a site yields nothing and Check says so plainly ("This
+`content:encoded` (only a `description`), a body ending in "[…]" or
+"...", a WordPress "The post … appeared first on …" line, or a short body
+ending in a "read more" link, carries previews. Such a site yields nothing and Check says so plainly ("This
 site's feed carries only the opening of each post, so nothing from it can
 be printed"). Nothing is scraped from the post's page in v1; the reader
 is told rather than given a stub or a guess.
