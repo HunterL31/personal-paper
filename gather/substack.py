@@ -157,17 +157,38 @@ def _format_published(dt: datetime) -> str:
 
 
 # ----------------------------------------------------------------- state
-def _seen_guids() -> set[str]:
+#: `state.seen_posts` is the guids in the order they were marked printed --
+#: paper by paper, and within a paper in the sheet's order, the lead first.
+#: `state.printed_at` says when each was marked, so the queue view can list
+#: what has printed in that order and say the day it went out.
+def _seen_order() -> list[str]:
     try:
         import state  # written by the run agent, at the repo root
     except Exception:
         logger.warning("state module unavailable; treating every post as new")
-        return set()
+        return []
     try:
-        return set(state.load_state().get("seen_posts") or [])
+        return [g for g in (state.load_state().get("seen_posts") or []) if isinstance(g, str)]
     except Exception:
         logger.warning("could not read seen_posts from state", exc_info=True)
-        return set()
+        return []
+
+
+def _seen_guids() -> set[str]:
+    return set(_seen_order())
+
+
+def _printed_at() -> dict[str, str]:
+    """guid -> the ISO time it was marked printed, for the guids that have one."""
+    try:
+        import state
+
+        stamps = state.load_state().get("printed_at")
+    except Exception:
+        return {}
+    if not isinstance(stamps, dict):
+        return {}
+    return {g: t for g, t in stamps.items() if isinstance(g, str) and isinstance(t, str)}
 
 
 def mark_unseen(guids: list[str]) -> None:
@@ -181,6 +202,9 @@ def mark_unseen(guids: list[str]) -> None:
 
         st = state.load_state()
         st["seen_posts"] = [g for g in (st.get("seen_posts") or []) if g not in guids]
+        stamps = st.get("printed_at")
+        if isinstance(stamps, dict):
+            st["printed_at"] = {g: t for g, t in stamps.items() if g not in guids}
         state.save_state(st)
         logger.info("marked %d post(s) as unread", len(guids))
     except Exception:
@@ -191,7 +215,9 @@ def mark_seen(guids: list[str]) -> None:
     """
     Record posts as printed. Called by run.py **after** a successful run, so a
     failed or undelivered run reprints the same posts tomorrow rather than
-    losing them. Keeps the most recent `SEEN_HISTORY` guids.
+    losing them. Keeps the most recent `SEEN_HISTORY` guids, and stamps each
+    newly printed one with the time, in `printed_at`; a post already
+    recorded keeps the stamp it has.
     """
     guids = [g for g in (guids or []) if g]
     if not guids:
@@ -202,11 +228,17 @@ def mark_seen(guids: list[str]) -> None:
         st = state.load_state()
         seen = list(st.get("seen_posts") or [])
         known = set(seen)
+        stamps = st.get("printed_at")
+        when = dict(stamps) if isinstance(stamps, dict) else {}
+        now = _now().astimezone(_local_tz()).isoformat(timespec="seconds")
         for g in guids:
             if g not in known:
                 seen.append(g)
                 known.add(g)
+                when[g] = now
         st["seen_posts"] = seen[-SEEN_HISTORY:]
+        kept = set(st["seen_posts"])
+        st["printed_at"] = {g: t for g, t in when.items() if g in kept}
         state.save_state(st)
         logger.info("marked %d post(s) as seen", len(guids))
     except Exception:
@@ -717,9 +749,21 @@ QUEUE_STATUSES = ("queued", "beyond-limit", "printed", "preview-only", "too-old"
 TOO_OLD_SHOWN = 10
 
 
+def _printed_day(stamp: Optional[str]) -> Optional[str]:
+    """The day a `printed_at` stamp falls on, in the reader's zone, or None."""
+    if not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp).astimezone(_local_tz()).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
 def _preview_row(entry, publication: str, dt: datetime, status: str,
-                 position: Optional[int] = None) -> dict:
-    """One row of the queue view. No article text: the sheet prints that."""
+                 position: Optional[int] = None, printed_at: Optional[str] = None) -> dict:
+    """One row of the queue view. No article text: the sheet prints that.
+    `printed` is the day the post went out, for a printed one that has a
+    stamp; None otherwise."""
     local = dt.astimezone(_local_tz())
     return {
         "guid": _guid(entry),
@@ -730,7 +774,26 @@ def _preview_row(entry, publication: str, dt: datetime, status: str,
         "age_days": round((_now() - dt).total_seconds() / 86400.0, 1),
         "position": position,
         "status": status,
+        "printed": _printed_day(printed_at),
     }
+
+
+def _in_printed_order(rows: list[dict]) -> list[dict]:
+    """The printed rows as the server printed them: the latest paper first
+    and, within a paper, the sheet's order (the lead first).
+
+    The stamp in `printed_at` orders the papers; a paper's own posts share
+    a stamp and keep their place in `seen_posts`, which is the sheet's order.
+    Posts recorded before there were stamps come after, latest first by
+    that place alone.
+    """
+    stamps = _printed_at()
+    place = {g: i for i, g in enumerate(_seen_order())}
+    stamped = [r for r in rows if stamps.get(r.get("guid") or "")]
+    unstamped = [r for r in rows if not stamps.get(r.get("guid") or "")]
+    stamped.sort(key=lambda r: (stamps[r["guid"]], -place.get(r["guid"], -1)), reverse=True)
+    unstamped.sort(key=lambda r: place.get(r.get("guid") or "", -1), reverse=True)
+    return stamped + unstamped
 
 
 def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list, list, list]:
@@ -745,12 +808,14 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
     Having been printed is a fact about the post, not about the window, so it
     is settled first: a post the paper found by looking further back (it is
     older than the window by definition) is reported as printed, not filed
-    under the posts that are too old to print.
+    under the posts that are too old to print. The printed rows come back
+    in feed order; `queue_preview` puts them in the order they printed.
     """
     parsed = _parse_feed(_get(feed_url(source.name)))
     publication = _clean((parsed.feed or {}).get("title") or source.name)
     cutoff = _now() - timedelta(days=max_age_days)
     email_route = bool(getattr(source, "paid", False)) and _imap_config() is not None
+    stamps = _printed_at()
 
     queued: list[tuple[datetime, dict]] = []
     printed: list[tuple[datetime, dict]] = []
@@ -764,7 +829,8 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
             continue
         guid = _guid(entry)
         if guid and guid in seen:
-            printed.append((dt, _preview_row(entry, publication, dt, "printed")))
+            printed.append((dt, _preview_row(entry, publication, dt, "printed",
+                                             printed_at=stamps.get(guid))))
             continue
         if dt < cutoff:
             skipped.append((dt, _preview_row(entry, publication, dt, "too-old")))
@@ -781,8 +847,8 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
 
     # The queue's own order: the oldest unprinted post is next.
     queued.sort(key=lambda pair: pair[0])
-    # The other two groups read better newest first — they are a record.
-    printed.sort(key=lambda pair: pair[0], reverse=True)
+    # The skipped read better newest first — they are a record. The printed
+    # are a record too, of what the server did: `queue_preview` orders them.
     skipped.sort(key=lambda pair: pair[0], reverse=True)
     return (
         [row for _, row in queued],
@@ -800,7 +866,9 @@ def queue_preview(settings) -> dict:
     upwards, and `beyond-limit` (position `None`) for the ones still waiting
     behind `QUEUE_LIMIT`. `printed` is every post in the feeds that has
     already been in the paper, whatever its age — a post printed from a
-    widened window is older than the window and still belongs here.
+    widened window is older than the window and still belongs here — in
+    the order the server printed them: the latest paper first, the lead
+    first within it, each row saying the day it went out (`printed`).
     `skipped` is what never will be: paywalled previews with no email route, and
     the posts that fell out of the window (the most recent `TOO_OLD_SHOWN`
     of those). A feed that fails is an `errors` entry, not an exception.
@@ -854,6 +922,7 @@ def queue_preview(settings) -> dict:
             row["position"] = index + 1
         else:
             row["status"] = "beyond-limit"
+    result["printed"] = _in_printed_order(result["printed"])
     too_old.sort(key=lambda row: row["age_days"])   # most recent first
     result["skipped"].extend(too_old[:TOO_OLD_SHOWN])
     return result

@@ -378,8 +378,9 @@ crosswordButton.addEventListener("click", function () {
 
 // ------------------------------------------------------ the Substack queue
 // "Show what's waiting" fetches every feed and lays the answer out as a table: what is
-// waiting, what has already been printed, what will never print. Every string
-// that comes back from the server goes through esc() before it is written.
+// waiting, what has already been printed (as the server printed it: the latest
+// paper first, each row with the day it went out), what will never print. Every
+// string that comes back from the server goes through esc() before it is written.
 function esc(value) {
   return String(value === null || value === undefined ? "" : value)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -395,7 +396,7 @@ function queueStatusWord(row, windowDays) {
   switch (row.status) {
     case "queued": return row.position === 1 ? "next up" : "queued";
     case "beyond-limit": return "waiting (more than 8 ahead of it)";
-    case "printed": return "printed";
+    case "printed": return row.printed ? "printed " + esc(row.printed) : "printed";
     case "preview-only": return "only a preview: needs the email route (IMAP)";
     case "too-old": return "older than " + esc(windowDays) + " days";
     default: return esc(row.status);

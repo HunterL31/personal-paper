@@ -217,7 +217,9 @@ older than … days** (7 by default, 1–60) is how far back that queue looks �
 a post still waiting when it passes that age is never printed, which is
 what keeps the first morning from printing the archive. **Show what's
 waiting** fetches every publication and lists what would print, without
-marking anything.
+marking anything. Under the queue it lists what has already printed, in
+the order the paper printed it — the latest paper first, its lead first —
+with the day each post went out, and then what will never print.
 
 Each post prints once. Four stories fit a sheet at most, and a story is
 printed whole or held for a morning with room; when the last slot holds

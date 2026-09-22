@@ -182,6 +182,13 @@ reasons and the traps. Add to it when you hit one.
   up to `QUEUE_LIMIT` (8) offered to the layout. Posts are marked seen
   only after a real successful run, and a partially printed post counts
   as used. `guid` is stripped from `data.json`; `url` stays.
+- **`state.seen_posts` is in print order** (a paper's guids are appended in
+  the sheet's order, the lead first), and `mark_seen` stamps each new guid
+  in `state.printed_at`. The queue view's "Already printed" group is sorted
+  by stamp (latest paper first) and, within a paper, by place in
+  `seen_posts`; guids from before the stamps existed come after, latest
+  first by place alone. Sorting that group by publication date, as it once
+  was, put yesterday's lead under a post printed a week ago.
 - **In the queue view, ask "has it printed?" before "is it too old?"**
   A post printed from a widened window is older than the window forever
   after, so a preview that tests the age first buries it under
