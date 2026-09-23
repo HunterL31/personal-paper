@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<form method="post" action="/sources">
+<form method="post" action="{{ base }}/sources">
 
   <h2>Calendars</h2>
   <p class="note">Today's events come from each calendar's secret address: in Google
@@ -303,7 +303,7 @@ document.addEventListener("click", function (event) {
     const url = document.getElementById("cal_url_" + key).value.trim();
     const body = url ? { url: url } : { index: parseInt(key, 10) };
     withButton(button, document.getElementById("cal_result_" + key),
-      function () { return postJSON("/sources/calendar/check", body); },
+      function () { return postJSON("{{ base }}/sources/calendar/check", body); },
       function (result) {
         document.getElementById("cal_name_" + key).value = result.name || "";
         return result.name + " — " + result.events_today + " event(s) today";
@@ -312,7 +312,7 @@ document.addEventListener("click", function (event) {
     const key = button.dataset.checkSubstack;
     const name = document.getElementById("sub_name_" + key).value.trim();
     withButton(button, document.getElementById("sub_result_" + key),
-      function () { return postJSON("/sources/substack/check", { name: name }); },
+      function () { return postJSON("{{ base }}/sources/substack/check", { name: name }); },
       function (result) {
         return result.publication + " — latest: " + (result.latest_title || "none")
           + (result.paid_marker_seen ? " (paywalled)" : "");
@@ -356,7 +356,7 @@ const weatherButton = document.getElementById("check-weather");
 weatherButton.addEventListener("click", function () {
   withButton(weatherButton, document.getElementById("weather_result"),
     function () {
-      return postJSON("/sources/weather/check", {
+      return postJSON("{{ base }}/sources/weather/check", {
         lat: document.getElementById("lat").value.trim(),
         lon: document.getElementById("lon").value.trim(),
       });
@@ -369,7 +369,7 @@ weatherButton.addEventListener("click", function () {
 const crosswordButton = document.getElementById("check-crossword");
 crosswordButton.addEventListener("click", function () {
   withButton(crosswordButton, document.getElementById("crossword_result"),
-    function () { return postJSON("/sources/crossword/check", {}); },
+    function () { return postJSON("{{ base }}/sources/crossword/check", {}); },
     function (result) {
       return result.title + " — " + (result.author || "unknown constructor")
         + ", " + result.date + " (" + result.size + ", " + result.clues + " clues)";
@@ -470,7 +470,7 @@ const queueButton = document.getElementById("show-queue");
 function loadQueue() {
   document.getElementById("queue_view").innerHTML = "";
   withButton(queueButton, document.getElementById("queue_result"),
-    function () { return postJSON("/sources/substack/queue", {}); },
+    function () { return postJSON("{{ base }}/sources/substack/queue", {}); },
     function (result) {
       renderQueue(result);
       return "";
@@ -484,7 +484,7 @@ document.getElementById("queue_view").addEventListener("click", function (event)
   const button = event.target.closest("[data-mark-guid]");
   if (!button) return;
   button.disabled = true;
-  postJSON("/sources/substack/mark", {
+  postJSON("{{ base }}/sources/substack/mark", {
     guid: button.dataset.markGuid,
     printed: button.dataset.markPrinted === "1",
   }).then(function (answer) {

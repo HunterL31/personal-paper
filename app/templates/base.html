@@ -14,6 +14,17 @@
 <header class="masthead">
   <h1>{{ paper_name }}</h1>
   <p class="dateline">Settings, sources and preview &middot; issue No. {{ status.issue }}</p>
+  {#- With more than one paper, which one these tabs are editing, and the
+      same tab on each of the others. #}
+  {%- if papers|length > 1 %}
+  <nav class="papers" aria-label="Papers">
+    <span class="note">Paper</span>
+    {%- for p in papers %}
+    <a href="{{ p.base }}/{{ tab }}" class="{{ 'on' if p.current else '' }}"
+       {% if p.current %}aria-current="page"{% endif %}>{{ p.name }}</a>
+    {%- endfor %}
+  </nav>
+  {%- endif %}
 </header>
 
 <section class="status" id="status">
@@ -45,19 +56,19 @@
       {%- if status.crossword_check.when %} (checked {{ status.crossword_check.when }}){% endif %}
     </dd></div>
     {%- endif %}
-    <div><dt>Log</dt><dd><a href="/log">last 200 lines</a></dd></div>
+    <div><dt>Log</dt><dd><a href="{{ base }}/log">last 200 lines</a></dd></div>
   </dl>
   {% if status.login_off %}<p class="error">No password on this page: WEB_PASSWORD is not set, so anyone on your network can open it. Set it on the container to ask for one.</p>{% endif %}
 </section>
 
 <nav class="tabs">
   {% for slug, label in tabs %}
-    <a href="/{{ slug }}" class="{{ 'active' if tab == slug else '' }}">{{ label }}</a>
+    <a href="{{ base }}/{{ slug }}" class="{{ 'active' if tab == slug else '' }}">{{ label }}</a>
   {% endfor %}
   {#- How this page is set, not how the paper is: it is printed black on
       white whatever is chosen here. Plain buttons, so it works with no
       script, and it sends her back to the tab she was reading. #}
-  <form class="theme" method="post" action="/theme">
+  <form class="theme" method="post" action="{{ base }}/theme">
     <input type="hidden" name="next" value="{{ request.url.path }}">
     <span class="note">Theme</span>
     {%- for value, label in theme_choices %}

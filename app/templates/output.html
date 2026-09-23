@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<form method="post" action="/output">
+<form method="post" action="{{ base }}/output">
 
   <h2>Printing</h2>
   <p>
@@ -116,7 +116,7 @@ const discovered = document.getElementById("discovered");
 const discoverButton = document.getElementById("discover");
 discoverButton.addEventListener("click", function () {
   withButton(discoverButton, printerResult,
-    function () { return postJSON("/output/printer/discover", {}); },
+    function () { return postJSON("{{ base }}/output/printer/discover", {}); },
     function (result) {
       discovered.innerHTML = '<option value="">—</option>';
       result.forEach(function (printer) {
@@ -188,7 +188,7 @@ function showDiagnosis(result) {
 
 function verifyPrinter(host) {
   showChecking("Checking the printer…");
-  return postJSON("/output/printer/test", { host: host }).then(function (data) {
+  return postJSON("{{ base }}/output/printer/test", { host: host }).then(function (data) {
     if (data && data.ok) {
       showDiagnosis(data.result);
     } else {
@@ -218,7 +218,7 @@ const testPageButton = document.getElementById("test-page");
 testPageButton.addEventListener("click", function () {
   withButton(testPageButton, printerResult,
     function () {
-      return postJSON("/output/printer/test-page", {
+      return postJSON("{{ base }}/output/printer/test-page", {
         host: hostField.value.trim(),
         duplex: document.getElementById("duplex").checked,
       });
@@ -233,7 +233,7 @@ testPageButton.addEventListener("click", function () {
 const emailButton = document.getElementById("send-test");
 emailButton.addEventListener("click", function () {
   withButton(emailButton, document.getElementById("email_result"),
-    function () { return postJSON("/output/email/test", { to: document.getElementById("email_to").value }); },
+    function () { return postJSON("{{ base }}/output/email/test", { to: document.getElementById("email_to").value }); },
     function (result) { return "Test sent to " + result.sent_to.join(", "); });
 });
 
@@ -244,7 +244,7 @@ function startRun(button, dry) {
   button.disabled = true;
   runResult.className = "result";
   runResult.textContent = dry ? "Test run started…" : "Started…";
-  postJSON("/run" + (dry ? "?dry=1" : ""), {}).then(function (data) {
+  postJSON("{{ base }}/run" + (dry ? "?dry=1" : ""), {}).then(function (data) {
     if (!data.ok) {
       button.disabled = false;
       show(runResult, data.error || "could not start", true);
@@ -277,7 +277,7 @@ reprintButton.addEventListener("click", function () {
   button.disabled = true;
   runResult.className = "result";
   runResult.textContent = "Sending the latest issue again…";
-  postJSON("/reprint", {}).then(function (data) {
+  postJSON("{{ base }}/reprint", {}).then(function (data) {
     if (!data.ok) {
       button.disabled = false;
       show(runResult, data.error || "could not start", true);

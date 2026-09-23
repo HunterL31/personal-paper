@@ -509,6 +509,35 @@ it does not. Nothing else is installed for printing — no CUPS in the
 container, no drivers — because the format negotiation and the raster
 encoder (`deliver/pwg.py`, pymupdf for the pixels) are in the app.
 
+## More than one paper
+
+One container makes a paper for each reader in the house (`papers.py`).
+The first paper, `main`, is the container as it was, at the top of
+`DATA_DIR`; each other paper has a folder with the same layout,
+`DATA_DIR/papers/<id>/` (settings, state, lists, out, archive, logs), so no
+reader's settings, lists, queue or issue numbers can reach another's.
+`DATA_DIR/papers.json` is `{"order": [...]}`, the print order; with no file
+there is one paper. The current paper is a context variable set with
+`papers.using(id)`, and every `data_dir()` answers for it; threads started
+for a paper carry it (`papers.start_thread`), and each paper's log files
+take only its own lines (`papers.PaperFilter`).
+
+- **Web.** `PaperPrefix`, a pure ASGI middleware, serves paper `<id>` under
+  `/p/<id>/` by making the prefix the request's `root_path`; every route
+  matches as before, and templates prefix addresses with `{{ base }}`. A
+  switcher under the masthead appears once there are two papers. The
+  Papers tab lists them in print order, adds one (optionally with this
+  paper's printer and print time), moves one earlier or later, and stops
+  one — its folder is renamed `.removed-<id>-<time>`, never deleted.
+  Previews are the container's, not a paper's (`preview/<job>`).
+- **Lists.** Another paper's phone posts to `/p/<id>/lists/<slug>`, open
+  the same way the main paper's is.
+- **Scheduler.** One cron job per distinct print time among the papers
+  (`daily-paper-HHMM`). When it fires, `run_due` makes every paper set to
+  that time and weekday, one after another in print order, each in its own
+  try/except so one failure does not stop the next.
+- **CLI.** `python run.py --paper <id>`.
+
 ## Scheduling and deployment
 
 - Scheduler: APScheduler `BackgroundScheduler` started with the app, one

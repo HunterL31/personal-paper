@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from state import data_dir
+import papers
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,9 @@ class Job:
 
 
 def preview_root() -> Path:
-    return data_dir() / "preview"
+    """One for the container, not one per paper: a job's id is unique, so a
+    preview is found by it alone whichever paper's page asked for it."""
+    return papers.root() / "preview"
 
 
 def preview_dir(job_id: str) -> Path:
@@ -90,7 +92,8 @@ def start(kind: str, work: Callable[["Job"], dict[str, Any]]) -> Job:
         finally:
             job.finished = time.time()
 
-    threading.Thread(target=target, name=f"job-{kind}-{job.id}", daemon=True).start()
+    # The job works for the paper whose page started it.
+    papers.start_thread(target, name=f"job-{kind}-{job.id}")
     return job
 
 

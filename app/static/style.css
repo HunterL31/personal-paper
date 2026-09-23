@@ -282,3 +282,11 @@ button.small { font-size: 0.8em; padding: 0.1em 0.5em; }
 .theme button.on { background: var(--ink); color: var(--paper); font-weight: bold; }
 .theme button.on:hover { background: var(--ink); }
 @media (max-width: 26rem) { .theme { margin-left: 0; width: 100%; } }
+
+/* Which paper the tabs are editing, when the container makes more than one. */
+.papers { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.4rem; margin-top: 0.5rem; }
+.papers .note { font-variant: small-caps; letter-spacing: 0.04em; }
+.papers a { color: var(--ink); border: 1px solid var(--ink); padding: 0.1rem 0.6rem; text-decoration: none; }
+.papers a:hover { background: var(--hover); color: var(--ink); }
+.papers a.on { background: var(--ink); color: var(--paper); font-weight: bold; }
+.inline-form { display: inline; margin: 0; }

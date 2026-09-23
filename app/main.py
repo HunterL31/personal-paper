@@ -64,6 +64,7 @@ from app.settings import (  # noqa: E402
     slugify,
 )
 from render.fontlist import face_css, stack  # noqa: E402
+import papers  # noqa: E402
 from state import data_dir, load_state  # noqa: E402
 
 log = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ TABS = [
     ("sources", "Sources"),
     ("output", "Output"),
     ("preview", "Preview"),
+    ("papers", "Papers"),
 ]
 #: How a list is set on paper, and what the Sources tab calls each choice.
 LIST_STYLES = [("checkbox", "Checkboxes"), ("plain", "Plain lines"), ("numbered", "Numbered")]
@@ -120,15 +122,50 @@ async def lifespan(app: FastAPI):
             "%s is not set: the web page is open to anyone on the network",
             Env.WEB_PASSWORD,
         )
-    scheduler.start(Settings.load())
+    scheduler.start()
     try:
         yield
     finally:
         scheduler.shutdown()
 
 
+class PaperPrefix:
+    """`/p/<id>/...` is the same page, working for another of the papers.
+
+    Pure ASGI, outside everything else: the prefix becomes the request's
+    `root_path`, so every route below matches as it always has, and the
+    paper becomes the current one (`papers.using`) for the whole request,
+    including the threads and jobs it starts. The main paper has no prefix,
+    so every address the page has ever had still means what it meant.
+    """
+
+    PATH = re.compile(r"^/p/([^/]+)(/.*)?$")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            return await self.app(scope, receive, send)
+        match = self.PATH.match(scope.get("path") or "")
+        if match is None:
+            return await self.app(scope, receive, send)
+        pid, rest = match[1], match[2]
+        if pid == papers.MAIN or not papers.valid_id(pid) or not papers.exists(pid):
+            response = JSONResponse({"detail": f"no paper called {pid!r}"}, status_code=404)
+            return await response(scope, receive, send)
+        prefix = papers.url_prefix(pid)
+        scope = dict(scope)
+        scope["root_path"] = scope.get("root_path", "") + prefix
+        if not rest:
+            scope["path"] = scope["path"] + "/"
+        with papers.using(pid):
+            await self.app(scope, receive, send)
+
+
 app = FastAPI(title="Personal Paper", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.middleware("http")(auth.middleware)
+app.add_middleware(PaperPrefix)
 class Revalidated(StaticFiles):
     """Static files the browser must ask about before reusing.
 
@@ -215,7 +252,7 @@ def _status() -> dict[str, Any]:
         "last_error": st.get("last_error") or "",
         "last_pages": st.get("last_pages") or 0,
         "issue": st.get("issue") or 0,
-        "archive_url": f"/archive/{pdf_name}" if ARCHIVE_NAME.match(pdf_name) else "",
+        "archive_url": f"{papers.url_prefix()}/archive/{pdf_name}" if ARCHIVE_NAME.match(pdf_name) else "",
         "archive_name": pdf_name,
         "archive_label": issue_label(pdf_name, int(st.get("last_issue") or 0)),
         "next_run": f"{when:%Y-%m-%d %H:%M %Z}".strip() if when else "",
@@ -241,13 +278,43 @@ def page(request: Request, tab: str, template: str, **extra: Any) -> Response:
         # Which image this is: the commit the publish workflow built from,
         # so "did the update take?" has an answer on every page.
         "build": (os.environ.get("APP_BUILD") or "dev")[:12],
+        # Every address on the page starts here: "" for the main paper,
+        # "/p/<id>" for the others, so each tab edits the paper it is on.
+        "base": papers.url_prefix(),
+        "papers": paper_rows(),
     }
     context.update(extra)
     return TEMPLATES.TemplateResponse(request, template, context)
 
 
+def here(path: str) -> str:
+    """`path` on the current paper's page: "/look", or "/p/sam/look"."""
+    return f"{papers.url_prefix()}{path}"
+
+
 def saved(path: str) -> RedirectResponse:
-    return RedirectResponse(f"{path}?saved=1", status_code=303)
+    return RedirectResponse(f"{here(path)}?saved=1", status_code=303)
+
+
+def paper_rows() -> list[dict[str, Any]]:
+    """Every paper, in print order, for the switcher and the Papers tab."""
+    rows = []
+    current = papers.current()
+    for pid in papers.ids():
+        with papers.using(pid):
+            settings = Settings.load()
+        rows.append({
+            "id": pid,
+            "name": settings.look.paper_name,
+            "url": f"{papers.url_prefix(pid)}/",
+            "base": papers.url_prefix(pid),
+            "current": pid == current,
+            "main": pid == papers.MAIN,
+            "schedule": settings.output.schedule,
+            "printer": settings.output.print.printer_name or settings.output.print.printer_host,
+            "print_on": settings.output.print.enabled,
+        })
+    return rows
 
 
 def env_rows(names: list[str]) -> list[dict[str, Any]]:
@@ -396,7 +463,7 @@ def list_rows(settings: Settings, base_url: str) -> list[dict[str, Any]]:
             "style": source.style,
             "max_age_hours": source.max_age_hours,
             "status": lists_gather.status(source.slug),
-            "url": f"{base_url}/lists/{source.slug}",
+            "url": f"{base_url}{papers.url_prefix()}/lists/{source.slug}",
             # The slug is not a secret — it is in the URL — so the header
             # that uses it as the token can always be copied.
             "auth_slug": f"Bearer {source.slug}",
@@ -408,7 +475,7 @@ def list_rows(settings: Settings, base_url: str) -> list[dict[str, Any]]:
 # ------------------------------------------------------------------- pages
 @app.get("/")
 def index() -> RedirectResponse:
-    return RedirectResponse("/preview", status_code=303)
+    return RedirectResponse(here("/preview"), status_code=303)
 
 
 @app.get("/healthz")
@@ -435,7 +502,7 @@ def fonts_css() -> Response:
 def _own_path(raw: str, fallback: str = "/look") -> str:
     path = (raw or "").strip()
     if not path.startswith("/") or path.startswith("//") or "\\" in path:
-        return fallback
+        return here(fallback)
     return path
 
 
@@ -1121,7 +1188,7 @@ def preview_post(source: str = "sample") -> RedirectResponse:
         }
 
     job = jobs.start("preview", work)
-    return RedirectResponse(f"/preview?job={job.id}", status_code=303)
+    return RedirectResponse(here(f"/preview?job={job.id}"), status_code=303)
 
 
 @app.get("/jobs/{job_id}")
@@ -1170,7 +1237,7 @@ def _run_log_rows() -> list[dict[str, Any]]:
             "name": path.name,
             "when": f"{day} {clock[:2]}:{clock[2:4]}:{clock[4:6]}",
             "size": f"{max(size, 1024) // 1024:,} kB",
-            "url": f"/log/runs/{path.name}",
+            "url": here(f"/log/runs/{path.name}"),
         })
     return rows
 
@@ -1212,6 +1279,71 @@ def run_log(name: str) -> Response:
     if not path.is_file():
         return JSONResponse({"detail": "not found"}, status_code=404)
     return FileResponse(path, media_type="text/plain", filename=name)
+
+
+# -------------------------------------------------------------- Papers tab
+def days_label(days: list[int]) -> str:
+    """[0..6] -> "every day"; [0, 1, 2, 3, 4] -> "Mon–Fri"; else "Mon, Wed"."""
+    days = sorted({int(d) for d in days if 0 <= int(d) <= 6})
+    if len(days) == 7:
+        return "every day"
+    if len(days) > 2 and days == list(range(days[0], days[-1] + 1)):
+        return f"{DAY_LABELS[days[0]]}–{DAY_LABELS[days[-1]]}"
+    return ", ".join(DAY_LABELS[d] for d in days)
+
+
+@app.get("/papers")
+def papers_get(request: Request) -> Response:
+    return page(
+        request, "papers", "papers.html",
+        days_label=days_label,
+        current_id=papers.current(),
+        current_main=papers.current() == papers.MAIN,
+    )
+
+
+@app.post("/papers/add")
+async def papers_add(request: Request) -> RedirectResponse:
+    """A new paper, after the others. It starts with this paper's printer
+    and print time when asked, and nothing else of anyone's: its reader's
+    sources and lists are theirs to set."""
+    form = await request.form()
+    name = form_text(form, "name")
+    if not name:
+        return RedirectResponse(here("/papers"), status_code=303)
+    this = Settings.load()
+    fresh = Settings()
+    fresh.look.paper_name = name
+    fresh.web = this.web.model_copy()
+    if form_flag(form, "copy_output"):
+        fresh.output.print = this.output.print.model_copy()
+        fresh.output.schedule = this.output.schedule.model_copy(deep=True)
+    pid = papers.add(name)
+    with papers.using(pid):
+        fresh.save()
+    scheduler.reschedule()
+    # Straight to its Sources tab: that is where a new reader starts.
+    return RedirectResponse(f"{papers.url_prefix(pid)}/sources", status_code=303)
+
+
+@app.post("/papers/{pid}/move")
+async def papers_move(pid: str, request: Request) -> RedirectResponse:
+    form = await request.form()
+    step = -1 if form_text(form, "step") == "-1" else 1
+    if papers.exists(pid):
+        papers.move(pid, step)
+    return saved("/papers")
+
+
+@app.post("/papers/{pid}/remove")
+async def papers_remove(pid: str, request: Request) -> RedirectResponse:
+    form = await request.form()
+    if pid == papers.MAIN or not papers.exists(pid) or not form_flag(form, "confirm"):
+        return RedirectResponse(here("/papers"), status_code=303)
+    papers.remove(pid)
+    scheduler.reschedule()
+    # This page's own paper may be the one that is gone.
+    return RedirectResponse("/papers?saved=1", status_code=303)
 
 
 # ------------------------------------------------- POST /lists/<slug>

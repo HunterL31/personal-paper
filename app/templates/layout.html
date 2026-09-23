@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<form method="post" action="/layout">
+<form method="post" action="{{ base }}/layout">
 
   <h2>Sections</h2>
   <p class="note">Your own column holds these, in this order, top to bottom:
@@ -94,7 +94,7 @@
 
   <div class="actions">
     <button class="primary" type="submit">Save layout</button>
-    <a href="/preview">See it on the Preview tab &rarr;</a>
+    <a href="{{ base }}/preview">See it on the Preview tab &rarr;</a>
   </div>
 </form>
 {% endblock %}

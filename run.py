@@ -6,6 +6,7 @@ One issue of the paper: gather -> data.json -> render -> archive -> deliver.
     python run.py --dry-run            # real data, render and archive only
     python run.py --sample             # render/sample_data.json instead of gathering
     python run.py --date 2026-09-16    # re-render an archived day, no delivery
+    python run.py --paper sam          # another of the container's papers (papers.py)
 
 Called by the scheduler and by the web page's buttons as
 `run(settings, dry_run=..., date=...) -> RunResult`.  Exits non-zero on
@@ -38,7 +39,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:  # so `python run.py` finds app/, gather/, render/
     sys.path.insert(0, str(HERE))
 
-from app.settings import DATA_DIR as _DEFAULT_DATA_DIR  # noqa: E402
+import papers  # noqa: E402
 from app.settings import Env, Settings  # noqa: E402
 from render.render import render as render_paper  # noqa: E402
 from state import (  # noqa: E402
@@ -124,8 +125,8 @@ QUIET_LOGGERS = (
 
 # ------------------------------------------------------------------ helpers
 def data_dir() -> Path:
-    """DATA_DIR, read fresh (tests and the web app move it)."""
-    return Path(os.environ.get("DATA_DIR", str(_DEFAULT_DATA_DIR)))
+    """The current paper's folder, read fresh (tests and the web app move it)."""
+    return papers.data_dir()
 
 
 def archive_dir() -> Path:
@@ -211,6 +212,8 @@ def _setup_file_logging() -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         fh = logging.FileHandler(path, encoding="utf-8")
         fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        # Each paper's run.log is its own: another paper's run is not in it.
+        fh.addFilter(papers.PaperFilter(papers.current()))
         root.addHandler(fh)
         if root.level > logging.INFO:
             root.setLevel(logging.INFO)
@@ -272,6 +275,7 @@ def _enhanced_log(settings: Settings) -> Iterator[Optional[Path]]:
         return
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
     handler.setLevel(logging.DEBUG)
+    handler.addFilter(papers.PaperFilter(papers.current()))
 
     root = logging.getLogger()
     was = root.level
@@ -715,12 +719,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="render and archive, deliver nothing")
     ap.add_argument("--date", metavar="YYYY-MM-DD", help="re-render an archived day")
     ap.add_argument("--sample", action="store_true", help="use render/sample_data.json instead of gathering")
+    ap.add_argument("--paper", metavar="ID", default=papers.MAIN,
+                    help=f"which paper to make (default {papers.MAIN}; the ids are in papers.json)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         stream=sys.stdout)
-    settings = Settings.load()
-    result = run(settings, dry_run=args.dry_run, date=args.date, sample=args.sample)
+    if not papers.exists(args.paper):
+        print(f"no paper {args.paper!r}; this container makes: {', '.join(papers.ids())}", file=sys.stderr)
+        return 2
+    with papers.using(args.paper):
+        settings = Settings.load()
+        result = run(settings, dry_run=args.dry_run, date=args.date, sample=args.sample)
     if result.ok:
         print(f"{result.date}: {result.pages} page(s) -> {result.pdf}")
         return 0

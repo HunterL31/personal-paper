@@ -337,6 +337,28 @@ reasons and the traps. Add to it when you hit one.
   `printer_check`, `crossword_check`. Same-day papers archive as
   `<date>.pdf`, `<date>-2.pdf`, ... and never overwrite.
 
+## More than one paper (`papers.py`)
+
+- **Never build a path from `DATA_DIR` directly**; call a `data_dir()`
+  (`state`, `run`, `gather.lists`, `gather.crossword`) or `papers.data_dir()`.
+  They answer for the current paper, a context variable. A path built from
+  the env var is the main paper's whichever paper's page asked.
+- **A plain `threading.Thread` starts in an empty context**, which is the
+  main paper's: a gatherer started that way for another paper read the main
+  paper's lists and seen posts. `gather.submit` and `jobs.start` go through
+  `papers.start_thread`, which copies the context. Any new thread must too.
+  Starlette's threadpool and asyncio tasks copy the context on their own.
+- `PaperPrefix` puts `/p/<id>` in `root_path` and leaves it in `path`, which
+  is Starlette 0.48's convention (routes match on path minus root_path).
+  `request.url.path` therefore includes the prefix, which is why the theme
+  switch's `next` just works and `auth` strips it before `is_open`.
+- A template address needs `{{ base }}`, a redirect `here(path)`; a test
+  (`test_each_papers_tabs_edit_that_paper`) catches a form that forgot.
+  `/static`, `/fonts`, `/jobs/<id>` and `/preview/<job>/<file>` are the
+  container's and need no prefix.
+- Root-logger file handlers carry a `PaperFilter`: without it, the second
+  paper's run.log handler would also collect the first paper's lines.
+
 ## Working with agents on this repo
 
 - Split parallel work by file ownership and put the data or settings
