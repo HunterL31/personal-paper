@@ -57,6 +57,9 @@ SAMPLE_DATA = HERE / "render" / "sample_data.json"
 #: The crossword gets the same wall-clock budget as a gatherer: the puzzle
 #: is a nice-to-have and the paper is not waiting on it (house rule 3).
 CROSSWORD_TIMEOUT = 30.0
+#: The pictures too: `gather.images` gives up on its own inside this, and a
+#: hang past it is abandoned the way a wedged gatherer is.
+PICTURES_TIMEOUT = 60.0
 
 
 @dataclass
@@ -74,6 +77,12 @@ class RunResult:
     #: article index -> how many of its leading paragraphs were printed, for
     #: the one story that was carried only in part. Empty when none was.
     partial: dict[int, int] = field(default_factory=dict)
+    #: the picture sheet, when the Layout tab asks for one: how many of the
+    #: stories' pictures were fetched, how many are on the sheet, and how
+    #: many of the printed stories' pictures it had no room for
+    pictures_fetched: int = 0
+    pictures_printed: int = 0
+    pictures_dropped: int = 0
     #: route name -> error message, or None when that route succeeded
     delivery: dict[str, Optional[str]] = field(default_factory=dict)
     #: this run's own log file, when enhanced logging is on (settings.logs)
@@ -322,11 +331,13 @@ def _log_settings(settings: Settings, *, dry_run: bool, date: Optional[str],
               ",".join(str(d) for d in out.schedule.days) or "none",
               out.notify)
     look = settings.look
-    log.debug("look: %r; body %s at %.1fpt; up to %d front stor%s; rail on the %s",
+    log.debug("look: %r; body %s at %.1fpt; up to %d front stor%s; rail on the %s; "
+              "picture sheet %s",
               look.paper_name, look.body_font, look.body_size_pt,
               look.layout.front_stories,
               "y" if look.layout.front_stories == 1 else "ies",
-              look.layout.rail_side)
+              look.layout.rail_side,
+              "on" if look.layout.pictures else "off")
     st = load_state()
     log.debug("state: issue %s; last run %s; last success %s; last error %s",
               st.get("issue"), st.get("last_run") or "never",
@@ -344,9 +355,10 @@ def _log_result(result: RunResult, seconds: float) -> None:
                         for route, err in result.delivery.items()) or "nothing sent")
     log.info(
         "run finished in %.1fs: ok=%s pages=%s crossword=%s printed=%s "
-        "partial=%s error=%s",
+        "partial=%s pictures=%s/%s error=%s",
         seconds, result.ok, result.pages, result.crossword, result.printed,
-        result.partial or "none", result.error or "none",
+        result.partial or "none", result.pictures_printed, result.pictures_fetched,
+        result.error or "none",
     )
 
 
@@ -398,6 +410,37 @@ def _crossword(settings: Settings) -> Optional[dict[str, Any]]:
         log.error("crossword failed: %s\n%s", exc, traceback.format_exc())
         return None
     return puzzle or None
+
+
+def _pictures(settings: Settings, articles: list, out_dir: Path) -> int:
+    """Fetch the stories' pictures for the picture sheet, when the Layout
+    tab asks for one. Returns how many were fetched.
+
+    Never raises and never hangs the run: `gather.images.fetch` swallows
+    its own failures and keeps to its budget, and like the crossword it runs
+    on a daemon thread that is abandoned past `PICTURES_TIMEOUT`. With the
+    sheet off nothing is fetched at all -- no picture the reader did not
+    ask for ever crosses the wire.
+    """
+    layout = getattr(getattr(settings, "look", None), "layout", None)
+    if not getattr(layout, "pictures", False) or not articles:
+        return 0
+    try:
+        from gather import submit
+        from gather import images as images_gather
+    except Exception as exc:
+        log.warning("pictures unavailable: %s", exc)
+        return 0
+
+    future = submit("images", images_gather.fetch, articles, out_dir)
+    try:
+        return int(future.result(timeout=PICTURES_TIMEOUT) or 0)
+    except FutureTimeout:
+        log.error("pictures: timed out after %.0fs", PICTURES_TIMEOUT)
+        return 0
+    except Exception as exc:
+        log.error("pictures failed: %s\n%s", exc, traceback.format_exc())
+        return 0
 
 
 def _deliver(pdf: Path, settings: Settings, pages: Optional[int]) -> dict[str, Optional[str]]:
@@ -536,12 +579,20 @@ def _run(
         # by the layout can be mapped back to the posts that actually appeared.
         articles = data.get("articles") or []
         guids = [a.pop("guid", None) if isinstance(a, dict) else None for a in articles]
+        # The pictures, for the picture sheet: fetched beside data.json, so a
+        # replay of the day finds them where its data says they are. The
+        # sample issue's are in the repo, beside sample_data.json.
+        if not (replay or sample):
+            result.pictures_fetched = _pictures(settings, articles, out_dir)
+        image_dir = SAMPLE_DATA.parent if sample else out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "data.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
         # 4. render
-        rendered = render_paper(data, look, out_dir)
+        rendered = render_paper(data, look, out_dir, image_dir=image_dir)
         result.pdf, result.pages = rendered.pdf, rendered.pages
+        result.pictures_printed = len(getattr(rendered, "pictures", []) or [])
+        result.pictures_dropped = len(getattr(rendered, "pictures_dropped", []) or [])
         # `printed` is every article that reached the sheet, whole or in part;
         # `partial` says how much of the one that was cut short was carried.
         result.partial = {int(k): int(v) for k, v in (getattr(rendered, "partial", {}) or {}).items()}
@@ -562,6 +613,9 @@ def _run(
                 "printed the first %d paragraph%s of %s; the rest is online",
                 paragraphs, "" if paragraphs == 1 else "s", title,
             )
+        if result.pictures_printed or result.pictures_dropped:
+            log.info("picture sheet: %d picture(s) printed, %d left off",
+                     result.pictures_printed, result.pictures_dropped)
         log.info("rendered %s page(s) -> %s", rendered.pages, rendered.pdf)
 
         # 5. archive (always, before any route runs). A second paper made

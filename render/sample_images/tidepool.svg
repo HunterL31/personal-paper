@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" width="400" height="260">
+  <!-- The sample issue's picture for the tide-pool story: a pool in the
+       rock with a starfish, a few pebbles and an anemone, in black line. -->
+  <rect width="400" height="260" fill="#fff"/>
+  <g fill="none" stroke="#000" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- the rock's edge and the pool -->
+    <path d="M20 60 q60 -40 130 -22 q80 20 150 -10 q60 -26 80 30 v170 h-360 z" stroke-width="6"/>
+    <path d="M60 130 q40 -50 130 -40 q90 10 150 -5 q30 30 10 90 q-70 40 -160 30 q-90 -10 -130 -75 z"/>
+    <!-- ripples -->
+    <path d="M120 170 q20 -8 40 0 q20 8 40 0" stroke-width="3"/>
+    <path d="M230 200 q20 -8 40 0 q20 8 40 0" stroke-width="3"/>
+    <!-- starfish -->
+    <path d="M150 100 l12 24 26 4 -19 18 5 26 -24 -13 -24 13 5 -26 -19 -18 26 -4 z"/>
+    <!-- pebbles -->
+    <ellipse cx="260" cy="150" rx="18" ry="11"/>
+    <ellipse cx="300" cy="172" rx="12" ry="8"/>
+    <ellipse cx="90" cy="200" rx="14" ry="9"/>
+    <!-- anemone -->
+    <path d="M320 120 v-16 m8 18 l6 -14 m-16 14 l-6 -14 m24 20 l12 -8 m-32 8 l-12 -8 m30 16 l14 0 m-42 0 l-14 0" stroke-width="4"/>
+    <ellipse cx="320" cy="130" rx="22" ry="10"/>
+  </g>
+</svg>

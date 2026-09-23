@@ -8,6 +8,12 @@ and collapsing whitespace runs that only exist because the HTML was indented.
 Nothing is summarized, shortened or reworded, and no character is added to a
 paragraph (no bullet glyphs, no quotation marks).
 
+The pictures are not printed in the text, but they are not thrown away
+either: each article carries `images`, one entry per picture the author set
+between the paragraphs -- its address, its caption verbatim, and `after`, the
+number of paragraphs before it. `gather/images.py` fetches the files when
+the reader has asked for a picture sheet, and the template numbers them.
+
 `fetch(settings)` returns article dicts in the render contract's shape (the
 printable `url` among them) plus an extra `guid` key. It deliberately does
 **not** record what it has seen: the run is not successful until the paper is
@@ -75,6 +81,20 @@ CHROME_SELECTORS = (
     ".captioned-image-container",
     ".image-link",
 )
+#: Where Substack puts a picture: the outermost of these around an `img` is
+#: one picture, with the `figcaption` inside it as its caption. They are
+#: taken out before the chrome is stripped, so the picture is kept and the
+#: paragraphs come out exactly as they always have.
+IMAGE_CONTAINERS = (".captioned-image-container", "figure")
+#: A picture inside one of these is decoration, not one the author set
+#: between paragraphs: an emoji in a sentence, an icon on a button.
+INLINE_IMAGE_PARENTS = ("p", "li", "h2", "h3", "h4", "button")
+#: Smaller than this on either side (when the tag says) is an icon.
+MIN_IMAGE_PX = 100
+#: The placeholder an extracted picture leaves in the tree, so its place
+#: among the paragraphs is counted like theirs. Not a block tag, so it can
+#: never add a paragraph, and it has no text of its own.
+_IMAGE_TAG = "pp-image"
 
 PAYWALL_SELECTORS = (".paywall", ".paywall-jump")
 PAYWALL_PHRASES = (
@@ -137,17 +157,38 @@ def _format_published(dt: datetime) -> str:
 
 
 # ----------------------------------------------------------------- state
-def _seen_guids() -> set[str]:
+#: `state.seen_posts` is the guids in the order they were marked printed --
+#: paper by paper, and within a paper in the sheet's order, the lead first.
+#: `state.printed_at` says when each was marked, so the queue view can list
+#: what has printed in that order and say the day it went out.
+def _seen_order() -> list[str]:
     try:
         import state  # written by the run agent, at the repo root
     except Exception:
         logger.warning("state module unavailable; treating every post as new")
-        return set()
+        return []
     try:
-        return set(state.load_state().get("seen_posts") or [])
+        return [g for g in (state.load_state().get("seen_posts") or []) if isinstance(g, str)]
     except Exception:
         logger.warning("could not read seen_posts from state", exc_info=True)
-        return set()
+        return []
+
+
+def _seen_guids() -> set[str]:
+    return set(_seen_order())
+
+
+def _printed_at() -> dict[str, str]:
+    """guid -> the ISO time it was marked printed, for the guids that have one."""
+    try:
+        import state
+
+        stamps = state.load_state().get("printed_at")
+    except Exception:
+        return {}
+    if not isinstance(stamps, dict):
+        return {}
+    return {g: t for g, t in stamps.items() if isinstance(g, str) and isinstance(t, str)}
 
 
 def mark_unseen(guids: list[str]) -> None:
@@ -161,6 +202,9 @@ def mark_unseen(guids: list[str]) -> None:
 
         st = state.load_state()
         st["seen_posts"] = [g for g in (st.get("seen_posts") or []) if g not in guids]
+        stamps = st.get("printed_at")
+        if isinstance(stamps, dict):
+            st["printed_at"] = {g: t for g, t in stamps.items() if g not in guids}
         state.save_state(st)
         logger.info("marked %d post(s) as unread", len(guids))
     except Exception:
@@ -171,7 +215,9 @@ def mark_seen(guids: list[str]) -> None:
     """
     Record posts as printed. Called by run.py **after** a successful run, so a
     failed or undelivered run reprints the same posts tomorrow rather than
-    losing them. Keeps the most recent `SEEN_HISTORY` guids.
+    losing them. Keeps the most recent `SEEN_HISTORY` guids, and stamps each
+    newly printed one with the time, in `printed_at`; a post already
+    recorded keeps the stamp it has.
     """
     guids = [g for g in (guids or []) if g]
     if not guids:
@@ -182,11 +228,17 @@ def mark_seen(guids: list[str]) -> None:
         st = state.load_state()
         seen = list(st.get("seen_posts") or [])
         known = set(seen)
+        stamps = st.get("printed_at")
+        when = dict(stamps) if isinstance(stamps, dict) else {}
+        now = _now().astimezone(_local_tz()).isoformat(timespec="seconds")
         for g in guids:
             if g not in known:
                 seen.append(g)
                 known.add(g)
+                when[g] = now
         st["seen_posts"] = seen[-SEEN_HISTORY:]
+        kept = set(st["seen_posts"])
+        st["printed_at"] = {g: t for g, t in when.items() if g in kept}
         state.save_state(st)
         logger.info("marked %d post(s) as seen", len(guids))
     except Exception:
@@ -263,21 +315,101 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def extract_paragraphs(html: str) -> list[str]:
+def _image_src(img) -> str:
+    """The picture's address, or "" for one that is decoration or has none."""
+    src = _clean(img.get("src") or "")
+    if not src.startswith(("http://", "https://")):
+        return ""
+    for side in ("width", "height"):
+        raw = img.get(side)
+        try:
+            if raw is not None and int(str(raw).strip()) < MIN_IMAGE_PX:
+                return ""
+        except ValueError:
+            pass
+    return src
+
+
+def _attached(node, soup) -> bool:
+    """Is the node still in the document, or inside something lifted out?"""
+    while node.parent is not None:
+        node = node.parent
+    return node is soup
+
+
+def _lift_images(soup) -> None:
+    """Replace every picture with a placeholder carrying its address and
+    caption, in the place it had among the paragraphs.
+
+    A captioned container is one picture, whatever the markup inside it; a
+    bare `img` (an email edition sets some that way) is one too, unless it
+    is inline in a paragraph or an icon. Done before the chrome is stripped,
+    so a container with no picture in it goes with the rest of the chrome.
     """
-    Every block element the author wrote, in document order, verbatim.
+    for selector in IMAGE_CONTAINERS:
+        for box in soup.select(selector):
+            if not _attached(box, soup):      # inside a container already lifted
+                continue
+            img = next((i for i in box.find_all("img") if _image_src(i)), None)
+            if img is None:
+                continue
+            caption_el = box.find("figcaption")
+            # The caption flattens like a paragraph: inline tags to text, a
+            # <br> to a space, nothing added and nothing lost.
+            caption = _clean(_text_excluding_blocks(caption_el)) if caption_el is not None else ""
+            marker = soup.new_tag(_IMAGE_TAG)
+            marker["data-src"] = _image_src(img)
+            if caption:
+                marker["data-caption"] = caption
+            box.replace_with(marker)
+    for img in soup.find_all("img"):
+        src = _image_src(img)
+        if not src or img.find_parent(INLINE_IMAGE_PARENTS) is not None:
+            continue
+        marker = soup.new_tag(_IMAGE_TAG)
+        marker["data-src"] = src
+        img.replace_with(marker)
+
+
+def extract_content(html: str, *, email: bool = False) -> tuple[list[str], list[dict]]:
+    """
+    Every block element the author wrote, in document order, verbatim, and
+    every picture the author set between them.
 
     Substack chrome is removed first. Headings, blockquote paragraphs and list
-    items come through as plain paragraphs with nothing prefixed to them.
+    items come through as plain paragraphs with nothing prefixed to them. A
+    picture is `{"url", "caption", "after"}`: `after` is how many of the
+    paragraphs come before it (0 for one at the top), and `caption` is the
+    author's, verbatim, or None. `email` also drops an email edition's own
+    chrome.
     """
     soup = _soup(html)
+    _lift_images(soup)
     _strip(soup, CHROME_SELECTORS)
+    if email:
+        _strip(soup, EMAIL_CHROME_SELECTORS)
     paragraphs: list[str] = []
-    for el in soup.find_all(BLOCK_TAGS):
+    images: list[dict] = []
+    for el in soup.find_all(BLOCK_TAGS + (_IMAGE_TAG,)):
+        if el.name == _IMAGE_TAG:
+            images.append({
+                "url": el.get("data-src") or "",
+                "caption": el.get("data-caption") or None,
+                "after": len(paragraphs),
+            })
+            continue
         text = _clean(_text_excluding_blocks(el))
-        if text:
-            paragraphs.append(text)
-    return paragraphs
+        if not text:
+            continue
+        if email and any(p.match(text) for p in EMAIL_CHROME_PARAGRAPHS):
+            continue
+        paragraphs.append(text)
+    return paragraphs, images
+
+
+def extract_paragraphs(html: str) -> list[str]:
+    """The paragraphs alone; see `extract_content`."""
+    return extract_content(html)[0]
 
 
 def _entry_html(entry) -> str:
@@ -462,22 +594,12 @@ def _html_part(message) -> Optional[str]:
 
 def extract_email_paragraphs(html: str) -> list[str]:
     """The same extractor, after also dropping the email's own chrome."""
-    soup = _soup(html)
-    _strip(soup, CHROME_SELECTORS)
-    _strip(soup, EMAIL_CHROME_SELECTORS)
-    paragraphs: list[str] = []
-    for el in soup.find_all(BLOCK_TAGS):
-        text = _clean(_text_excluding_blocks(el))
-        if not text:
-            continue
-        if any(p.match(text) for p in EMAIL_CHROME_PARAGRAPHS):
-            continue
-        paragraphs.append(text)
-    return paragraphs
+    return extract_content(html, email=True)[0]
 
 
 # --------------------------------------------------------------- fetch
-def _article(entry, publication: str, paragraphs: list[str], dt: datetime) -> dict:
+def _article(entry, publication: str, paragraphs: list[str], dt: datetime,
+             images: Optional[list[dict]] = None) -> dict:
     return {
         "title": _clean(entry.get("title") or ""),
         "deck": _deck(entry, paragraphs),
@@ -488,6 +610,9 @@ def _article(entry, publication: str, paragraphs: list[str], dt: datetime) -> di
         #: part of the render contract: the template prints it under a story
         #: that only partly fit the sheet.
         "url": _url(entry),
+        #: the pictures between the paragraphs, for the picture sheet;
+        #: gather/images.py adds `file` to the ones it fetched.
+        "images": list(images or []),
         "guid": _guid(entry),
     }
 
@@ -517,7 +642,7 @@ def _articles_for_source(source, seen: set[str], max_age_days: int) -> list[dict
             continue
 
         html = _entry_html(entry)
-        paragraphs = extract_paragraphs(html)
+        paragraphs, images = extract_content(html)
         if looks_paywalled(html, paragraphs):
             if not source.paid:
                 logger.warning(
@@ -528,14 +653,14 @@ def _articles_for_source(source, seen: set[str], max_age_days: int) -> list[dict
             email_html = fetch_from_imap(title, publication)
             if not email_html:
                 continue  # fetch_from_imap logged why
-            paragraphs = extract_email_paragraphs(email_html)
+            paragraphs, images = extract_content(email_html, email=True)
             if not paragraphs:
                 logger.warning("%s: email edition of %r was empty", publication, title)
                 continue
         if not paragraphs:
             logger.warning("%s: %r had no printable text; skipped", publication, title)
             continue
-        out.append((dt, _article(entry, publication, paragraphs, dt)))
+        out.append((dt, _article(entry, publication, paragraphs, dt, images)))
 
     # A queue, not a feed: the oldest unread post is the one whose turn it is.
     out.sort(key=lambda pair: pair[0])
@@ -624,9 +749,21 @@ QUEUE_STATUSES = ("queued", "beyond-limit", "printed", "preview-only", "too-old"
 TOO_OLD_SHOWN = 10
 
 
+def _printed_day(stamp: Optional[str]) -> Optional[str]:
+    """The day a `printed_at` stamp falls on, in the reader's zone, or None."""
+    if not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp).astimezone(_local_tz()).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
 def _preview_row(entry, publication: str, dt: datetime, status: str,
-                 position: Optional[int] = None) -> dict:
-    """One row of the queue view. No article text: the sheet prints that."""
+                 position: Optional[int] = None, printed_at: Optional[str] = None) -> dict:
+    """One row of the queue view. No article text: the sheet prints that.
+    `printed` is the day the post went out, for a printed one that has a
+    stamp; None otherwise."""
     local = dt.astimezone(_local_tz())
     return {
         "guid": _guid(entry),
@@ -637,7 +774,26 @@ def _preview_row(entry, publication: str, dt: datetime, status: str,
         "age_days": round((_now() - dt).total_seconds() / 86400.0, 1),
         "position": position,
         "status": status,
+        "printed": _printed_day(printed_at),
     }
+
+
+def _in_printed_order(rows: list[dict]) -> list[dict]:
+    """The printed rows as the server printed them: the latest paper first
+    and, within a paper, the sheet's order (the lead first).
+
+    The stamp in `printed_at` orders the papers; a paper's own posts share
+    a stamp and keep their place in `seen_posts`, which is the sheet's order.
+    Posts recorded before there were stamps come after, latest first by
+    that place alone.
+    """
+    stamps = _printed_at()
+    place = {g: i for i, g in enumerate(_seen_order())}
+    stamped = [r for r in rows if stamps.get(r.get("guid") or "")]
+    unstamped = [r for r in rows if not stamps.get(r.get("guid") or "")]
+    stamped.sort(key=lambda r: (stamps[r["guid"]], -place.get(r["guid"], -1)), reverse=True)
+    unstamped.sort(key=lambda r: place.get(r.get("guid") or "", -1), reverse=True)
+    return stamped + unstamped
 
 
 def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list, list, list]:
@@ -652,12 +808,14 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
     Having been printed is a fact about the post, not about the window, so it
     is settled first: a post the paper found by looking further back (it is
     older than the window by definition) is reported as printed, not filed
-    under the posts that are too old to print.
+    under the posts that are too old to print. The printed rows come back
+    in feed order; `queue_preview` puts them in the order they printed.
     """
     parsed = _parse_feed(_get(feed_url(source.name)))
     publication = _clean((parsed.feed or {}).get("title") or source.name)
     cutoff = _now() - timedelta(days=max_age_days)
     email_route = bool(getattr(source, "paid", False)) and _imap_config() is not None
+    stamps = _printed_at()
 
     queued: list[tuple[datetime, dict]] = []
     printed: list[tuple[datetime, dict]] = []
@@ -671,7 +829,8 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
             continue
         guid = _guid(entry)
         if guid and guid in seen:
-            printed.append((dt, _preview_row(entry, publication, dt, "printed")))
+            printed.append((dt, _preview_row(entry, publication, dt, "printed",
+                                             printed_at=stamps.get(guid))))
             continue
         if dt < cutoff:
             skipped.append((dt, _preview_row(entry, publication, dt, "too-old")))
@@ -688,8 +847,8 @@ def _preview_for_source(source, seen: set[str], max_age_days: int) -> tuple[list
 
     # The queue's own order: the oldest unprinted post is next.
     queued.sort(key=lambda pair: pair[0])
-    # The other two groups read better newest first — they are a record.
-    printed.sort(key=lambda pair: pair[0], reverse=True)
+    # The skipped read better newest first — they are a record. The printed
+    # are a record too, of what the server did: `queue_preview` orders them.
     skipped.sort(key=lambda pair: pair[0], reverse=True)
     return (
         [row for _, row in queued],
@@ -707,7 +866,9 @@ def queue_preview(settings) -> dict:
     upwards, and `beyond-limit` (position `None`) for the ones still waiting
     behind `QUEUE_LIMIT`. `printed` is every post in the feeds that has
     already been in the paper, whatever its age — a post printed from a
-    widened window is older than the window and still belongs here.
+    widened window is older than the window and still belongs here — in
+    the order the server printed them: the latest paper first, the lead
+    first within it, each row saying the day it went out (`printed`).
     `skipped` is what never will be: paywalled previews with no email route, and
     the posts that fell out of the window (the most recent `TOO_OLD_SHOWN`
     of those). A feed that fails is an `errors` entry, not an exception.
@@ -761,6 +922,7 @@ def queue_preview(settings) -> dict:
             row["position"] = index + 1
         else:
             row["status"] = "beyond-limit"
+    result["printed"] = _in_printed_order(result["printed"])
     too_old.sort(key=lambda row: row["age_days"])   # most recent first
     result["skipped"].extend(too_old[:TOO_OLD_SHOWN])
     return result

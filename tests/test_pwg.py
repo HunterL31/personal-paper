@@ -46,8 +46,34 @@ def blank_page(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def picture_and_type(tmp_path: Path) -> Path:
+    """Page 1 carries a photograph (a mid-grey raster) and a line of type;
+    page 2 the same grey as a drawn rectangle, which is not a photograph."""
+    import pymupdf
+
+    path = tmp_path / "pictures.pdf"
+    grey = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 200, 200), False)
+    grey.set_rect(grey.irect, (128,))
+    with pymupdf.open() as document:
+        page = document.new_page(width=612, height=792)
+        page.insert_image(pymupdf.Rect(*RECT), pixmap=grey)
+        page.insert_text((72, 400), "Type beside a picture", fontsize=24)
+        page = document.new_page(width=612, height=792)
+        page.draw_rect(pymupdf.Rect(*RECT), color=None, fill=(0.5, 0.5, 0.5))
+        document.save(path)
+    return path
+
+
 def _u32(data: bytes, offset: int) -> int:
     return struct.unpack_from(">I", data, offset)[0]
+
+
+def _ink_fraction(page, rect=RECT, step: int = 3) -> float:
+    """How much of the rectangle (points) is ink, sampled every `step` pixels."""
+    x0, y0, x1, y1 = (int(v * SCALE) for v in rect)
+    inside = [(x, y) for y in range(y0 + 8, y1 - 8, step) for x in range(x0 + 8, x1 - 8, step)]
+    return sum(page.black(x, y) for x, y in inside) / len(inside)
 
 
 # ------------------------------------------------------------------ the stream
@@ -195,6 +221,39 @@ def test_a_line_is_runs_and_literals(two_pages):
     assert pwg._encode_line(b"\x8f\x78\xf7") == b"\xfe\x8f\x78\xf7"
     # A single color of its own is a run of one, because 257 - 1 will not fit.
     assert pwg._encode_line(b"\x42") == b"\x00\x42"
+
+
+def test_a_page_with_a_photograph_is_halftoned_and_a_page_of_type_is_not(picture_and_type):
+    """A threshold turns a mid grey into a black blot; a page that carries a
+    picture is dithered instead, so the grey prints as half ink, half
+    paper. The page of type keeps the plain threshold it always had."""
+    data = pwg.encode(picture_and_type, dpi=300, color="black_1", duplex=False)
+    photo, drawn = pwg.decode_pages(data)
+
+    assert 0.4 < _ink_fraction(photo) < 0.6       # dots: about half of them ink
+    assert _ink_fraction(drawn) == 1.0            # thresholded, as before
+    # A mid grey dithers to a checkerboard: no two neighbours alike, in
+    # either direction. The type on the picture page is still there, solid.
+    x0, y0 = int(RECT[0] * SCALE) + 20, int(RECT[1] * SCALE) + 20
+    assert all(photo.black(x0 + i, y0) != photo.black(x0 + i + 1, y0) for i in range(8))
+    assert all(photo.black(x0, y0 + r) != photo.black(x0, y0 + r + 1) for r in range(8))
+    type_band = [photo.black(x, y) for y in range(int(385 * SCALE), int(400 * SCALE), 2)
+                 for x in range(int(72 * SCALE), int(300 * SCALE), 2)]
+    assert 0.05 < sum(type_band) / len(type_band) < 0.6
+
+    # 8-bit grey is the printer's to halftone: nothing here changes it.
+    grey = pwg.decode_pages(pwg.encode(picture_and_type, dpi=300, color="sgray_8", duplex=False))
+    assert grey[0].lines[int(150 * SCALE)][int(150 * SCALE)] == 128
+
+
+@pytest.mark.parametrize("value, expected", [(0, 1.0), (128, 0.5), (200, 14 / 64), (255, 0.0)])
+def test_the_halftone_inks_a_grey_in_proportion(value, expected):
+    """Over one 8x8 cell of the matrix, the share of ink is the share of
+    black in the grey: all of it for black, none for white, in between for
+    the greys between."""
+    row = bytes([value]) * 64
+    inked = sum(pwg._halftone_bits(row, y).count(b"1") for y in range(8))
+    assert inked / (64 * 8) == pytest.approx(expected)
 
 
 def test_identical_lines_carry_a_repeat_count():

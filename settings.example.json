@@ -56,7 +56,8 @@
       "front_stories": 4,
       "crossword_place": "bottom",
       "crossword_cell_in": 0.19,
-      "crossword_max_pct": 55
+      "crossword_max_pct": 55,
+      "pictures": false
     }
   },
   "sources": {

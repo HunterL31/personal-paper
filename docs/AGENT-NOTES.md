@@ -82,6 +82,38 @@ reasons and the traps. Add to it when you hit one.
   the template and the web page's `/fonts.css`. Variable fonts are renamed
   `Name-var.ttf` because `[wght]` in a filename breaks URLs.
 
+### The picture sheet (`layoutPictures` and `p.figref`)
+
+- The picture line is a `<p class="figref">` *between* the author's
+  paragraphs, never a span inside one: `truncate()` rewrites `textContent`
+  and would have flattened a span into the author's words, and the verbatim
+  check reads `<p>` text. `fitStory` moves a figref whole (it is popped to
+  the remainder before any word of it could be cut), `pour` rebuilds it on
+  page 2 from `rem[].image`, `PARAS` counts `.body > p:not(.figref)`, and
+  `setFront` keeps a figref with a partial story only while the paragraphs
+  before it are printed. `tests/verbatim.py` lists `figref` as furniture.
+- **The figures are held in a hidden `div`, not a `<template>`**, and `run()`
+  waits on every `img` as well as the fonts. An `<img>` inside inert
+  template content is never fetched, so a clone measured straight after
+  `appendChild` had no height. A file Chromium cannot read has
+  `naturalWidth` 0 and is treated as not there.
+- The line is numbered *after* the article search, from the printed stories
+  in reading order; its placeholder text ("See Image 1.") is the same width
+  as the final one, so numbering changes no measurement. Page 2's
+  continuations carry `data-story` so a story's lines on both pages can be
+  found in order.
+- A picture the sheet cannot hold loses its line (content only shrinks, so
+  nothing can overflow) and is counted in `RenderResult.pictures_dropped`
+  and on the sheet's foot; a picture of a story that never printed is not
+  "dropped", it is simply not there.
+- With `layout.pictures` off, `render.pictures_for` returns `[]` and the
+  template writes no figref, no page 3 and no store, so the default render
+  stays byte-identical. Check it the usual way after touching any of this.
+- The sample issue's pictures are SVG line drawings under
+  `render/sample_images/` (text, so no binaries in the repo) and its data
+  refers to them relative to `render/`; `render(..., image_dir=...)` is
+  where a real day's `out/<date>/` is passed in.
+
 ### The rail (`layoutRail` and friends)
 
 - **The rail is fitted before the stories, and that order is load-bearing.**
@@ -98,6 +130,11 @@ reasons and the traps. Add to it when you hit one.
   table all run on; the notes box has no rows and moves whole or not at all.
   `railFoot()` is what keeps the hourly table's sunrise line with the part
   that carries its last row.
+- The agenda on a day with no events prints one line, `p.agenda-none`
+  ("No events today"), and not an `li`: `railItems` counts `li` and `tr`,
+  so a row-shaped line would be tallied as an event given, shown or
+  dropped. With no rows the section moves whole, like the notes block, and
+  one that found no column reports `agenda: 0` in `rail_dropped`.
 - When nothing overflows, the rebuild is a no-op down to the pixel — which
   is what keeps the default render byte-identical. Check it that way
   (`md5sum` of the sample PNGs) after touching any of this.
@@ -123,6 +160,14 @@ reasons and the traps. Add to it when you hit one.
   has not been verified on the physical printer: check orientation, both
   sides on one sheet, margins and text weight on the first real print.
 - A one-page PDF is sent `one-sided` regardless of the duplex setting.
+- **A 1-bit threshold turns a photograph into blots.** `pwg.encode` asks
+  each page `get_images()`; a page with a raster image on it is halftoned
+  with an 8x8 ordered dither (`_halftone_bits`: eight `translate` calls and
+  strided slice assignments per row, no per-pixel Python, well under a
+  second at 600 dpi), and pages of type keep the threshold and their exact
+  old bytes. The sample's SVG pictures are vectors, so the sample sheet is
+  *not* halftoned; a real day's JPEGs are. Not yet seen on the physical
+  Brother: check the dot pattern on the first real picture sheet.
 - mDNS printer discovery only works with host networking (or macvlan).
 - `diagnose()` runs resolve, connect, IPP, format, state in order and stops
   at the first failure; its summaries are what the status strip shows.
@@ -137,6 +182,13 @@ reasons and the traps. Add to it when you hit one.
   up to `QUEUE_LIMIT` (8) offered to the layout. Posts are marked seen
   only after a real successful run, and a partially printed post counts
   as used. `guid` is stripped from `data.json`; `url` stays.
+- **`state.seen_posts` is in print order** (a paper's guids are appended in
+  the sheet's order, the lead first), and `mark_seen` stamps each new guid
+  in `state.printed_at`. The queue view's "Already printed" group is sorted
+  by stamp (latest paper first) and, within a paper, by place in
+  `seen_posts`; guids from before the stamps existed come after, latest
+  first by place alone. Sorting that group by publication date, as it once
+  was, put yesterday's lead under a post printed a week ago.
 - **In the queue view, ask "has it printed?" before "is it too old?"**
   A post printed from a widened window is older than the window forever
   after, so a preview that tests the age first buries it under
@@ -164,6 +216,13 @@ reasons and the traps. Add to it when you hit one.
   the API saying no and is not retried.
 - Google Calendar's secret iCal address includes recurrences; declined
   events are detected by matching the attendee against `X-WR-CALNAME`.
+- **Substack's feed names WebP pictures** (`f_webp` in the CDN address) and
+  pymupdf does not read WebP (Pillow is not a dependency). `gather/images.py`
+  asks the CDN for `f_auto` and sends an Accept header without WebP or AVIF,
+  so it answers JPEG or PNG. The pictures are lifted out of the post *before*
+  the chrome is stripped (`_lift_images` leaves a `pp-image` placeholder), so
+  the paragraph list is exactly what it was without them: the verbatim
+  fixture test did not move.
 - Substack blocks default user agents; the fetcher sends a browser-like
   one.
 

@@ -7,7 +7,10 @@ issue         int   number of issues printed so far; the next paper is issue + 1
 first_issue_date  str  ISO date of issue 1; the volume is the year of publication, counted from here
 volume        int   the volume `issue` belongs to; numbering restarts at 1 in a new volume
 issues_total  int   issues printed over all volumes
-seen_posts    list  Substack post GUIDs already printed (gather/substack.py)
+seen_posts    list  Substack post GUIDs already printed, in the order they were
+                    printed (gather/substack.py)
+printed_at    dict  GUID -> ISO timestamp of the run that printed it, for the
+                    queue view's "Already printed" order and day
 last_run      str   ISO timestamp of the last attempt
 last_success  str   ISO timestamp of the last successful run
 last_error    str   message of the last failure ("" once a run succeeds)
@@ -35,6 +38,7 @@ _lock = threading.Lock()
 DEFAULT_STATE: dict[str, Any] = {
     "issue": 0,
     "seen_posts": [],
+    "printed_at": {},
     "last_run": "",
     "last_success": "",
     "last_error": "",

@@ -80,6 +80,18 @@
       limit sets the clues smaller.</span></label>
   </div>
 
+  <h2>Pictures</h2>
+  <p class="note">The stories' own pictures, on a sheet of their own after page 2.
+  Each one is numbered, and a line in the story, where the writer put the
+  picture, says which number to look for. What the sheet cannot hold is left
+  off and counted at its foot; the words of a story are never touched.</p>
+  <p>
+    <label class="inline"><input type="checkbox" name="pictures" {{ "checked" if layout.pictures else "" }}> Print the pictures on a second sheet</label>
+    <span class="note">Off, the paper is the one sheet it has always been, and no
+    picture is fetched. On, the sheet is a page or two after page 2, printed on
+    both sides when the paper is; photographs come out in the printer's grey.</span>
+  </p>
+
   <div class="actions">
     <button class="primary" type="submit">Save layout</button>
     <a href="/preview">See it on the Preview tab &rarr;</a>

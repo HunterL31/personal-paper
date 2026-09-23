@@ -345,6 +345,7 @@ def test_the_layout_tab_saves_the_layout(client):
             "crossword_place": "top",
             "crossword_cell_in": "0.22",
             "crossword_max_pct": "40",
+            "pictures": "on",
         },
     )
     assert response.status_code == 303
@@ -364,10 +365,28 @@ def test_the_layout_tab_saves_the_layout(client):
     assert layout.crossword_place == "top"
     assert layout.crossword_cell_in == 0.22
     assert layout.crossword_max_pct == 40
+    assert layout.pictures is True
 
     # And the tab shows it back: the saved side is the selected one.
     body = client.get("/layout", auth=AUTH).text
     assert '<option value="left" selected>Left</option>' in body
+    assert 'name="pictures" checked' in body
+
+
+def test_the_picture_sheet_is_off_until_it_is_ticked(client):
+    Settings().save()
+    assert Settings.load().look.layout.pictures is False
+    body = client.get("/layout", auth=AUTH).text
+    assert "<h2>Pictures</h2>" in body
+    assert 'name="pictures"' in body and 'name="pictures" checked' not in body
+
+    # Saving the tab with the box unticked leaves it off; ticking it turns it on.
+    client.post("/layout", auth=AUTH, data={"rail_side": "right"})
+    assert Settings.load().look.layout.pictures is False
+    client.post("/layout", auth=AUTH, data={"rail_side": "right", "pictures": "on"})
+    assert Settings.load().look.layout.pictures is True
+    client.post("/layout", auth=AUTH, data={"rail_side": "right"})
+    assert Settings.load().look.layout.pictures is False
 
 
 def test_the_rail_side_defaults_to_the_right_and_a_nonsense_value_is_ignored(client):
@@ -424,6 +443,7 @@ def test_the_layout_tab_lists_every_section_with_its_list_name(client):
     assert "Hourly forecast" in body and "Notes" in body
     assert 'name="rail_width_in"' in body and 'name="front_stories"' in body
     assert 'name="crossword_cell_in"' in body and 'name="crossword_max_pct"' in body
+    assert 'name="pictures"' in body
 
 
 def test_the_layout_table_says_what_each_section_prints_as(client):

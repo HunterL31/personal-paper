@@ -46,6 +46,9 @@ function renderJob(job) {
   statusLine.innerHTML = '<span class="pagecount">' + result.pages + ' page'
     + (result.pages === 1 ? '' : 's') + '</span>'
     + (result.crossword ? ' with the crossword' : '')
+    + (result.pictures ? ', ' + result.pictures + ' picture' + (result.pictures === 1 ? '' : 's')
+        + ' on the picture sheet' : '')
+    + (result.pictures_dropped ? ' (' + result.pictures_dropped + ' left off)' : '')
     + ' &middot; <a href="' + result.html + '">open the pages in the browser</a>'
     + (result.held && result.held.length
         ? '<br><span class="warn">Held for another morning (did not fit whole): ' + result.held.map(escapeHtml).join('; ') + '</span>'

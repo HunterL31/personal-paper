@@ -587,6 +587,7 @@ def _save_layout(form: FormData, settings: Settings) -> None:
     layout.crossword_max_pct = int(form_number(
         form, "crossword_max_pct", float(layout.crossword_max_pct), 25.0, 75.0
     ))
+    layout.pictures = form_flag(form, "pictures")
 
     # The old section switches are what the template asked before there
     # were places; keep them in step so nothing reading them disagrees
@@ -1099,14 +1100,19 @@ def preview_post(source: str = "sample") -> RedirectResponse:
             # source is on; the template typesets it. The sample issue has
             # a made-up puzzle so the sample issue shows the layout.
             data = json.loads(source_data.read_text())
+            image_dir = source_data.parent          # today's pictures are beside its data
         else:
             data = json.loads(SAMPLE_DATA.read_text())
-        rendered = render(data, settings.look, out, png=True)
+            image_dir = None                        # the sample's are in render/
+        rendered = render(data, settings.look, out, png=True, image_dir=image_dir)
         jobs.prune_previews()
         titles = [str((a or {}).get("title", "")) for a in (data.get("articles") or [])]
         return {
             "source": which,
             "pages": rendered.pages,
+            "picture_pages": rendered.picture_pages,
+            "pictures": len(rendered.pictures),
+            "pictures_dropped": len(rendered.pictures_dropped),
             "crossword": bool(data.get("crossword")),
             "printed": [titles[i] for i in rendered.printed if i < len(titles)],
             "held": [t for i, t in enumerate(titles) if i not in rendered.printed],

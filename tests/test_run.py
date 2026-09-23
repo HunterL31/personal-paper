@@ -353,6 +353,103 @@ class _Rendered:
         self.pngs: list = []
 
 
+# ----------------------------------------------------------------- pictures
+@pytest.fixture
+def fake_images(monkeypatch, fake_gather):
+    """`gather.images.fetch` that writes one real picture for the lead and
+    records what it was asked for, on the sample data `fake_gather` serves."""
+    calls: list[tuple[int, Path]] = []
+
+    def fetch(articles, out_dir):
+        import pymupdf
+
+        calls.append((len(articles), Path(out_dir)))
+        folder = Path(out_dir) / "images"
+        folder.mkdir(parents=True, exist_ok=True)
+        pix = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 300, 200), False)
+        pix.set_rect(pix.irect, (90,))
+        pix.save(str(folder / "0-0.jpg"))
+        for a in articles:
+            for im in a.get("images") or []:
+                im["file"] = None
+        articles[0]["images"][0]["file"] = "images/0-0.jpg"
+        return 1
+
+    images = types.ModuleType("gather.images")
+    images.fetch = fetch
+    gather = sys.modules["gather"]
+    gather.images = images                    # `from gather import images`
+    gather.submit = real_submit
+    return calls
+
+
+def test_the_pictures_are_fetched_beside_the_data_and_printed(data_dir, fake_images, fake_deliver):
+    """With the sheet on, the run fetches the pictures into out/<date>/images
+    and the paper is three pages: the sample's lead has its picture."""
+    settings = Settings()
+    settings.look.layout.pictures = True
+
+    result = run(settings, dry_run=True)
+
+    assert result.ok, result.error
+    assert fake_images == [(4, data_dir / "out" / result.date)]
+    assert result.pictures_fetched == 1
+    assert result.pictures_printed == 1 and result.pictures_dropped == 0
+    assert result.pages == 3
+    data = json.loads((data_dir / "out" / result.date / "data.json").read_text())
+    assert data["articles"][0]["images"][0]["file"] == "images/0-0.jpg"
+    assert (data_dir / "out" / result.date / "images" / "0-0.jpg").is_file()
+
+
+def test_no_picture_is_fetched_with_the_sheet_off(data_dir, fake_images, fake_deliver):
+    result = run(Settings(), dry_run=True)
+    assert result.ok and result.pages == 2
+    assert fake_images == [] and result.pictures_fetched == 0
+
+
+def test_a_replay_prints_the_pictures_it_finds_beside_the_data(data_dir, fake_images, fake_deliver):
+    settings = Settings()
+    settings.look.layout.pictures = True
+    first = run(settings, dry_run=True)
+    assert fake_images and first.pages == 3
+
+    again = run(settings, date=first.date)
+    assert again.ok and again.pages == 3 and again.pictures_printed == 1
+    assert len(fake_images) == 1, "a replay fetches nothing"
+
+
+def test_a_missing_picture_step_is_not_a_missing_paper(data_dir, fake_gather, fake_deliver, caplog):
+    """The faked gather module has no `images` (and no `submit`): the run
+    says so and prints the paper without a sheet."""
+    settings = Settings()
+    settings.look.layout.pictures = True
+    with caplog.at_level("WARNING", logger="run"):
+        result = run(settings, dry_run=True)
+    assert result.ok and result.pages == 2 and result.pictures_fetched == 0
+    assert "pictures unavailable" in caplog.text
+
+
+def test_a_picture_step_that_hangs_is_abandoned(data_dir, fake_images, fake_deliver, monkeypatch, caplog):
+    import threading
+
+    gather = sys.modules["gather"]
+    started = threading.Event()
+
+    def hang(articles, out_dir):
+        started.set()
+        threading.Event().wait()          # for ever, on a daemon thread
+
+    gather.images.fetch = hang
+    monkeypatch.setattr(run_module, "PICTURES_TIMEOUT", 0.2)
+    settings = Settings()
+    settings.look.layout.pictures = True
+    with caplog.at_level("ERROR", logger="run"):
+        result = run(settings, dry_run=True)
+    assert started.is_set()
+    assert result.ok and result.pages == 2 and result.pictures_fetched == 0
+    assert "pictures: timed out" in caplog.text
+
+
 @pytest.fixture
 def fake_render(monkeypatch):
     """A render that reports what it printed without starting Chromium."""

@@ -66,8 +66,9 @@ logging on, `logs/runs/<date>-<time>.log` for each of the last seven runs.
      body text size and lead story depth.
    - **Layout**: the **Sections** table — which page each section goes on,
      and in what order — plus **Rail side**, the rail's width, how many
-     stories the front page may hold, and the crossword's place and size.
-     Check it on **Preview**.
+     stories the front page may hold, the crossword's place and size, and
+     the **Pictures** switch that prints the stories' pictures on a second
+     sheet. Check it on **Preview**.
 
    **Theme** at the end of the tab row sets this page light or dark, or
    leaves it to follow your phone or laptop. It is only this page: the
@@ -92,7 +93,9 @@ it takes and the **Format** line says what will be sent:
   to pixels here, at the finest resolution the printer lists up to 600 dpi
   and in black and white: a two-page issue is about 600 KB at 300 dpi and
   2 MB at 600 dpi. The printed sheet looks the same; only what goes over the
-  wire differs.
+  wire differs. A page that carries a photograph (the picture sheet) is
+  halftoned into dots rather than cut to black and white, so the
+  photograph prints as a grey and not as a blot.
 
 A printer that lists neither fails the check and says which formats it did
 list. `image/urf`, Apple's own raster, is not written yet; if a printer offers
@@ -177,7 +180,8 @@ the first morning.
 3. Paste it into a calendar row on the Sources tab and press Check. It
    shows the calendar's name and today's event count. Save.
 4. Repeat for each calendar that should appear in the rail. Events are
-   merged and sorted, all-day first.
+   merged and sorted, all-day first. On a day with nothing on any of
+   them, the section reads "No events today" under its heading.
 
 Declined invitations and cancelled events are left out. Times are shown
 without a.m./p.m. because the order makes it obvious. If a recurring
@@ -213,11 +217,22 @@ older than … days** (7 by default, 1–60) is how far back that queue looks �
 a post still waiting when it passes that age is never printed, which is
 what keeps the first morning from printing the archive. **Show what's
 waiting** fetches every publication and lists what would print, without
-marking anything.
+marking anything. Under the queue it lists what has already printed, in
+the order the paper printed it — the latest paper first, its lead first —
+with the day each post went out, and then what will never print.
 
 Each post prints once. Four stories fit a sheet at most, and a story is
 printed whole or held for a morning with room; when the last slot holds
 only the beginning of one, the paper prints the address of the rest.
+
+A post's pictures are not printed in the columns. Tick **Print the
+pictures on a second sheet** on the Layout tab and they go on a sheet of
+their own after page 2 instead: each numbered, with the story it belongs
+to and the writer's caption under it, and a line in the story — "See
+Image 2." — standing where the writer put the picture. The sheet holds
+about a dozen pictures on its two sides; what it cannot hold is counted at
+its foot, and the story carries no line for it. Off, no picture is
+fetched at all.
 
 **The email route (IMAP), for paid posts (Gmail):**
 
@@ -347,6 +362,10 @@ because the paper keeps its own newspaper voice.
 default) or the left. Below it are the rail's width, how many stories the
 front page may hold (1–4), and where the crossword sits on page 2 with its
 square size and the most of the page it may fill.
+
+**Pictures** prints the stories' pictures on a second sheet (see the
+Substack section above). The sheet is a page or two after page 2, printed
+on both sides like the paper; photographs come out in the printer's grey.
 
 Changing any of it changes how much fits, never a word of an article. Judge
 it on the **Preview** tab before it hits paper.

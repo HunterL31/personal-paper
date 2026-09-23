@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -161,8 +161,63 @@ def test_article_fields(feeds, no_imap, fake_state):
     assert article["url"] == BREAD
     assert set(article) == {
         "title", "deck", "author", "publication", "published", "paragraphs",
-        "url", "guid",
+        "images", "url", "guid",
     }
+
+
+# ------------------------------------------------------------ pictures
+BREAD_IMAGES = [
+    {"url": "https://substackcdn.com/image/fetch/loaf.jpg",
+     "caption": "A loaf, photographed badly, on a Tuesday.", "after": 0},
+    {"url": "https://substackcdn.com/image/fetch/w_1456,c_limit,f_webp,q_auto:good/"
+            "https%3A%2F%2Fbucket%2Fdough.png",
+     "caption": None, "after": 4},
+]
+
+
+def test_pictures_are_recorded_where_the_author_set_them(feeds, no_imap, fake_state):
+    """The two figures of the bread post: the captioned one at the top, the
+    bare one after the blockquote (four paragraphs in). The emoji inside the
+    last paragraph is decoration, not a picture -- and not a word moves."""
+    (article,) = substack.fetch(settings_for(SubstackSource(name="slowkitchen")))
+    assert article["images"] == BREAD_IMAGES
+    assert article["paragraphs"] == BREAD_PARAGRAPHS
+
+
+def test_extract_content_tells_pictures_from_decoration():
+    html = (
+        "<p>One.</p>"
+        "<div class='captioned-image-container'><figure>"
+        "<a class='image-link' href='x'><img src='https://cdn/a.jpg' width='1200' height='800'></a>"
+        "<figcaption>Caption <em>one</em>.</figcaption></figure></div>"
+        "<p>Two <img src='https://cdn/emoji.png' width='16' height='16'> words.</p>"
+        "<img src='https://cdn/bare.jpg'>"                       # a bare picture is one too
+        "<figure><figcaption>No picture here</figcaption></figure>"  # chrome
+        "<img src='https://cdn/icon.png' width='40' height='40'>"    # an icon
+        "<img src='data:image/png;base64,AAAA'>"                     # not an address
+        "<blockquote><p>Three.</p></blockquote>"
+    )
+    paragraphs, images = substack.extract_content(html)
+    assert paragraphs == ["One.", "Two words.", "Three."]
+    assert images == [
+        {"url": "https://cdn/a.jpg", "caption": "Caption one.", "after": 1},
+        {"url": "https://cdn/bare.jpg", "caption": None, "after": 2},
+    ]
+    assert "No picture here" not in " ".join(paragraphs)
+
+
+def test_the_email_edition_keeps_its_pictures_too(monkeypatch, feeds, fake_state, fixtures):
+    monkeypatch.setattr(substack, "fetch_from_imap",
+                        lambda title, publication: (fixtures / "substack_email.html").read_text())
+    articles = substack.fetch(settings_for(SubstackSource(name="slowkitchen", paid=True)))
+    cup = {a["guid"]: a for a in articles}[SECOND_CUP]
+    # The logo in the email's header is chrome (and icon-sized); the one
+    # figure in the body is a picture, after the last paragraph.
+    assert cup["images"] == [{
+        "url": "https://substackcdn.com/image/fetch/cup.jpg",
+        "caption": "The second cup, in the only mug that matters.",
+        "after": 5,
+    }]
 
 
 def test_url_is_a_plain_link(feeds, no_imap, fake_state):
@@ -412,7 +467,9 @@ def test_queue_preview_matches_what_fetch_would_offer(feeds, no_imap, fake_state
     assert first["age_days"] == 3.0          # Sept 13 16:00 UTC, rounded
     assert set(first) == {
         "guid", "publication", "title", "url", "published", "age_days", "position", "status",
+        "printed",
     }
+    assert first["printed"] is None
 
 
 def test_queue_preview_marks_printed_posts(feeds, no_imap, fake_state):
@@ -422,6 +479,102 @@ def test_queue_preview_marks_printed_posts(feeds, no_imap, fake_state):
     assert [(row["title"], row["status"], row["position"]) for row in preview["printed"]] == [
         ("The bread you meant to make", "printed", None)
     ]
+
+
+# ----------------------------------------------------- the printed record
+def _daily_feed(feeds) -> None:
+    feeds["https://daily.substack.com/feed"] = build_feed("Daily", "daily", [
+        {"title": "Post A", "slug": "a", "pubdate": "Sun, 14 Sep 2025 16:00:00 GMT"},
+        {"title": "Post B", "slug": "b", "pubdate": "Mon, 15 Sep 2025 16:00:00 GMT"},
+        {"title": "Post C", "slug": "c", "pubdate": "Sat, 13 Sep 2025 16:00:00 GMT"},
+        {"title": "Post D", "slug": "d", "pubdate": "Tue, 16 Sep 2025 09:00:00 GMT"},
+    ])
+
+
+def _daily(slug: str) -> str:
+    return f"https://daily.substack.com/p/{slug}"
+
+
+def test_printed_posts_are_listed_as_the_server_printed_them(monkeypatch, feeds, no_imap, fake_state):
+    """Not by when they were published: the latest paper first, and within a
+    paper the sheet's order, the lead first. Each row says the day it went out."""
+    _daily_feed(feeds)
+    # Monday's paper carried B (the lead) then A; Tuesday's carried D.
+    monkeypatch.setattr(substack, "_now", lambda: NOW - timedelta(days=1))
+    substack.mark_seen([_daily("b"), _daily("a")])
+    monkeypatch.setattr(substack, "_now", lambda: NOW)
+    substack.mark_seen([_daily("d")])
+
+    view = substack.queue_preview(settings_for(SubstackSource(name="daily")))
+    assert [r["title"] for r in view["printed"]] == ["Post D", "Post B", "Post A"]
+    assert [r["printed"] for r in view["printed"]] == ["2025-09-16", "2025-09-15", "2025-09-15"]
+    assert [r["title"] for r in view["queued"]] == ["Post C"]
+    assert view["queued"][0]["printed"] is None
+
+
+def test_posts_printed_before_there_were_stamps_still_list_latest_first(feeds, no_imap, fake_state):
+    """A state file from before `printed_at`: the order of `seen_posts` is
+    the order they printed, so the last marked is listed first, undated."""
+    _daily_feed(feeds)
+    fake_state["seen_posts"] = [_daily("a"), _daily("d"), _daily("b")]
+    view = substack.queue_preview(settings_for(SubstackSource(name="daily")))
+    assert [r["title"] for r in view["printed"]] == ["Post B", "Post D", "Post A"]
+    assert [r["printed"] for r in view["printed"]] == [None, None, None]
+
+
+def test_stamped_papers_come_before_unstamped_posts(monkeypatch, feeds, no_imap, fake_state):
+    _daily_feed(feeds)
+    fake_state["seen_posts"] = [_daily("d")]            # printed before the stamps
+    substack.mark_seen([_daily("a")])
+    view = substack.queue_preview(settings_for(SubstackSource(name="daily")))
+    assert [(r["title"], r["printed"]) for r in view["printed"]] == [
+        ("Post A", "2025-09-16"), ("Post D", None),
+    ]
+
+
+def test_mark_seen_stamps_the_time_and_mark_unseen_forgets_it(data_dir, monkeypatch):
+    import state
+    from gather.substack import mark_seen, mark_unseen
+
+    mark_seen(["a", "b"])
+    stamps = state.load_state()["printed_at"]
+    assert set(stamps) == {"a", "b"}
+    assert stamps["a"] == stamps["b"] == "2025-09-16T08:00:00-07:00"   # NOW, in the reader's zone
+
+    # Marking a post that is already printed keeps the stamp it has.
+    monkeypatch.setattr(substack, "_now", lambda: NOW + timedelta(days=1))
+    mark_seen(["a", "c"])
+    stamps = state.load_state()["printed_at"]
+    assert stamps["a"] == "2025-09-16T08:00:00-07:00"
+    assert stamps["c"] == "2025-09-17T08:00:00-07:00"
+
+    mark_unseen(["a"])
+    st = state.load_state()
+    assert st["seen_posts"] == ["b", "c"] and set(st["printed_at"]) == {"b", "c"}
+
+
+def test_the_stamps_are_pruned_with_the_history(data_dir, monkeypatch):
+    import state
+    from gather.substack import mark_seen
+
+    monkeypatch.setattr(substack, "SEEN_HISTORY", 2)
+    mark_seen(["a", "b", "c"])
+    st = state.load_state()
+    assert st["seen_posts"] == ["b", "c"] and set(st["printed_at"]) == {"b", "c"}
+
+
+def test_an_odd_printed_at_in_the_state_file_is_ignored(data_dir):
+    """A hand-edited or corrupt value never stops the queue view."""
+    import state
+    from gather.substack import mark_seen
+
+    state.update_state(printed_at="not a dict", seen_posts=["a"])
+    assert substack._printed_at() == {}
+    mark_seen(["b"])
+    assert set(state.load_state()["printed_at"]) == {"b"}
+    state.update_state(printed_at={"b": 12345})
+    assert substack._printed_at() == {}
+    assert substack._printed_day("not a time") is None
 
 
 def test_queue_preview_flags_a_preview_and_an_old_post(feeds, no_imap, fake_state):
