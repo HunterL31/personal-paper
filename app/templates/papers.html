@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Papers</h2>
+<p class="note">This container can make a paper for more than one reader. Each
+paper has its own look, sources, lists, printer, schedule, issue numbers and
+archive; nothing one reader sets reaches another's paper. Papers set to print
+at the same time are made one after the other, in the order below.</p>
+
+<table>
+  <thead><tr><th style="width:2.5rem">#</th><th>Paper</th><th>Prints</th><th>Printer</th><th style="width:13rem"></th></tr></thead>
+  <tbody>
+    {% for p in papers %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><a href="{{ p.url }}">{{ p.name }}</a>{% if p.current %} <span class="note">(this page)</span>{% endif %}
+        {%- if not p.main %}<br><span class="note">{{ p.base }}/</span>{% endif %}</td>
+      <td>{%- if p.schedule.days %}{{ p.schedule.time }}, {{ days_label(p.schedule.days) }}{% else %}not scheduled{% endif %}</td>
+      <td>{%- if p.print_on %}{{ p.printer or "no printer set" }}{% else %}<span class="note">printing off</span>{% endif %}</td>
+      <td>
+        <form class="inline-form" method="post" action="{{ base }}/papers/{{ p.id }}/move">
+          <button class="small" type="submit" name="step" value="-1" {{ "disabled" if loop.first else "" }} aria-label="Print {{ p.name }} earlier">&uarr; Earlier</button>
+          <button class="small" type="submit" name="step" value="1" {{ "disabled" if loop.last else "" }} aria-label="Print {{ p.name }} later">&darr; Later</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add a paper</h2>
+<form method="post" action="{{ base }}/papers/add">
+  <div class="grid">
+    <label class="field"><span>Its name</span>
+      <input type="text" name="name" required placeholder="The Morning Ledger">
+      <span class="note">The masthead; it can be changed later on its Look tab.</span></label>
+  </div>
+  <p>
+    <label class="inline"><input type="checkbox" name="copy_output" checked> Use this paper's printer and print time</label>
+  </p>
+  <p class="note">The new paper starts with no calendars, publications or lists
+  of its own; set them on its Sources tab. Its lists have their own addresses
+  for the phone, under <code>/p/&lt;paper&gt;/lists/</code>.</p>
+  <div class="actions"><button class="primary" type="submit">Add the paper</button></div>
+</form>
+
+{% if not current_main %}
+<h2>Stop making this paper</h2>
+<form method="post" action="{{ base }}/papers/{{ current_id }}/remove">
+  <p>
+    <label class="inline"><input type="checkbox" name="confirm" required> Stop making {{ paper_name }}</label>
+  </p>
+  <p class="note">It is taken off the schedule and out of this list. Its settings
+  and its archive of issues stay on the container's disk, in a folder named
+  <code>.removed-{{ current_id }}-…</code> under <code>papers/</code>.</p>
+  <div class="actions"><button type="submit">Stop making it</button></div>
+</form>
+{% endif %}
+{% endblock %}

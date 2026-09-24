@@ -10,7 +10,7 @@
 {% endif %}
 
 <h2>Enhanced logging</h2>
-<form method="post" action="/log">
+<form method="post" action="{{ base }}/log">
   <p>
     <label class="inline"><input type="checkbox" name="enhanced" {{ "checked" if logs.enhanced else "" }}> Keep a full log of every run</label>
   </p>

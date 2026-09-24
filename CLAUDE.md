@@ -63,6 +63,15 @@ the paper's name is whatever its one reader types on the Look tab
   column can hold is said on the sheet and reported in
   `RenderResult.rail_dropped` — an item is never quietly lost.
 - `DATA_DIR` env (default `/data`) is where state, settings, archive, logs live.
+  One container makes one or more papers (`papers.py`): the first, `main`,
+  lives at the top of `DATA_DIR` as it always has; every other paper has the
+  same layout under `DATA_DIR/papers/<id>/`, and `papers.json` holds the
+  print order. Code never builds a path from `DATA_DIR` itself: it asks a
+  `data_dir()`, which answers for the current paper (`papers.using(id)`, a
+  context variable). A new thread must be started with
+  `papers.start_thread` or it works for the main paper. The web page serves
+  paper `<id>` under `/p/<id>/`; templates prefix every address with
+  `{{ base }}` and the routes redirect with `here(path)`.
 - Each gatherer: `fetch(settings) -> <its part>` plus a `__main__` printing JSON.
 - Credentials for a source are container variables (`NYT_S` for the
   crossword); what the reader switches on and off is `settings.sources`.

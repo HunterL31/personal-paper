@@ -5,7 +5,7 @@
    from: the sample here is the face that comes off the printer. #}
 {% block head %}<link rel="stylesheet" href="/fonts.css">{% endblock %}
 {% block content %}
-<form method="post" action="/look">
+<form method="post" action="{{ base }}/look">
 
   <h2>The paper</h2>
   <p class="note">Nothing on this tab can change an article's words. It sets the
@@ -156,7 +156,7 @@
 
   <div class="actions">
     <button class="primary" type="submit">Save look</button>
-    <a href="/preview">See it on the Preview tab &rarr;</a>
+    <a href="{{ base }}/preview">See it on the Preview tab &rarr;</a>
   </div>
 </form>
 {% endblock %}

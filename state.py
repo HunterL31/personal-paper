@@ -32,6 +32,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import papers
+
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
 
@@ -49,8 +51,12 @@ DEFAULT_STATE: dict[str, Any] = {
 
 
 def data_dir() -> Path:
-    """DATA_DIR is read on every call so tests (and the web app) can move it."""
-    return Path(os.environ.get("DATA_DIR", "/data"))
+    """The current paper's folder: DATA_DIR itself for the main paper.
+
+    Read on every call so tests (and the web app) can move it, and so each
+    paper the container makes keeps a state.json of its own (`papers.py`).
+    """
+    return papers.data_dir()
 
 
 def state_path() -> Path:

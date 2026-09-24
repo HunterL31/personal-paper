@@ -66,7 +66,13 @@ def unauthorized() -> Response:
 
 async def middleware(request: Request, call_next):
     """Basic auth in front of everything but the two open routes."""
-    if not enabled() or is_open(request.method, request.url.path) or request.method == "OPTIONS":
+    # The route's own path: `/p/<id>/lists/<slug>` is another paper's list
+    # endpoint, and just as open as the main paper's.
+    path = request.url.path
+    prefix = request.scope.get("root_path") or ""
+    if prefix and path.startswith(prefix + "/"):
+        path = path[len(prefix):]
+    if not enabled() or is_open(request.method, path) or request.method == "OPTIONS":
         return await call_next(request)
     if not check(request.headers.get("authorization")):
         return unauthorized()

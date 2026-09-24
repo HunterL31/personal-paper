@@ -126,6 +126,31 @@ yesterday's list.
 `POST /tasks` is still the `tasks` list, so a Shortcut made before lists had
 names keeps working.
 
+## More than one paper
+
+One container can make a paper for each reader in the house. The **Papers**
+tab lists them in print order and adds a new one: it gets a name, and,
+if you tick the box, the printer and print time of the paper you are on.
+Everything else starts empty — its reader sets their own calendars,
+publications and lists on its Sources tab.
+
+Every tab then edits the paper whose name is highlighted in the switcher
+under the masthead. The first paper keeps the addresses it always had; each
+other paper lives under `/p/<id>/` (`/p/sam/look`, `/p/sam/sources`, ...),
+and so do its lists, so its reader's Shortcut posts to
+`POST http://<unraid-ip>:8080/p/sam/lists/tasks`. The Sources tab shows the
+right address for each.
+
+Papers set to print at the same time are made one after the other, in the
+order on the Papers tab (move them with Earlier and Later), so two sheets
+come off the printer in a known order. Each paper has its own issue
+numbers, archive, log and state, in `papers/<id>/` under `/data`; the
+first paper's are where they always were. Stopping a paper takes it off the
+schedule and renames its folder to `.removed-<id>-<time>` rather than
+deleting its archive.
+
+From the command line: `python run.py --paper sam`.
+
 ## Publishing the image
 
 `.github/workflows/docker.yml` builds the image on every push to `main`

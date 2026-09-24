@@ -486,14 +486,15 @@ def test_the_look_tab_no_longer_carries_the_layout(client):
 
 
 def test_the_tabs_are_in_order_on_every_page(client):
-    """Look, Layout, Sources, Output, Preview -- the order of the work."""
+    """Look, Layout, Sources, Output, Preview -- the order of the work --
+    and then Papers, which is about the container rather than one paper."""
     import re as _re
 
-    for tab in ("look", "layout", "sources", "output", "preview"):
+    for tab in ("look", "layout", "sources", "output", "preview", "papers"):
         body = client.get(f"/{tab}", auth=AUTH).text
         nav = body.split('<nav class="tabs">')[1].split("</nav>")[0]
         assert _re.findall(r'>([A-Za-z]+)</a>', nav) == [
-            "Look", "Layout", "Sources", "Output", "Preview"
+            "Look", "Layout", "Sources", "Output", "Preview", "Papers"
         ], tab
         assert f'href="/{tab}" class="active"' in nav
 

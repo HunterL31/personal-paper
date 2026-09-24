@@ -30,9 +30,9 @@ LEGACY_SLUG = "tasks"
 
 
 def _data_dir() -> Path:
-    import app.settings as app_settings
+    import papers
 
-    return Path(os.environ.get("DATA_DIR") or app_settings.DATA_DIR)
+    return papers.data_dir()
 
 
 def dir_path() -> Path:

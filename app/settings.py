@@ -461,6 +461,15 @@ class Settings(BaseModel):
     # -- persistence -------------------------------------------------
     @classmethod
     def path(cls) -> Path:
+        """The current paper's settings file (see `papers.py`).
+
+        `SETTINGS_PATH` moves only the main paper's; every other paper's
+        is in its own folder.
+        """
+        import papers
+
+        if papers.current() != papers.MAIN:
+            return papers.data_dir() / "settings.json"
         return Path(os.environ.get(SETTINGS_PATH_ENV, DATA_DIR / "settings.json"))
 
     @classmethod

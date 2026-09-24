@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import importlib
 import logging
-import threading
 import time
 import traceback
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 from typing import Any, Callable
+
+import papers
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,8 @@ def submit(section: str, fn: Callable, *args) -> Future:
         except BaseException as exc:  # noqa: BLE001 - reported to the caller
             future.set_exception(exc)
 
-    threading.Thread(target=runner, name=f"gather-{section}", daemon=True).start()
+    # The gatherer works for the paper that asked (its lists, its state).
+    papers.start_thread(runner, name=f"gather-{section}")
     return future
 
 
