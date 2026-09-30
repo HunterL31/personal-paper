@@ -381,6 +381,10 @@ def _launch(pw):
     return pw.chromium.launch(**kwargs)
 
 
+#: How long the fitting script may take before the render gives up.
+LAYOUT_TIMEOUT_MS = 180_000
+
+
 def _rasterize(pdf_path: Path, out_dir: Path, dpi: int = 70) -> list[Path]:
     import pymupdf
 
@@ -429,7 +433,9 @@ def render(
         try:
             page.emulate_media(media="print")     # measure in the same mode we print in
             page.goto(html_path.as_uri())
-            page.wait_for_function("window.__layoutDone === true")
+            # A long post takes the fitting script a while on a slow machine;
+            # Playwright's 30 s default cost whole mornings.
+            page.wait_for_function("window.__layoutDone === true", timeout=LAYOUT_TIMEOUT_MS)
             n = page.evaluate("window.__pages")
             printed = page.evaluate("window.__printed")
             partial = page.evaluate("window.__partial") or {}

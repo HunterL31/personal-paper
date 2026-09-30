@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,16 @@ def data_dir(tmp_path, monkeypatch):
     import app.settings as s
     monkeypatch.setattr(s, "DATA_DIR", d)
     return d
+
+
+@pytest.fixture(autouse=True)
+def local_time():
+    """A test that sets `TZ` leaves the process on that zone once anything
+    has read it: monkeypatch puts the variable back but not the C library's
+    idea of local time. Re-read it after every test, so `date.today()` is
+    not a day behind in the next one."""
+    yield
+    time.tzset()
 
 
 @pytest.fixture
