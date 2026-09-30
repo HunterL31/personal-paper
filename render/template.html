@@ -1202,6 +1202,16 @@
     // What moves to page 2: a paragraph's words, or a picture line whole.
     const moved = p => ({ text: p.textContent, tail: false, image: isRef(p) ? p.dataset.image : null });
 
+    // The slot fills in reading order, so the paragraphs past it are a tail:
+    // find where it starts by halving and move it in one go. Popping them one
+    // at a time re-lays the page for each, and a long post then never finishes.
+    let lo = 1, hi = ps.length - 1;                   // the first one is always kept
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (outside(ps[mid], body)) hi = mid; else lo = mid + 1;
+    }
+    if (lo < ps.length - 1 && outside(ps[lo], body))
+      for (const p of ps.splice(lo + 1)) { rem.push(moved(p)); p.remove(); }
     while (ps.length > 1 && outside(ps[ps.length - 1], body)) {
       const p = ps.pop(); rem.unshift(moved(p)); p.remove();
     }

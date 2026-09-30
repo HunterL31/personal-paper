@@ -56,6 +56,13 @@ reasons and the traps. Add to it when you hit one.
 - `truncate()` mutates `textContent` while searching. Capture the original
   text before calling it; an early version lost a paragraph when the first
   word did not fit.
+- **Never move paragraphs off the front one measurement at a time.** Every
+  `getBoundingClientRect()` after a DOM change re-lays the page, and the
+  search runs `attempt()` a dozen-odd times, so popping a 200-paragraph
+  post's overflow one by one took ~26 s and a longer one blew Playwright's
+  30 s `wait_for_function` default (three mornings lost, Sept. 2026).
+  `fitStory` halves for the first paragraph past the slot and moves the
+  tail in one go; `render.LAYOUT_TIMEOUT_MS` is the backstop.
 - Article selection is a search: try k = front_stories..1 whole articles;
   before dropping article k, try printing it partially (leading whole
   paragraphs plus the "rest is online" line). Result is N whole plus at
