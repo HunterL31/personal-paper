@@ -299,11 +299,37 @@ def test_what_no_column_can_hold_is_said_on_the_sheet(sample_data, tmp_path):
 
     more = [p.get_text() for p in soup.select(".rail p.rail-more")]
     assert f"{len(items) - len(shown)} more, not printed" in more
-    left_out = {"Hour by hour": "hourly", "Notes": "notes"}
     named = " ".join(m for m in more if m.startswith("Not printed:"))
-    for label, key in left_out.items():
-        if key in result.rail_dropped:
-            assert label in named, (label, more)
+    if "hourly" in result.rail_dropped:
+        assert "Hour by hour" in named, more
+    # Blank notes lines lose the reader nothing, so they are reported but not
+    # named on the sheet.
+    assert "Notes" not in named, more
+
+
+def test_the_notes_never_open_a_column_on_page_two_by_themselves(sample_data, tmp_path):
+    """A list just long enough to push only the notes off page 1: the notes
+    are left off rather than taking the stories' width for blank lines."""
+    from bs4 import BeautifulSoup
+
+    data, items = _with_todo(sample_data, 14)
+    result = _render(data, tmp_path, "notesonly")
+    soup = BeautifulSoup(result.laid_out_html, "html.parser")
+
+    assert _rail_items(result.laid_out_html, "#page-1 .rail") == items
+    assert soup.select_one("#page-2 .page2-rail") is None
+    assert soup.select_one("#page-2 .page2-main") is None
+    assert result.rail_continued == {}
+    assert result.rail_dropped == {"notes": 0}
+    assert not soup.select(".rail p.rail-more"), "nothing to say about blank lines"
+
+
+def test_the_notes_follow_a_section_that_opened_the_column(sample_data, tmp_path):
+    """Once something of hers runs on to page 2, the notes go along with it."""
+    data, _ = _with_todo(sample_data, 16)
+    result = _render(data, tmp_path, "notesfollow")
+    assert set(result.rail_continued) == {"hourly", "notes"}
+    assert result.rail_dropped == {}
 
 
 def test_a_one_page_morning_has_no_column_to_run_on_to(sample_data, tmp_path):

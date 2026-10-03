@@ -142,6 +142,11 @@ reasons and the traps. Add to it when you hit one.
   so a row-shaped line would be tallied as an event given, shown or
   dropped. With no rows the section moves whole, like the notes block, and
   one that found no column reports `agenda: 0` in `rail_dropped`.
+- The notes block never opens the page-2 column by itself: when it is all
+  that page 1 could not hold (and the reader put nothing on page 2), it is
+  left off and reported as `notes: 0` in `rail_dropped`, but not named on
+  the sheet -- blank lines are not worth the stories' width. It still runs
+  on when another section has already opened the column.
 - When nothing overflows, the rebuild is a no-op down to the pixel — which
   is what keeps the default render byte-identical. Check it that way
   (`md5sum` of the sample PNGs) after touching any of this.

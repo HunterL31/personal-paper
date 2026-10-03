@@ -1089,7 +1089,11 @@
 
     let last = railOne(queue.length > 0);
     let over = last ? railFill(last, queue, !hasPage2) : queue;
-    if (hasPage2) {
+    // The notes block is blank lines, not her day: it follows the flow on to
+    // page 2 when something else has already opened the column there, but it
+    // never opens one by itself and takes the stories' width for nothing.
+    const runOn = RAIL_P2.length > 0 || over.some(s => railKey(s) !== 'notes');
+    if (hasPage2 && runOn) {
       queue = over.concat(RAIL_P2.map(clone));
       const two = railTwo(queue.length > 0);
       over = two ? railFill(two, queue, true) : queue;
@@ -1097,7 +1101,9 @@
     }
     // A section that never reached the sheet is named at the foot of the last
     // column: the reader must never be left wondering what she is not seeing.
-    const names = over.map(railName).filter(Boolean);
+    // Notes left off are not named: blank lines lose her nothing, and they
+    // are still reported in `rail_dropped`.
+    const names = over.filter(s => railKey(s) !== 'notes').map(railName).filter(Boolean);
     if (last && names.length)
       last.appendChild(el('p', 'rail-more', 'Not printed: ' + names.join(', ')));
   }
